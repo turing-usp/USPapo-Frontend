@@ -19,6 +19,7 @@ interface JestMatchers {
   toBeGreaterThan(expected: number): void;
   toBeLessThanOrEqual(expected: number): void;
   toHaveLength(length: number): void;
+  toBeDefined(): void;
   toContain(item: unknown): void;
   toHaveBeenCalled(): void;
   toHaveBeenCalledTimes(count: number): void;
@@ -49,6 +50,8 @@ declare namespace jest {
   /** A fake function; `Args` is the argument tuple for call-site typing. */
   type Mock<T = unknown, Args extends unknown[] = unknown[]> = MockInstance<T, Args>;
 
-  const fn: <T = unknown, Args extends unknown[] = unknown[]>() => Mock<T, Args>;
+  const fn: <T = unknown, Args extends unknown[] = unknown[]>(
+    impl?: (...args: Args) => T | PromiseLike<T>,
+  ) => Mock<T, Args>;
   const mock: (path: string, factory?: () => unknown) => void;
 }
