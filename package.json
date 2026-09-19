@@ -42,6 +42,7 @@
     "victory-native": "^42.0.1"
   },
   "devDependencies": {
+    "@testing-library/react-native": "^14.0.1",
     "@types/react": "~19.2.2",
     "jest-expo": "~57.0.1",
     "typescript": "~6.0.3"
