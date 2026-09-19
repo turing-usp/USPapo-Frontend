@@ -1,56 +1,51 @@
-# Welcome to your Expo app 👋
+# USPapo — frontend
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Expo app (Android + iOS + web) for the USPapo student assistant: the chat
+with SSE streaming, the auth flow, the history with favorites, the settings,
+and the web-only admin panel. This is the ground-up rewrite of the old
+Next.js site (see `../.turing/plans/PLAN-20260919-0001-rewrite.md`).
 
-## Get started
+All production actions (EAS, stores, DNS) are **pending user approval** and
+live in `../CUTOVER_RUNBOOK.md` — nothing in this repo deploys.
 
-1. Install dependencies
+## Layout
 
-   ```bash
-   npm install
-   ```
+| Path | What |
+|---|---|
+| `app/` | expo-router routes: `(auth)` login/register/reset (5-rule live password checklist), `(main)` tabs — Início (composer + FAQ), Chat (nested stack, deep-linkable `chat/[id]`), Histórico, Ajustes — and `(admin)` (web only: analytics KPI panel + feedback) |
+| `app/(main)/chat/useChat.ts` | the chat data seam: `send` fires the SSE stream (`lib/api`), reduces the 8-event contract into turns, handles 429 (retry-after) and 401 (fast-fail to login), persists turn-by-turn with the P9 pending rule (`resposta NULL = pending`, completion-only update) |
+| `lib/api.ts` | the SSE client: `streamChat` (fetch + incremental `data:` parsing), the `ChatEvent` union mirroring the backend's event contract, `TOOL_LABELS`, `backendUrl()` (`EXPO_PUBLIC_BACKEND_URL`, default `http://127.0.0.1:8000`) |
+| `lib/conversations.ts` | the conversation store over Supabase (`conversas`, RLS-owned): `lerHistorico` (last-30 window), `anexarTurno` (the pending rule), `favoritar` (5-favorites cap enforced server-side, rejections relayed as real errors), `excluir`, `buscar` |
+| `lib/{supabase,auth,haptics,limits,net}.ts` | the Supabase client + `mapAuthError`, the haptic vocabulary (send/like/dislike/error/finished/favorite — no-op on web), the limits (20 conversations / 5 favorites / 30 history), the net queue |
+| `theme/index.tsx` | the design tokens ported from the old `globals.css`: the calibrated palette (brand orange stable across schemes, 6-slot colorblind-safe chart palette), spacing/radius/typography, and the glass vocabulary — a single flat no-blur translucent surface (backdrop-filter doesn't port to RN), scheme-persisted in AsyncStorage (`theme:scheme`) with the device appearance as the `system` default |
+| `components/chat/` | the bubble/feedback components + `<Matematica>` (the KaTeX WebView fallback: LaTeX in the answer renders via a self-contained WebView with the KaTeX CDN; raw-text fallback while streaming / on web) |
+| `tests/` | jest (offline: fakes + mocked fetch): lib (api SSE parsing, conversations pending rule), chat (the useChat reducer: full event sequence, 429, 401, stop/abort, persistence), admin (KPI math, palette rule, empty/error states) |
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Run
 
 ```bash
-npm run reset-project
+npm ci
+npm start            # expo start (metro)
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+- **Android/iOS**: dev build (NOT Expo Go — the device has no Expo Go and
+  modern SDKs dropped it). `npx expo prebuild --platform android` +
+  `cd android && ./gradlew assembleDebug` + `adb install` (the lab Tab is
+  wired for USB; the toolchain lives in `/mnt/Shared/android-dev/env.sh`).
+- **Web**: `npx expo start --web`; the admin group is web-only by design.
+- **`.env`**: copy `.env.example`; `EXPO_PUBLIC_BACKEND_URL` must point at
+  the backend the app can reach (127.0.0.1 for the metro dev machine, the
+  LAN IP on a physical device). No secrets beyond the anon key.
 
-### Other setup steps
+## Gates
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+```bash
+npx tsc --noEmit     # clean
+npx jest             # all suites, offline
+```
 
-## Learn more
+## Production boundary
 
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+EAS projects (`eas.json`), store listings, the Cloudflare Worker deploy and
+the DNS cutover are step-by-step in `../CUTOVER_RUNBOOK.md`, every step
+**PENDING USER APPROVAL**.
