@@ -1,22 +1,31 @@
 /**
- * History: pull-to-refresh (no-op until the cache lands), search input
- * (placeholder — P9 wires SQLite FTS search), grouped headers skeleton
- * (Favoritas/Hoje/Ontem/Últimos 7 dias/Últimos 30 dias/Anteriores), empty
- * state "Suas conversas aparecem aqui" and per-item long-press placeholder
- * (P9: favorite/rename/delete-with-undo).
+ * History (P9 — light offline): the real grouped list.
+ *
+ * Data: `lerHistorico` (Supabase) merged with the offline cache
+ * (lib/cache.fundirHistorico): the server wins per row when its
+ * `atualizada_em` is >= the cache's; the cache only wins when it is
+ * strictly newer (an offline completion not yet synced) and — when
+ * Supabase is unreachable — fills the whole list. The merged list is
+ * written back to the cache (write-through), so the next offline render
+ * is honest.
+ *
+ * - rows with `resposta = null` render as pending (the P9 rule);
+ * - pull-to-refresh re-runs the load: when offline it is a reload from
+ *   the cache, with the pt-BR note "mostrando o último cache";
+ * - search filters the loaded window locally (same honest scope as
+ *   lib/conversations.buscar — no full-table scan, no FTS in light P9);
+ * - per-item long-press is still a placeholder (favorite/rename/delete
+ *   with 6s undo is out of the light-offline scope).
  */
-import React, { useMemo, useState } from 'react';
-import {
-  FlatList,
-  Pressable,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { FlatList, Pressable, RefreshControl, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { carregarHistoricoOffline, fundirHistorico, salvarConversas } from '../../lib/cache';
+import { lerHistorico, type Conversa } from '../../lib/conversations';
+import { marcarFalhaRede, marcarSucessoRede } from '../../lib/offline';
+import { supabase } from '../../lib/supabase';
 import { useTheme } from '../../theme';
 
 const GRUPOS = [
@@ -28,28 +37,133 @@ const GRUPOS = [
   'Anteriores',
 ] as const;
 
-type LinhaEsqueleto = {
-  id: string;
-  grupo: string;
-  grupoAnterior?: string;
-};
+type Grupo = (typeof GRUPOS)[number];
 
-/** Static skeleton rows: two ghost rows per group. P9 replaces this with
- * the real grouped cache list. */
-const LINHAS: LinhaEsqueleto[] = GRUPOS.flatMap((grupo, i) =>
+const DIA_MS = 86_400_000;
+
+function inicioDoDia(d: Date): number {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x.getTime();
+}
+
+/** The display group of one row (Favoritas always wins over the date). */
+function grupoDa(conversa: Conversa, agora: number): Grupo {
+  if (conversa.favorita) return 'Favoritas';
+  const quando = new Date(conversa.atualizada_em).getTime();
+  if (Number.isNaN(quando)) return 'Anteriores';
+  const hoje = inicioDoDia(new Date(agora));
+  if (quando >= hoje) return 'Hoje';
+  if (quando >= hoje - DIA_MS) return 'Ontem';
+  if (quando >= hoje - 7 * DIA_MS) return 'Últimos 7 dias';
+  if (quando >= hoje - 30 * DIA_MS) return 'Últimos 30 dias';
+  return 'Anteriores';
+}
+
+/** One FlatList row: a group header or a conversation item. */
+type Linha =
+  | { tipo: 'grupo'; id: string; texto: Grupo }
+  | { tipo: 'item'; id: string; conversa: Conversa };
+
+/** Static skeleton rows (the loading state only). */
+const LINHAS: Linha[] = GRUPOS.flatMap((grupo, i) =>
   [0, 1].map((n) => ({
-    id: `${grupo}-${n}`,
-    grupo,
-    grupoAnterior: i === 0 ? undefined : GRUPOS[i - 1],
+    tipo: 'grupo' as const,
+    id: `grupo:${grupo}-${n}`,
+    texto: grupo,
   })),
 );
 
 export default function Historico() {
   const { colors, glass, radius, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
-  const [busca, setBusca] = useState('');
+  const router = useRouter();
 
-  const itens = useMemo(() => LINHAS, []);
+  const [busca, setBusca] = useState('');
+  /** null = still loading (the skeleton); [] = loaded and empty. */
+  const [conversas, setConversas] = useState<Conversa[] | null>(null);
+  /** True when the last load could not reach Supabase (cache only). */
+  const [doCache, setDoCache] = useState(false);
+  const [atualizando, setAtualizando] = useState(false);
+
+  /**
+   * The load (mount + pull-to-refresh): Supabase first; when it fails the
+   * cache fills the list and the honest pt-BR note shows ("mostrando o
+   * último cache"). A successful read is also proof of connectivity and
+   * keeps the cache fresh (write-through).
+   */
+  const carregar = useCallback(async () => {
+    setAtualizando(true);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const userId = data.session?.user?.id ?? '';
+      if (userId === '') return;
+
+      let servidor: Conversa[] = [];
+      let chegouDoServidor = false;
+      try {
+        servidor = await lerHistorico(userId);
+        chegouDoServidor = true;
+      } catch (err) {
+        console.warn('[history] lerHistorico falhou (offline?):', err);
+      }
+
+      let cache: Conversa[] = [];
+      try {
+        cache = await carregarHistoricoOffline(userId);
+      } catch {
+        cache = [];
+      }
+
+      if (chegouDoServidor) {
+        marcarSucessoRede();
+        try {
+          await salvarConversas(userId, servidor);
+        } catch (err) {
+          console.warn('[history] write-through no cache ignorado:', err);
+        }
+      } else {
+        marcarFalhaRede();
+      }
+
+      setConversas(fundirHistorico(servidor, cache));
+      setDoCache(!chegouDoServidor);
+    } finally {
+      setAtualizando(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void carregar();
+  }, [carregar]);
+
+  /** Search over the loaded window (local substring, case-insensitive). */
+  const filtradas = useMemo(() => {
+    if (conversas === null) return null;
+    const termo = busca.trim().toLowerCase();
+    if (termo === '') return conversas;
+    return conversas.filter(
+      (c) => c.pergunta.toLowerCase().includes(termo) || (c.resposta ?? '').toLowerCase().includes(termo),
+    );
+  }, [conversas, busca]);
+
+  const linhas = useMemo<Linha[]>(() => {
+    if (filtradas === null) return LINHAS;
+    const porGrupo = new Map<Grupo, Conversa[]>();
+    for (const g of GRUPOS) porGrupo.set(g, []);
+    const agora = Date.now();
+    for (const c of filtradas) porGrupo.get(grupoDa(c, agora))!.push(c);
+    const out: Linha[] = [];
+    for (const g of GRUPOS) {
+      const itens = porGrupo.get(g)!;
+      if (itens.length === 0) continue;
+      out.push({ tipo: 'grupo', id: `grupo:${g}`, texto: g });
+      for (const c of itens) out.push({ tipo: 'item', id: c.id, conversa: c });
+    }
+    return out;
+  }, [filtradas]);
+
+  const vazio = conversas !== null && conversas.length === 0;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
@@ -89,85 +203,126 @@ export default function Historico() {
             },
           ]}
         />
-        {/* Empty state: there is no cached data yet (P9 fills the groups). */}
-        <Text
-          style={{
-            color: colors.mutedForeground,
-            fontSize: typography.sm.fontSize,
-            textAlign: 'center',
-          }}
-        >
-          Suas conversas aparecem aqui
-        </Text>
+        {/* The honest offline note (pull-to-refresh became "reload from
+            cache"). */}
+        {doCache && conversas !== null && conversas.length > 0 ? (
+          <Text
+            style={{
+              color: colors.mutedForeground,
+              fontSize: typography.xs.fontSize,
+              textAlign: 'center',
+            }}
+          >
+            mostrando o último cache — sem conexão
+          </Text>
+        ) : null}
+        {vazio && filtradas !== null && filtradas.length === 0 ? (
+          <Text
+            style={{
+              color: colors.mutedForeground,
+              fontSize: typography.sm.fontSize,
+              textAlign: 'center',
+            }}
+          >
+            {busca.trim() === ''
+              ? 'Suas conversas aparecem aqui'
+              : 'Nenhuma conversa encontrada'}
+          </Text>
+        ) : null}
       </View>
 
       <FlatList
-        data={itens}
+        data={linhas}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{
           padding: spacing.lg,
+          paddingTop: spacing.sm,
           paddingBottom: insets.bottom + spacing.xl,
         }}
-        stickyHeaderIndices={[]}
-        // Pull-to-refresh: wired to the cache refresh in P9; no-op today.
+        // Pull-to-refresh: re-runs the load (Supabase first; when offline
+        // it is the reload-from-cache).
         refreshControl={
           <RefreshControl
-            refreshing={false}
+            refreshing={atualizando}
             tintColor={colors.brand}
-            onRefresh={() => undefined}
+            onRefresh={() => {
+              void carregar();
+            }}
           />
         }
-        renderItem={({ item }) => (
-          <View>
-            {item.grupoAnterior === undefined && (
+        renderItem={({ item }) => {
+          if (item.tipo === 'grupo') {
+            return (
               <View
                 style={{
                   marginBottom: spacing.sm,
-                  marginTop: item.grupo === 'Favoritas' ? 0 : spacing.lg,
+                  marginTop: item.id === 'grupo:Favoritas' ? 0 : spacing.lg,
                 }}
               >
-                <TextoGrupo
-                  texto={item.grupo}
-                  cor={colors.mutedForeground}
-                />
+                <Text
+                  style={{
+                    color: colors.mutedForeground,
+                    fontSize: typography.sm.fontSize,
+                    fontWeight: '700',
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.6,
+                  }}
+                >
+                  {item.texto}
+                </Text>
               </View>
-            )}
+            );
+          }
+          const c = item.conversa;
+          return (
             <Pressable
+              onPress={() => router.push(`/(main)/chat/${c.id}`)}
               onLongPress={() => {
-                // P9: long-press action (favorite/rename/delete with 6s undo).
-                console.log('[uspapo] Histórico — ação do item (long-press): placeholder (P9)');
+                // Out of the light-offline scope: favorite/rename/delete
+                // with 6s undo (kept as the placeholder it started as).
+                console.log('[uspapo] Histórico — ação do item (long-press): placeholder');
               }}
               style={[
                 glass.surface,
                 glass.hairline,
                 {
                   borderRadius: radius.md,
-                  height: 44,
                   marginBottom: spacing.xs,
-                  opacity: 0.75,
+                  minHeight: 56,
+                  paddingVertical: 12,
+                  paddingHorizontal: 14,
                 },
               ]}
-            />
-          </View>
-        )}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                <Text
+                  numberOfLines={2}
+                  style={{
+                    flex: 1,
+                    color: colors.foreground,
+                    fontSize: typography.sm.fontSize,
+                  }}
+                >
+                  {c.pergunta}
+                </Text>
+                {/* The P9 pending rule: resposta null = still pending. */}
+                {c.resposta === null ? (
+                  <Text
+                    style={{
+                      color: colors.danger,
+                      fontSize: typography.xs.fontSize,
+                      fontWeight: '600',
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    pendente
+                  </Text>
+                ) : null}
+              </View>
+            </Pressable>
+          );
+        }}
       />
     </View>
-  );
-}
-
-function TextoGrupo({ texto, cor }: { texto: string; cor: string }) {
-  const { typography } = useTheme();
-  return (
-    <Text
-      style={{
-        color: cor,
-        fontSize: typography.sm.fontSize,
-        fontWeight: '700',
-        textTransform: 'uppercase',
-        letterSpacing: 0.6,
-      }}
-    >
-      {texto}
-    </Text>
   );
 }

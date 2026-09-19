@@ -1,11 +1,15 @@
 /**
  * Home: logo + tagline, glass composer, 3 shuffled FAQ pills (6 seeds ported
  * from the old site's lib/perguntas.ts, QUANTAS_EXIBIR = 3, shuffle once per
- * launch) and the "Continuar de onde parou" placeholder section (P9).
+ * launch) and the "Continuar de onde parou" section (P9: the last 3 cached
+ * conversations from the offline store — tappable, renders offline).
  *
  * Send flow: haptics.send() → id (crypto.randomUUID on web, native fallback)
  * → store {id, question, enqueuedAt} in the module-level pendente Map AND
  * queue.enqueue via lib/net when offline → navigate to the chat route.
+ * The AUTHORITATIVE enqueue happens at the actual fetch failure in
+ * useChat (the queue de-duplicates by conversationId); the badge below the
+ * composer shows the pending count ("N perguntas aguardando a conexão").
  */
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -20,8 +24,12 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ultimasConversasOffline } from '../../lib/cache';
 import { haptics } from '../../lib/haptics';
 import * as net from '../../lib/net';
+import { quandoConectar } from '../../lib/offline';
+import { supabase } from '../../lib/supabase';
+import type { Conversa } from '../../lib/conversations';
 import { useTheme } from '../../theme';
 import { guardarPendente } from './pendente';
 
@@ -99,6 +107,10 @@ export default function Inicio() {
 
   const [pergunta, setPergunta] = useState('');
   const [perguntas, setPerguntas] = useState<PerguntaFrequente[]>([]);
+  /** The last 3 cached conversations ("Continuar de onde parou"). */
+  const [ultimas, setUltimas] = useState<Conversa[]>([]);
+  /** Pending questions in the offline queue (the composer badge). */
+  const [naFila, setNaFila] = useState(0);
   const { online } = net.useConnection();
 
   // Shuffle once per launch (module-level memo so a tab remount keeps the
@@ -108,6 +120,38 @@ export default function Inicio() {
       sorteadasNesteLancamento = sortearPerguntas();
     }
     setPerguntas(sorteadasNesteLancamento);
+  }, []);
+
+  // P9: the resume list comes from the OFFLINE CACHE (no network needed)
+  // and the queue badge refreshes on mount and on the connectivity return
+  // (quandoConectar — after the replay drains the queue).
+  useEffect(() => {
+    let ativo = true;
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const userId = data.session?.user?.id ?? '';
+        if (!userId) return;
+        const cache = await ultimasConversasOffline(userId, 3);
+        if (ativo) setUltimas(cache);
+      } catch {
+        if (ativo) setUltimas([]);
+      }
+    })();
+    const atualizarFila = (): void => {
+      net
+        .filaPendente()
+        .then((itens) => {
+          if (ativo) setNaFila(itens.length);
+        })
+        .catch(() => undefined);
+    };
+    atualizarFila();
+    const cancelar = quandoConectar(atualizarFila);
+    return () => {
+      ativo = false;
+      cancelar();
+    };
   }, []);
 
   function iniciarConversa(texto: string) {
@@ -129,7 +173,12 @@ export default function Inicio() {
           question: limpo,
           enqueuedAt: agora,
         })
-        .catch(() => undefined);
+        .catch(() => undefined)
+        .then(() => {
+          // The badge is honest immediately (the replay may drain it later;
+          // quandoConectar refreshes it then).
+          net.filaPendente().then((itens) => setNaFila(itens.length)).catch(() => undefined);
+        });
     }
 
     setPergunta('');
@@ -222,6 +271,35 @@ export default function Inicio() {
         </Pressable>
       </View>
 
+      {/* The offline queue badge (P9): honest about what is waiting. */}
+      {naFila > 0 ? (
+        <View
+          style={[
+            glass.surface,
+            glass.hairline,
+            {
+              borderRadius: radius.full,
+              marginTop: spacing.md,
+              paddingVertical: 8,
+              paddingHorizontal: 14,
+              alignSelf: 'flex-start',
+            },
+          ]}
+        >
+          <Text
+            style={{
+              color: colors.mutedForeground,
+              fontSize: typography.xs.fontSize,
+              fontWeight: '600',
+            }}
+          >
+            {naFila === 1
+              ? '1 pergunta aguardando a conexão'
+              : `${naFila} perguntas aguardando a conexão`}
+          </Text>
+        </View>
+      ) : null}
+
       {/* FAQ pills: 3 of 6, shuffled once per launch. */}
       <View style={{ marginTop: spacing['2xl'] }}>
         <Text
@@ -263,8 +341,9 @@ export default function Inicio() {
         </View>
       </View>
 
-      {/* "Continuar de onde parou" — placeholder section (P9 fills it with
-          the last conversations from the local cache). */}
+      {/* "Continuar de onde parou" — the last 3 cached conversations (P9:
+          from the offline store, so it renders with no network; pending
+          rows — resposta null — say so honestly). */}
       <View style={{ marginTop: spacing['3xl'] }}>
         <Text
           style={{
@@ -276,42 +355,88 @@ export default function Inicio() {
         >
           Continuar de onde parou
         </Text>
-        <View
-          style={[
-            glass.surface,
-            glass.hairline,
-            {
-              borderRadius: radius.lg,
-              gap: spacing.sm,
-              padding: spacing.lg,
-            },
-          ]}
-        >
+        {ultimas.length === 0 ? (
           <View
-            style={{
-              backgroundColor: colors.line,
-              borderRadius: radius.md,
-              height: 40,
-              opacity: 0.12,
-            }}
-          />
-          <View
-            style={{
-              backgroundColor: colors.line,
-              borderRadius: radius.md,
-              height: 40,
-              opacity: 0.08,
-            }}
-          />
-          <Text
-            style={{
-              color: colors.faintForeground,
-              fontSize: typography.xs.fontSize,
-            }}
+            style={[
+              glass.surface,
+              glass.hairline,
+              {
+                borderRadius: radius.lg,
+                gap: spacing.sm,
+                padding: spacing.lg,
+              },
+            ]}
           >
-            Suas últimas conversas aparecem aqui (P9).
-          </Text>
-        </View>
+            <View
+              style={{
+                backgroundColor: colors.line,
+                borderRadius: radius.md,
+                height: 40,
+                opacity: 0.12,
+              }}
+            />
+            <View
+              style={{
+                backgroundColor: colors.line,
+                borderRadius: radius.md,
+                height: 40,
+                opacity: 0.08,
+              }}
+            />
+            <Text
+              style={{
+                color: colors.faintForeground,
+                fontSize: typography.xs.fontSize,
+              }}
+            >
+              Suas últimas conversas aparecem aqui.
+            </Text>
+          </View>
+        ) : (
+          <View style={{ gap: spacing.sm }}>
+            {ultimas.map((c) => (
+              <Pressable
+                key={c.id}
+                onPress={() => router.push(`/(main)/chat/${c.id}`)}
+                style={({ pressed }) => [
+                  glass.surface,
+                  glass.hairline,
+                  {
+                    borderRadius: radius.md,
+                    opacity: pressed ? 0.8 : 1,
+                    paddingVertical: 12,
+                    paddingHorizontal: 14,
+                  },
+                ]}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      flex: 1,
+                      color: colors.foreground,
+                      fontSize: typography.sm.fontSize,
+                    }}
+                  >
+                    {c.pergunta}
+                  </Text>
+                  {c.resposta === null ? (
+                    <Text
+                      style={{
+                        color: colors.danger,
+                        fontSize: typography.xs.fontSize,
+                        fontWeight: '600',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      pendente
+                    </Text>
+                  ) : null}
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        )}
       </View>
     </ScrollView>
   );
