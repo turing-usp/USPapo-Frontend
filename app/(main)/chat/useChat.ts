@@ -47,8 +47,17 @@ import {
   type ChatEvent,
 } from '../../../lib/api';
 import { mapAuthError } from '../../../lib/auth';
+import { conversaPorIdOffline, salvarConversa, salvarConversas } from '../../../lib/cache';
 import { anexarTurno, lerHistorico, type Conversa } from '../../../lib/conversations';
 import { haptics } from '../../../lib/haptics';
+import { filaPendente, queue } from '../../../lib/net';
+import {
+  eFalhaDeRede,
+  marcarFalhaRede,
+  marcarSucessoRede,
+  registrarReprocessador,
+  usandoCache,
+} from '../../../lib/offline';
 import { supabase } from '../../../lib/supabase';
 import { lerPendente } from '../pendente';
 
@@ -339,7 +348,18 @@ export function traduzirFalha(erro: unknown, signal: AbortSignal): ErroChat {
 
 export type ResultadoResposta =
   | { ok: true; estado: EstadoChat; texto: string; fontes: string[] }
-  | { ok: false; estado: EstadoChat; erro: ErroChat; interrompido: boolean };
+  | {
+      ok: false;
+      estado: EstadoChat;
+      erro: ErroChat;
+      interrompido: boolean;
+      /**
+       * True when the failure was a NETWORK one (the server never answered
+       * — offline). The only failures the question may be queued for
+       * replay; 4xx/5xx (429/401) answered and are never queued.
+       */
+      falhaDeRede: boolean;
+    };
 
 export type OpcoesResposta = {
   userId: string;
@@ -399,23 +419,32 @@ export async function executarResposta(o: OpcoesResposta): Promise<ResultadoResp
       // Stop pressed: the caller owns the final state (the partial text +
       // the interruption note); the row stays pending (P9).
       o.aoEstado?.(estado);
-      return { ok: false, estado, erro: traduzido, interrompido: true };
+      return { ok: false, estado, erro: traduzido, interrompido: true, falhaDeRede: false };
     }
     estado = { ...estado, status: 'errou', erro: traduzido };
     o.aoEstado?.(estado);
     if (traduzido.tipo === 'sessao') o.aoSessaoExpirada?.();
-    return { ok: false, estado, erro: traduzido, interrompido: false };
+    return {
+      ok: false,
+      estado,
+      erro: traduzido,
+      interrompido: false,
+      // The offline queue gate: only a network failure (no response) counts.
+      falhaDeRede: eFalhaDeRede(err, o.signal),
+    };
   }
 
   o.aoEstado?.(estado);
 
   if (estado.erro) {
-    // The backend's failure invariant: `error` followed by `end`.
+    // The backend's failure invariant: `error` followed by `end`. The
+    // server ANSWERED — never a network failure, never queued.
     return {
       ok: false,
       estado: { ...estado, status: 'errou' },
       erro: estado.erro,
       interrompido: false,
+      falhaDeRede: false,
     };
   }
 
@@ -447,6 +476,45 @@ export function comNotaInterrompida(turnos: Turno[]): Turno[] {
 
 const NOTA_INTERROMPIDA = 'A resposta foi interrompida.';
 
+/** The honest offline state (pt-BR): the question was queued and will be
+ *  replayed in order when the connection returns. */
+const MENSAGEM_SEM_CONEXAO = 'Sem conexão — enviaremos quando a internet voltar.';
+
+/**
+ * The offline failure handler (the queue seam, kept OUTSIDE the React hook
+ * so the tests drive it): marks the last operation as a network failure,
+ * parks the question in the lib/net queue (persisted — survives a restart)
+ * and keeps the pending row in the offline cache (resposta null = pending)
+ * so the history screen renders it with no network.
+ */
+export async function tratarFalhaDeRede(
+  userId: string,
+  sessionId: string,
+  pergunta: string,
+): Promise<void> {
+  marcarFalhaRede();
+  await queue.enqueue({
+    id: sessionId,
+    conversationId: sessionId,
+    question: pergunta,
+    enqueuedAt: Date.now(),
+  });
+  try {
+    const agora = new Date().toISOString();
+    await salvarConversa({
+      id: sessionId,
+      user_id: userId,
+      pergunta,
+      resposta: null,
+      criada_em: agora,
+      atualizada_em: agora,
+      favorita: false,
+    });
+  } catch (err) {
+    console.warn('[useChat] cache offline do turno pendente ignorado:', err);
+  }
+}
+
 // ─────────────────────────────────────────────
 // The hook
 // ─────────────────────────────────────────────
@@ -469,6 +537,9 @@ export type UseChat = {
   favorita: boolean;
   /** The Supabase user id (for the favoritar calls). */
   userId: string | null;
+  /** True when the last network operation failed without a response
+   *  (offline — the honest "Sem conexão" state). */
+  semConexao: boolean;
   send: (pergunta: string) => void;
   stop: () => void;
 };
@@ -574,6 +645,23 @@ export function useChat(
       }
       setEstado(resultado.estado);
       if (resultado.ok) {
+        // A successful streamChat is proof of connectivity: clear the
+        // offline flag (and trigger the queue replay, if it is pending).
+        marcarSucessoRede();
+        // Cache the answered conversation (the history screen renders it
+        // offline): the server row was just written; the cache is the
+        // last-known-state mirror.
+        void salvarConversa({
+          id: id ?? '',
+          user_id: uid,
+          pergunta,
+          resposta: resultado.texto,
+          criada_em: linhaRef.current?.criada_em ?? new Date().toISOString(),
+          atualizada_em: new Date().toISOString(),
+          favorita: linhaRef.current?.favorita ?? false,
+        }).catch((err) => {
+          console.warn('[useChat] cache offline da resposta ignorado:', err);
+        });
         // Finished while the user scrolled AWAY → the notification haptic.
         const perto = optsRef.current?.pertoDoFim?.() ?? true;
         if (resultado.estado.concluido && !perto) {
@@ -582,6 +670,30 @@ export function useChat(
       } else if (!resultado.interrompido) {
         if (resultado.erro.tipo === 'sessao') {
           // The fast-fail seam already fired; nothing to show locally.
+          return;
+        }
+        if (resultado.falhaDeRede) {
+          // Offline (the server never answered): park the question in the
+          // queue (persisted) and show the HONEST state instead of the
+          // generic retry wording — it is replayed in order on
+          // connectivity. 4xx/5xx (429/401) never reach here: they
+          // answered, so they are not queued.
+          void haptics.error();
+          await tratarFalhaDeRede(uid, id ?? '', pergunta);
+          setEstado((atual) => ({
+            ...atual,
+            status: 'errou',
+            erro: { tipo: 'outro', mensagem: MENSAGEM_SEM_CONEXAO },
+            turnos: [
+              ...atual.turnos,
+              {
+                id: `erro:offline:${atual.turnos.length}`,
+                autor: 'erro',
+                mensagem: MENSAGEM_SEM_CONEXAO,
+                tipo: 'outro',
+              },
+            ],
+          }));
           return;
         }
         void haptics.error();
@@ -611,6 +723,11 @@ export function useChat(
         const historico = await lerHistorico(uid);
         if (!ativo) return;
         setCarregou(true);
+        // P9 write-through: keep the offline cache fresh so the history
+        // screen and "Continuar de onde parou" render without network.
+        void salvarConversas(uid, historico).catch((err) => {
+          console.warn('[useChat] cache offline do histórico ignorado:', err);
+        });
         linha = historico.find((c) => c.id === id) ?? null;
         // Context pairs: the completed turns only (the pending rows with
         // resposta null are skipped — the backend would drop them anyway),
@@ -657,6 +774,26 @@ export function useChat(
       }
 
       const pendente = lerPendente(id);
+      // P9: the question is already parked in the offline queue (the home
+      // screen sent it while offline): the queue REPLAY owns this
+      // conversation — do not start a second stream for the same id.
+      try {
+        const fila = await filaPendente();
+        if (fila.some((i) => i.conversationId === id)) {
+          if (!ativo) return;
+          setEstado((atual) => ({
+            ...atual,
+            turnos: [
+              ...atual.turnos,
+              { id: 'nota:fila', autor: 'nota', texto: MENSAGEM_SEM_CONEXAO },
+            ],
+          }));
+          return;
+        }
+      } catch {
+        // Queue read failed: fall through and start normally (the queue's
+        // conversationId de-dup keeps a double-send from piling up).
+      }
       const pergunta =
         linha && linha.resposta === null
           ? linha.pergunta // the stream died mid-way last time: re-send it
@@ -754,7 +891,127 @@ export function useChat(
     carregou,
     favorita,
     userId,
+    semConexao: usandoCache(),
     send,
     stop,
   };
 }
+
+// ─────────────────────────────────────────────
+// The queue replay coordinator (P9)
+// ─────────────────────────────────────────────
+
+/** Re-entrancy guard: one replay at a time. */
+let reprocessandoFila = false;
+
+/** The context pairs for the wire (oldest first, last PAIRES_CONTEXTO). */
+async function paresDeContexto(
+  userId: string,
+): Promise<{ pergunta: string; resposta: string }[]> {
+  try {
+    const historico = await lerHistorico(userId);
+    return historico
+      .filter((c) => c.resposta !== null)
+      .reverse()
+      .slice(-PAIRES_CONTEXTO)
+      .map((c) => ({ pergunta: c.pergunta, resposta: c.resposta as string }));
+  } catch {
+    return []; // offline / unreadable: send without context
+  }
+}
+
+/**
+ * True when the conversation already has a saved resposta (the server row
+ * or, if the server is unreachable, the offline cache) — replay skips it.
+ */
+async function jaFoiRespondida(userId: string, id: string): Promise<boolean> {
+  try {
+    const historico = await lerHistorico(userId);
+    const linha = historico.find((c) => c.id === id);
+    if (linha !== undefined) return linha.resposta !== null;
+  } catch {
+    // The radio said "online" but the backend is not: trust the cache.
+  }
+  try {
+    const emCache = await conversaPorIdOffline(userId, id);
+    return emCache !== null && emCache.resposta !== null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Drains the offline queue IN ORDER through the same send path a
+ * hand-typed question uses (executarResposta): each item is re-sent, its
+ * answer persisted (the P9 completion) and cached. The FIRST unanswered
+ * item (still offline / 429 / 401 / session loss) goes back to the FRONT
+ * of the queue and the replay stops — the next connectivity trigger (an
+ * expo-network event or a successful operation) retries from the same
+ * point. The UI is out of this path on purpose.
+ */
+export async function reprocessarFila(): Promise<void> {
+  if (reprocessandoFila) return;
+  reprocessandoFila = true;
+  try {
+    for (;;) {
+      const item = await queue.dequeue();
+      if (!item) break;
+
+      const { userId, token } = await sessaoAtual();
+      if (!userId || token === '') {
+        // No session (fresh install / expired): nothing can be sent —
+        // the item waits at the front, the rest of the queue is untouched.
+        await queue.enqueue(item, true);
+        break;
+      }
+
+      if (await jaFoiRespondida(userId, item.conversationId)) continue;
+
+      const resultado = await executarResposta({
+        userId,
+        pergunta: item.question,
+        historico: await paresDeContexto(userId),
+        sessionId: item.conversationId,
+        token,
+        signal: new AbortController().signal,
+        aoEstado: () => undefined,
+        // The replay does not redirect to login (no screen is watching).
+        aoSessaoExpirada: () => undefined,
+      });
+
+      if (resultado.ok) {
+        // This success is also the next item's connectivity trigger.
+        marcarSucessoRede();
+        try {
+          const agora = new Date().toISOString();
+          await salvarConversa({
+            id: item.conversationId,
+            user_id: userId,
+            pergunta: item.question,
+            resposta: resultado.texto,
+            criada_em: agora,
+            atualizada_em: agora,
+            favorita: false,
+          });
+        } catch (err) {
+          console.warn('[useChat] cache offline da resposta reprocessada ignorado:', err);
+        }
+        continue;
+      }
+
+      // Unanswered: back to the FRONT (the order is preserved) and the
+      // replay stops here. A network failure re-arms the offline flag so
+      // the next successful operation retries the queue.
+      if (resultado.falhaDeRede) marcarFalhaRede();
+      await queue.enqueue(item, true);
+      break;
+    }
+  } finally {
+    reprocessandoFila = false;
+  }
+}
+
+// The connectivity seam (lib/offline) drives the replay: an expo-network
+// offline→online event, or the next successful network operation, calls
+// this. The registration is module-level (no UI involved).
+registrarReprocessador(() => reprocessarFila());
