@@ -1,0 +1,128 @@
+/**
+ * app/(admin)/feedback.tsx screen tests: the documented empty state
+ * ("As respostas de feedback chegam pelo serviço (P11)") and the row
+ * layout ready to wire ({data, nota, motivo?}).
+ *
+ * The seam carregarFeedback (./feedbackApi.ts) has no backend endpoint to
+ * call yet (main.py exposes only /api/analytics/resumo; the table is
+ * owner-only RLS), so the screen must not hit the network at all — the
+ * test asserts fetch is never called.
+ */
+import React from 'react';
+import { render } from '@testing-library/react-native';
+
+import PainelFeedback, { LinhaFeedback } from '../../app/(admin)/feedback';
+import { formataDataFeedback, rotuloNota } from '../../app/(admin)/feedbackApi';
+
+const mockTEMA = {
+  scheme: 'light',
+  colors: {
+    brand: '#f1863d',
+    brandStrong: '#e07125',
+    brandForeground: '#ffffff',
+    canvas: '#dde4f6',
+    surface: '#ccd6ef',
+    surfaceRaised: '#ffffff',
+    foreground: '#0b1030',
+    mutedForeground: '#55618a',
+    faintForeground: '#8790ad',
+    line: '#0b1030',
+    tint: '#0b1030',
+    scrim: '#0b1030',
+    danger: '#c53434',
+    chart: ['#eb6834', '#2a78d6', '#1baf7a', '#4a3aa7', '#eda100', '#e87ba4'],
+  },
+  spacing: { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, '2xl': 24, '3xl': 32 },
+  radius: { sm: 8, md: 12, lg: 16, xl: 24, full: 9999 },
+  typography: {
+    xs: { fontSize: 11, lineHeight: 15 },
+    sm: { fontSize: 14, lineHeight: 20 },
+    base: { fontSize: 16, lineHeight: 24 },
+    lg: { fontSize: 18, lineHeight: 26 },
+    xl: { fontSize: 20, lineHeight: 28 },
+    '2xl': { fontSize: 24, lineHeight: 32 },
+    '3xl': { fontSize: 30, lineHeight: 38 },
+  },
+  glass: {
+    surface: { backgroundColor: 'rgba(255,255,255,0.55)' },
+    raised: { backgroundColor: 'rgba(255,255,255,0.72)' },
+    brand: { backgroundColor: 'rgba(255,255,255,0.40)' },
+    hairline: { borderColor: 'rgba(255,255,255,0.65)', borderWidth: 1 },
+    shadow: { shadowColor: 'rgb(11,16,48)' },
+  },
+};
+
+jest.mock('../../theme/index', () => ({
+  useTheme: () => mockTEMA,
+}));
+
+// ─────────────────────────────────────────────
+// The screen
+// ─────────────────────────────────────────────
+
+describe('PainelFeedback', () => {
+  it('renders the documented empty state without touching the network (P11 gap)', async () => {
+    const fetchMock = jest.fn<Promise<Response>, [string, RequestInit?]>();
+    (globalThis as unknown as { fetch: typeof fetch }).fetch =
+      fetchMock as unknown as typeof fetch;
+
+    const r = await render(React.createElement(PainelFeedback));
+
+    // The seam resolves to an empty list → the documented empty state.
+    await r.findByText('As respostas de feedback chegam pelo serviço (P11)');
+    expect(r.queryAllByTestId('linha-feedback')).toHaveLength(0);
+    // The web cannot read the table directly (owner-only RLS) and the
+    // endpoint does not exist yet: no network call at all.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────
+// The row layout (ready to wire once carregarFeedback returns rows)
+// ─────────────────────────────────────────────
+
+describe('LinhaFeedback', () => {
+  it('renders a dislike row: the pill, the pt-BR date and the motivo', async () => {
+    const r = await render(
+      React.createElement(LinhaFeedback, {
+        item: { data: '2026-09-15T09:15:00.000Z', nota: 'dislike', motivo: 'Resposta longa' },
+      }),
+    );
+    r.getByTestId('nota-dislike');
+    r.getByText('Não gostei');
+    r.getByText('15/09/2026 09:15');
+    r.getByText('Resposta longa');
+  });
+
+  it('renders a like row without motivo (the pill says "Gostei")', async () => {
+    const r = await render(
+      React.createElement(LinhaFeedback, {
+        item: { data: '2026-09-18T14:32:00.000Z', nota: 'like' },
+      }),
+    );
+    r.getByTestId('nota-like');
+    r.getByText('Gostei');
+    r.getByText('18/09/2026 14:32');
+    expect(r.queryByText('Não gostei')).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────
+// The seam helpers
+// ─────────────────────────────────────────────
+
+describe('seam helpers', () => {
+  it('rotuloNota maps the backend tipo to the pt-BR label', () => {
+    expect(rotuloNota('like')).toBe('Gostei');
+    expect(rotuloNota('dislike')).toBe('Não gostei');
+  });
+
+  it('formataDataFeedback: ISO → dd/mm/aaaa hh:mm (string math)', () => {
+    expect(formataDataFeedback('2026-09-19T14:32:00Z')).toBe('19/09/2026 14:32');
+    expect(formataDataFeedback('2026-09-19T14:32:00.000Z')).toBe('19/09/2026 14:32');
+    // No time part → date only.
+    expect(formataDataFeedback('2026-09-19')).toBe('19/09/2026');
+    // Unparseable input passes through untouched.
+    expect(formataDataFeedback('hoje')).toBe('hoje');
+  });
+});
