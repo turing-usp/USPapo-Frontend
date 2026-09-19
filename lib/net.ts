@@ -4,16 +4,20 @@
  * - useConnection(): { online: boolean } — module-level state defaults to
  *   online until the first network event arrives, then follows the device.
  * - queue: offline queue for questions asked while the network is down
- *   (persisted as JSON under the AsyncStorage key 'queue:pending', FIFO).
- *   The composer shows the badge; on reconnect the screen fires the items
- *   back through lib/api with retry.
+ *   (FIFO). P9: the queue is persisted on the SAME backend as the offline
+ *   conversation cache (lib/cache, the 'uspapo' SQLite database — the
+ *   `fila_offline` table), so it survives an app restart. The composer
+ *   shows the badge; on reconnect lib/offline's trigger calls the
+ *   `reprocessarFila` coordinator (app/(main)/chat/useChat), which
+ *   re-sends the items in order through the normal streamChat path.
+ * - filaPendente(): the UI-facing read (the badge / the replay surface).
  *
  * NOTE: built on `expo-network` (already a project dependency) instead of
  * `react-native-netinfo`: the current react-native-netinfo release was not
  * available in this environment's package registry (only the deprecated
  * 1.x stub was), and expo-network is the Expo-native connectivity API.
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { filaOffline } from './cache';
 import { addNetworkStateListener, type NetworkStateEvent } from 'expo-network';
 import { useEffect, useState } from 'react';
 
@@ -28,8 +32,6 @@ export type QueueItem = {
   /** Enqueue timestamp (ms since epoch). */
   enqueuedAt: number;
 };
-
-const QUEUE_KEY = 'queue:pending';
 
 // Module-level state: latest known connectivity, shared by every hook
 // instance. Default: online until the first event says otherwise.
@@ -60,44 +62,53 @@ export function useConnection(): { online: boolean } {
   return { online };
 }
 
-function parseItems(raw: string | null): QueueItem[] {
-  if (!raw) return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as QueueItem[]) : [];
-  } catch {
-    // Corrupt queue (partial write): treat as empty rather than crash the
-    // composer badge.
-    return [];
-  }
-}
-
-/** Offline queue, FIFO, persisted under the AsyncStorage key 'queue:pending'. */
+/**
+ * Offline queue, FIFO. Persistence: the shared offline backend (lib/cache,
+ * the same SQLite database as the conversation cache — P9: "the queue is
+ * persisted on the same backend as the cache").
+ *
+ * `enqueue` de-duplicates by conversationId: one conversation is queued at
+ * most once (the home screen parks a question on `!online`, and the chat
+ * send path parks it again on the actual fetch failure — the second call
+ * refreshes the question text and keeps the queue position instead of
+ * piling up a duplicate).
+ */
 export const queue = {
-  /** Appends an item to the tail of the queue. */
-  async enqueue(item: QueueItem): Promise<void> {
-    const items = await queue.pending();
-    items.push(item);
-    await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(items));
+  /**
+   * Appends an item to the tail of the queue (or `naFrente`: to the FRONT,
+   * used when the replay gives an unanswered item back without losing its
+   * place in the order).
+   */
+  async enqueue(item: QueueItem, naFrente = false): Promise<void> {
+    const atuais = await filaOffline.listar();
+    const existente = atuais.find((i) => i.conversationId === item.conversationId);
+    if (existente) await filaOffline.remover(existente.id);
+    await filaOffline.inserir(item, naFrente);
   },
 
   /** Removes and returns the oldest item (or null when the queue is empty). */
   async dequeue(): Promise<QueueItem | null> {
-    const items = await queue.pending();
-    if (items.length === 0) return null;
-    const [next, ...rest] = items;
-    await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(rest));
-    return next;
+    const [maisAntigo] = await filaOffline.listar();
+    if (!maisAntigo) return null;
+    await filaOffline.remover(maisAntigo.id);
+    return maisAntigo;
   },
 
   /** All queued items, oldest first. */
   async pending(): Promise<QueueItem[]> {
-    const raw = await AsyncStorage.getItem(QUEUE_KEY);
-    return parseItems(raw);
+    return filaOffline.listar();
   },
 
   /** Drops the whole queue. */
   async clear(): Promise<void> {
-    await AsyncStorage.removeItem(QUEUE_KEY);
+    await filaOffline.limpar();
   },
 };
+
+/**
+ * All queued items, oldest first — the UI surface (the composer badge)
+ * and the replay coordinator's read.
+ */
+export function filaPendente(): Promise<QueueItem[]> {
+  return queue.pending();
+}
