@@ -9,12 +9,9 @@ import * as Haptics from 'expo-haptics';
 import { Platform } from 'react-native';
 
 function available(): boolean {
-  if (Platform.OS === 'web') return false;
-  try {
-    return Haptics.isAvailable();
-  } catch {
-    return false;
-  }
+  // expo-haptics v57 exposes no availability probe; on web the module is a
+  // no-op anyway, and every call below is try/catch-guarded.
+  return Platform.OS !== 'web';
 }
 
 async function impact(style: Haptics.ImpactFeedbackStyle): Promise<void> {
