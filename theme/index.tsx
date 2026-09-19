@@ -20,7 +20,7 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
-import { Appearance, type ViewStyle } from 'react-native';
+import { Appearance } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type Scheme = 'light' | 'dark';
@@ -140,8 +140,8 @@ export const typography = {
 
 /**
  * The glass "blade" as plain React Native style objects (viewBox-safe: only
- * properties that React Native — and victory-native chart views — understand;
- * no backdrop-filter, no CSS-only keywords).
+ * string/number properties that React Native — and victory-native chart
+ * views — understand; no backdrop-filter, no CSS-only keywords).
  *
  * - surface: the main translucent panel (chat bubbles, cards)
  * - raised:  a more opaque glass for floating menus / toasts
@@ -149,12 +149,23 @@ export const typography = {
  * - hairline: the 1px edge filament
  * - shadow:  the short, diffuse lift (spread the object last)
  */
+export type GlassSlot = {
+  backgroundColor?: string;
+  borderColor?: string;
+  borderWidth?: number;
+  shadowColor?: string;
+  shadowOffset?: { width: number; height: number };
+  shadowOpacity?: number;
+  shadowRadius?: number;
+  elevation?: number;
+};
+
 export type GlassStyles = {
-  surface: ViewStyle;
-  raised: ViewStyle;
-  brand: ViewStyle;
-  hairline: ViewStyle;
-  shadow: ViewStyle;
+  surface: GlassSlot;
+  raised: GlassSlot;
+  brand: GlassSlot;
+  hairline: GlassSlot;
+  shadow: GlassSlot;
 };
 
 export const glass: Record<Scheme, GlassStyles> = {
