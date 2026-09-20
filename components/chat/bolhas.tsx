@@ -172,14 +172,16 @@ export function LinhaErro({
 }) {
   const { colors, radius, spacing, typography } = useTheme();
   return (
-    <View
+    // Glass, like every other surface: this used to be a flat `colors.scrim`
+    // fill, which in dark mode is #000000 — a solid black slab in the middle
+    // of a translucent app. The danger colour stays, as the left edge over
+    // the hairline, so the line still reads as an error at a glance.
+    <Glass
+      radius={radius.lg}
+      borda={{ borderLeftColor: colors.danger, borderLeftWidth: 3 }}
       style={{
         alignSelf: 'flex-start',
         maxWidth: '92%',
-        borderRadius: radius.lg,
-        borderLeftColor: colors.danger,
-        borderLeftWidth: 3,
-        backgroundColor: colors.scrim,
         padding: spacing.md,
         gap: spacing.sm,
       }}
@@ -219,7 +221,7 @@ export function LinhaErro({
           </Text>
         </Pressable>
       ) : null}
-    </View>
+    </Glass>
   );
 }
 

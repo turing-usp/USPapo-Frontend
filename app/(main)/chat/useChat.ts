@@ -452,7 +452,7 @@ export async function executarResposta(o: OpcoesResposta): Promise<ResultadoResp
   if (textoFinal !== '') {
     // P9 completion: sets resposta only on the still-pending row; a saved
     // resposta is never overwritten (the store filters on resposta IS NULL).
-    await anexarTurno(o.userId, o.sessionId, o.pergunta, textoFinal);
+    await anexarTurno(o.userId, o.sessionId, o.pergunta, textoFinal, fontes);
   }
   return { ok: true, estado, texto: textoFinal, fontes };
 }
@@ -504,6 +504,8 @@ export async function tratarFalhaDeRede(
     await salvarConversa({
       id: sessionId,
       user_id: userId,
+      titulo: pergunta,
+      fontes: [],
       pergunta,
       resposta: null,
       criada_em: agora,
@@ -654,6 +656,8 @@ export function useChat(
         void salvarConversa({
           id: id ?? '',
           user_id: uid,
+          titulo: linhaRef.current?.titulo || pergunta,
+          fontes: resultado.fontes,
           pergunta,
           resposta: resultado.texto,
           criada_em: linhaRef.current?.criada_em ?? new Date().toISOString(),
@@ -696,7 +700,28 @@ export function useChat(
           }));
           return;
         }
+        // Everything the server ANSWERED with — 403 closed beta, 429 rate
+        // limit, 500, 503 — lands here. It used to stop at the haptic, so
+        // the backend's own wording never reached the student: the screen
+        // only showed the terse hint under the composer and the answer area
+        // stayed blank. It becomes an error turn, so components/chat/bolhas
+        // renders it in the same dialog as the offline and session cases,
+        // with "Tentar de novo" for the types that can be retried.
         void haptics.error();
+        setEstado((atual) => ({
+          ...atual,
+          status: 'errou',
+          erro: resultado.erro,
+          turnos: [
+            ...atual.turnos,
+            {
+              id: `erro:${resultado.erro.tipo}:${atual.turnos.length}`,
+              autor: 'erro',
+              mensagem: resultado.erro.mensagem,
+              tipo: resultado.erro.tipo,
+            },
+          ],
+        }));
       }
     },
     [id],
@@ -763,7 +788,10 @@ export function useChat(
               id: 'assistant:1',
               autor: 'assistant',
               texto: linha.resposta,
-              fontes: [],
+              // The sources were saved with the answer (mensagens.fontes);
+              // this used to hardcode [], so "Fontes consultadas" vanished
+              // the moment a conversation was reopened.
+              fontes: linha.fontes,
               completo: true,
             },
           ],
@@ -815,6 +843,8 @@ export function useChat(
         }
         linhaRef.current = {
           id,
+          titulo: pergunta,
+          fontes: [],
           pergunta,
           resposta: null,
           criada_em: new Date().toISOString(),
@@ -863,6 +893,8 @@ export function useChat(
           }
           linhaRef.current = {
             id,
+            titulo: limpo,
+            fontes: [],
             pergunta: limpo,
             resposta: null,
             criada_em: new Date().toISOString(),
@@ -987,6 +1019,8 @@ export async function reprocessarFila(): Promise<void> {
           await salvarConversa({
             id: item.conversationId,
             user_id: userId,
+            titulo: item.question,
+            fontes: resultado.fontes,
             pergunta: item.question,
             resposta: resultado.texto,
             criada_em: agora,

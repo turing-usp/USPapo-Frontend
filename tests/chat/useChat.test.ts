@@ -86,7 +86,9 @@ const anexarFake = anexarTurno as unknown as jest.Mock<void, unknown[]>;
 
 /** The completion calls (the 4-arg form; the pending insert has 3). */
 function chamadasDeConclusao(): unknown[][] {
-  return anexarFake.mock.calls.filter((c) => c.length === 4);
+  // (userId, id, pergunta, resposta, fontes) — the completion call; the
+  // pending insert is the 3-argument one.
+  return anexarFake.mock.calls.filter((c) => c.length >= 4);
 }
 
 beforeEach(() => {
@@ -216,7 +218,13 @@ describe('executarResposta — full sequence', () => {
 
     const conclusao = chamadasDeConclusao();
     expect(conclusao.length).toBe(1);
-    expect(conclusao[0]).toEqual(['u-1', 'c-1', PERGUNTA, TEXTO_COMPLETO]);
+    expect(conclusao[0]).toEqual([
+      'u-1',
+      'c-1',
+      PERGUNTA,
+      TEXTO_COMPLETO,
+      ['https://www.usp.br/a', 'https://www.usp.br/b'],
+    ]);
   });
 });
 

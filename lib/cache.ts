@@ -177,6 +177,8 @@ const SCRIPT_ESQUEMA = `
 CREATE TABLE IF NOT EXISTS conversas_cache (
   user_id TEXT NOT NULL,
   id TEXT NOT NULL,
+  titulo TEXT NOT NULL DEFAULT '',
+  fontes TEXT NOT NULL DEFAULT '[]',
   pergunta TEXT NOT NULL,
   resposta TEXT,
   criada_em TEXT NOT NULL,
@@ -196,16 +198,36 @@ CREATE TABLE IF NOT EXISTS fila_offline (
 let conexao: SQLiteDatabase | null = null;
 
 /** Lazy open (idempotent schema): the first real call pays the cost. */
+/**
+ * Columns added after the table already shipped. `CREATE TABLE IF NOT EXISTS`
+ * is a no-op on an existing install, so a plain schema bump would never reach
+ * a phone that had already opened the app — these two are added separately
+ * and the "duplicate column" error is the success case on later launches.
+ */
+const COLUNAS_NOVAS = [
+  "ALTER TABLE conversas_cache ADD COLUMN titulo TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE conversas_cache ADD COLUMN fontes TEXT NOT NULL DEFAULT '[]'",
+];
+
 function sqlite(): SQLiteDatabase {
   if (conexao) return conexao;
   const db = openDatabaseSync(NOME_BANCO);
   db.execSync(SCRIPT_ESQUEMA);
+  for (const migracao of COLUNAS_NOVAS) {
+    try {
+      db.execSync(migracao);
+    } catch {
+      // The column is already there: this is the steady state.
+    }
+  }
   conexao = db;
   return db;
 }
 
 type LinhaCache = {
   id: string;
+  titulo: string;
+  fontes: string;
   pergunta: string;
   resposta: string | null;
   criada_em: string;
@@ -213,9 +235,22 @@ type LinhaCache = {
   favorita: number;
 };
 
+/** `fontes` is stored as a JSON string; a corrupt value degrades to none. */
+function lerFontes(bruto: string | null | undefined): string[] {
+  if (!bruto) return [];
+  try {
+    const v = JSON.parse(bruto);
+    return Array.isArray(v) ? v.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
 function linhaParaConversa(l: LinhaCache): Conversa {
   return {
     id: l.id,
+    titulo: l.titulo ?? '',
+    fontes: lerFontes(l.fontes),
     pergunta: l.pergunta,
     resposta: l.resposta === null ? null : l.resposta,
     criada_em: l.criada_em,
@@ -225,21 +260,33 @@ function linhaParaConversa(l: LinhaCache): Conversa {
 }
 
 const SELECT_CACHE =
-  'SELECT id, pergunta, resposta, criada_em, atualizada_em, favorita FROM conversas_cache';
+  'SELECT id, titulo, fontes, pergunta, resposta, criada_em, atualizada_em, favorita FROM conversas_cache';
 
 const bancoSqlite: BancoOffline = {
   async salvarConversa(c) {
     sqlite().runSync(
       `INSERT INTO conversas_cache
-         (user_id, id, pergunta, resposta, criada_em, atualizada_em, favorita)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+         (user_id, id, titulo, fontes, pergunta, resposta, criada_em, atualizada_em, favorita)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (user_id, id) DO UPDATE SET
+         titulo = excluded.titulo,
+         fontes = excluded.fontes,
          pergunta = excluded.pergunta,
          resposta = excluded.resposta,
          criada_em = excluded.criada_em,
          atualizada_em = excluded.atualizada_em,
          favorita = excluded.favorita`,
-      [c.user_id, c.id, c.pergunta, c.resposta, c.criada_em, c.atualizada_em, c.favorita ? 1 : 0],
+      [
+        c.user_id,
+        c.id,
+        c.titulo ?? '',
+        JSON.stringify(c.fontes ?? []),
+        c.pergunta,
+        c.resposta,
+        c.criada_em,
+        c.atualizada_em,
+        c.favorita ? 1 : 0,
+      ],
     );
   },
 

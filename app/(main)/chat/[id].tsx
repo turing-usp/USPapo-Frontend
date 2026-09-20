@@ -35,15 +35,26 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ALTURA_CHROME } from '../../../components/Chrome';
+import { BackdropDesvanecido } from '../../../components/Backdrop';
 import Composer from '../../../components/Composer';
 import Glass from '../../../components/Glass';
 import Container from '../../../components/Container';
 import { BolhaAssistente, BolhaUsuario, LinhaErro, LinhaFerramenta, LinhaNota } from '../../../components/chat/bolhas';
 import { FeedbackResposta } from '../../../components/chat/feedback';
+import { lerFeedback, type Feedback } from '../../../lib/feedback';
 import { haptics } from '../../../lib/haptics';
 import { fonts, useTheme } from '../../../theme';
 import { guardarPendente } from '../pendente';
 import { useChat } from './useChat';
+
+/**
+ * The AI disclaimer under the composer (the old site prints the same line
+ * under its PromptInput). It is the RESTING state of the status slot: the
+ * transient "Aguardando a resposta…" and the error hint take the line while
+ * they apply, and it comes back when neither does.
+ */
+const AVISO_IA =
+  'O USPapo é uma IA e pode cometer erros. Sempre verifique as respostas.';
 
 /** Once per screen; the home screen has the same generator (the module
  *  scope there is not importable without coupling the routes). */
@@ -72,7 +83,7 @@ export default function Chat() {
   /** Near the bottom? (drives the auto-scroll and the finished haptic). */
   const pertoDoFimRef = useRef(true);
 
-  const { turns, status, pergunta, erro, concluido, carregou, favorita, userId, send, stop } =
+  const { turns, status, pergunta, erro, concluido, carregou, userId, send, stop } =
     useChat(id, {
       enabled: Boolean(id),
       // The 401 / no-token fast-fail: straight to login.
@@ -81,6 +92,21 @@ export default function Chat() {
     });
 
   const [texto, setTexto] = useState('');
+  /** The rating already stored for this answer (null = none yet). */
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  /** Composer height, so the bottom dissolve starts right above it. */
+  const [alturaComposer, setAlturaComposer] = useState(0);
+
+  useEffect(() => {
+    if (!userId || !id) return;
+    let ativo = true;
+    void lerFeedback({ userId, conversaId: id }).then((f) => {
+      if (ativo) setFeedback(f);
+    });
+    return () => {
+      ativo = false;
+    };
+  }, [userId, id]);
 
   const pulso = useRef(new Animated.Value(0.3)).current;
   useEffect(() => {
@@ -207,7 +233,7 @@ export default function Chat() {
                         <FeedbackResposta
                           userId={userId}
                           conversaId={id}
-                          inicial={favorita}
+                          inicial={feedback}
                         />
                       ) : null}
                     </BolhaAssistente>
@@ -261,13 +287,24 @@ export default function Chat() {
             }
           />
 
+          {/* The edge dissolve (old `page-fade-b` / `page-fade-t`): the scene
+              repainted over the list, solid under the chrome and behind the
+              composer, fading out into the message area. */}
+          <BackdropDesvanecido lado="topo" solido={insets.top + ALTURA_CHROME} />
+          <BackdropDesvanecido lado="base" solido={alturaComposer} />
+
           {/* Composer — the shared one, in its Stop state while streaming
               (aborting keeps the pending row pending — P9). */}
           <View
+            onLayout={(e) => setAlturaComposer(e.nativeEvent.layout.height)}
             style={{
               paddingBottom: Math.max(insets.bottom, spacing.md),
               paddingTop: spacing.md,
               gap: spacing.sm,
+              // Above the dissolve overlays: they are absolutely positioned,
+              // and on web a positioned box paints over a static sibling
+              // whatever the order, which would veil the composer itself.
+              zIndex: 1,
             }}
           >
             <Container chat>
@@ -304,7 +341,18 @@ export default function Chat() {
                   ? 'Sua sessão expirou'
                   : 'Tente de novo, ou faça outra pergunta acima.'}
               </Text>
-            ) : null}
+            ) : (
+              <Text
+                style={{
+                  color: colors.faintForeground,
+                  fontFamily: fonts.body,
+                  fontSize: typography.xs.fontSize,
+                  textAlign: 'center',
+                }}
+              >
+                {AVISO_IA}
+              </Text>
+            )}
           </View>
         </>
       )}

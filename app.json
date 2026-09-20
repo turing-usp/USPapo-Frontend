@@ -39,7 +39,17 @@
       ],
       "expo-sqlite",
       "expo-secure-store",
-      "expo-updates"
+      "expo-updates",
+      "expo-build-properties",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
@@ -48,10 +58,18 @@
     "updates": {
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
-      "fallbackToCacheTimeout": 5000
+      "fallbackToCacheTimeout": 5000,
+      "url": "https://u.expo.dev/83b28280-7fd5-4b42-92a5-0d19efeb8388"
     },
     "runtimeVersion": {
       "policy": "fingerprint"
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "83b28280-7fd5-4b42-92a5-0d19efeb8388"
+      }
+    },
+    "owner": "uspapo"
   }
 }

@@ -16,24 +16,31 @@ function mockFakeSupabase() {
   type Linha = Record<string, unknown>;
   type FakeError = { message: string; code?: string };
   type Result = { data: Linha[] | null; error: FakeError | null };
+  type Filtro = { col: string; valor: unknown; modo: 'eq' | 'is' | 'in' };
 
-  const porUsuario = new Map<string, Map<string, Linha>>();
+  // Two real tables, as the database actually has them:
+  //   conversas  id, user_id, titulo, criada_em, atualizada_em, favorita
+  //   mensagens  id, conversa_id, pergunta, resposta, ordem, criada_em
+  const tabelas = new Map<string, Linha[]>([
+    ['conversas', []],
+    ['mensagens', []],
+  ]);
   const chamadas: Array<Record<string, unknown>> = [];
   const falhas = new Map<string, string>(); // `table:op` -> error message
   const LIMITE_FAVORITAS = 5;
+  let sequencia = 0;
 
-  const linhasDe = (userId: string): Linha[] =>
-    [...(porUsuario.get(userId) ?? new Map<string, Linha>()).values()];
-  const todas = (): Linha[] => [...porUsuario.values()].flatMap((m) => [...m.values()]);
+  const linhasDe = (tabela: string): Linha[] => tabelas.get(tabela) ?? [];
 
-  const corresponde = (
-    linha: Linha,
-    filtros: Array<{ col: string; valor: unknown; modo: 'eq' | 'is' }>,
-  ): boolean =>
-    filtros.every((f) => (f.modo === 'is' ? linha[f.col] == f.valor : linha[f.col] === f.valor));
+  const corresponde = (linha: Linha, filtros: Filtro[]): boolean =>
+    filtros.every((f) => {
+      if (f.modo === 'is') return linha[f.col] == f.valor;
+      if (f.modo === 'in') return (f.valor as unknown[]).includes(linha[f.col]);
+      return linha[f.col] === f.valor;
+    });
 
   class Consulta implements PromiseLike<Result> {
-    private filtros: Array<{ col: string; valor: unknown; modo: 'eq' | 'is' }> = [];
+    private filtros: Filtro[] = [];
     private ordem?: { col: string; ascendente: boolean };
     private limite?: number;
 
@@ -49,6 +56,10 @@ function mockFakeSupabase() {
     }
     is(col: string, valor: unknown): this {
       this.filtros.push({ col, valor, modo: 'is' });
+      return this;
+    }
+    in(col: string, valores: unknown[]): this {
+      this.filtros.push({ col, valor: valores, modo: 'in' });
       return this;
     }
     order(col: string, opts?: { ascending?: boolean }): this {
@@ -73,8 +84,10 @@ function mockFakeSupabase() {
       const falha = falhas.get(chave);
       if (falha) return { data: null, error: { message: falha, code: 'fake' } };
 
+      const linhas = linhasDe(this.tabela);
+
       if (this.op === 'select') {
-        let dados = todas().filter((l) => corresponde(l, this.filtros));
+        let dados = linhas.filter((l) => corresponde(l, this.filtros));
         if (this.ordem) {
           const { col, ascendente } = this.ordem;
           dados = [...dados].sort((a, b) => {
@@ -87,28 +100,32 @@ function mockFakeSupabase() {
       }
 
       if (this.op === 'insert') {
-        const linha = this.payload as Linha;
-        const userId = String(linha.user_id);
-        const tabela = porUsuario.get(userId) ?? new Map<string, Linha>();
-        if (tabela.has(String(linha.id))) {
-          return {
-            data: null,
-            error: { message: 'duplicate key value violates unique constraint', code: '23505' },
-          };
+        const linha = { ...(this.payload as Linha) };
+        if (this.tabela === 'conversas') {
+          if (linhas.some((l) => l.id === linha.id)) {
+            return {
+              data: null,
+              error: { message: 'duplicate key value violates unique constraint', code: '23505' },
+            };
+          }
+        } else {
+          // `mensagens.id` comes from the database default.
+          sequencia += 1;
+          linha.id = linha.id ?? `m-${sequencia}`;
         }
-        tabela.set(String(linha.id), { ...linha });
-        porUsuario.set(userId, tabela);
+        linhas.push(linha);
         return { data: [{ ...linha }], error: null };
       }
 
       if (this.op === 'update') {
-        const alvos = todas().filter((l) => corresponde(l, this.filtros));
+        const alvos = linhas.filter((l) => corresponde(l, this.filtros));
         if (alvos.length === 0) return { data: [], error: null };
         const payload = this.payload ?? {};
         // The `limitar_favoritas` DB trigger: 5 favorites per user.
         if (payload.favorita === true) {
-          const outras = linhasDe(String(alvos[0].user_id)).filter(
-            (l) => l.favorita === true && l.id !== alvos[0].id,
+          const outras = linhasDe('conversas').filter(
+            (l) =>
+              l.user_id === alvos[0].user_id && l.favorita === true && l.id !== alvos[0].id,
           ).length;
           if (outras >= LIMITE_FAVORITAS) {
             return {
@@ -122,9 +139,17 @@ function mockFakeSupabase() {
       }
 
       // delete
-      const alvos = todas().filter((l) => corresponde(l, this.filtros));
-      for (const l of alvos) {
-        porUsuario.get(String(l.user_id))?.delete(String(l.id));
+      const alvos = linhas.filter((l) => corresponde(l, this.filtros));
+      tabelas.set(
+        this.tabela,
+        linhas.filter((l) => !alvos.includes(l)),
+      );
+      if (this.tabela === 'conversas') {
+        const ids = alvos.map((l) => l.id);
+        tabelas.set(
+          'mensagens',
+          linhasDe('mensagens').filter((m) => !ids.includes(m.conversa_id)),
+        );
       }
       return { data: alvos.map((l) => ({ ...l })), error: null };
     }
@@ -151,16 +176,43 @@ function mockFakeSupabase() {
     },
     // Test handles (not part of the real client).
     __uspapo: {
+      /** Seeds the FLAT shape, split across the two real tables. */
       seed(linhas: Linha[]): void {
         for (const linha of linhas) {
-          const userId = String(linha.user_id);
-          const mapa = porUsuario.get(userId) ?? new Map<string, Linha>();
-          mapa.set(String(linha.id), { ...linha });
-          porUsuario.set(userId, mapa);
+          linhasDe('conversas').push({
+            id: linha.id,
+            user_id: linha.user_id,
+            titulo: linha.pergunta,
+            favorita: linha.favorita,
+            criada_em: linha.criada_em,
+            atualizada_em: linha.atualizada_em,
+          });
+          sequencia += 1;
+          linhasDe('mensagens').push({
+            id: `m-${sequencia}`,
+            conversa_id: linha.id,
+            pergunta: linha.pergunta,
+            resposta: linha.resposta,
+            ordem: 0,
+            criada_em: linha.criada_em,
+          });
         }
       },
+      /** The flat view again: a conversa joined to its first mensagem. */
       rows(): Linha[] {
-        return todas().map((l) => ({ ...l }));
+        return linhasDe('conversas').map((c) => {
+          const m = linhasDe('mensagens')
+            .filter((x) => x.conversa_id === c.id)
+            .sort((a, b) => Number(a.ordem) - Number(b.ordem))[0];
+          return {
+            ...c,
+            pergunta: m?.pergunta ?? c.titulo,
+            resposta: m === undefined ? null : (m.resposta ?? null),
+          };
+        });
+      },
+      tabela(nome: string): Linha[] {
+        return linhasDe(nome).map((l) => ({ ...l }));
       },
       chamadas: chamadas as unknown as Array<Record<string, unknown>>,
       falhar(tabela: string, op: string, mensagem: string): void {
@@ -170,9 +222,11 @@ function mockFakeSupabase() {
         falhas.clear();
       },
       reset(): void {
-        porUsuario.clear();
+        tabelas.set('conversas', []);
+        tabelas.set('mensagens', []);
         chamadas.length = 0;
         falhas.clear();
+        sequencia = 0;
       },
     },
   };
@@ -196,6 +250,7 @@ import {
 type Handle = {
   seed(linhas: Array<Record<string, unknown>>): void;
   rows(): Array<Record<string, unknown>>;
+  tabela(nome: string): Array<Record<string, unknown>>;
   chamadas: Array<Record<string, unknown>>;
   falhar(tabela: string, op: string, mensagem: string): void;
   limparFalhas(): void;
@@ -315,12 +370,22 @@ describe('lerHistorico', () => {
     handle.seed([linha('c-1', { quando: '2026-09-19T12:00:00.000Z' })]);
     await lerHistorico(USER);
 
-    const chamada = handle.chamadas.at(-1) as Record<string, unknown>;
-    expect(chamada.table).toBe('conversas');
-    expect(chamada.op).toBe('select');
-    expect(chamada.limite).toBe(LIMITES.history);
-    expect(chamada.ordem).toEqual({ col: 'atualizada_em', ascendente: false });
-    expect(chamada.filtros).toEqual([{ col: 'user_id', valor: USER, modo: 'eq' }]);
+    // Two selects: the conversations window, then their turns.
+    const selects = handle.chamadas.filter((c) => c.op === 'select');
+    expect(selects).toHaveLength(2);
+
+    const conversas = selects[0] as Record<string, unknown>;
+    expect(conversas.table).toBe('conversas');
+    expect(conversas.limite).toBe(LIMITES.history);
+    expect(conversas.ordem).toEqual({ col: 'atualizada_em', ascendente: false });
+    expect(conversas.filtros).toEqual([{ col: 'user_id', valor: USER, modo: 'eq' }]);
+
+    const mensagens = selects[1] as Record<string, unknown>;
+    expect(mensagens.table).toBe('mensagens');
+    expect(mensagens.ordem).toEqual({ col: 'ordem', ascendente: true });
+    expect(mensagens.filtros).toEqual([
+      { col: 'conversa_id', valor: ['c-1'], modo: 'in' },
+    ]);
   });
 
   it('honors an explicit limite', async () => {
@@ -458,6 +523,8 @@ describe('buscar', () => {
     const [c] = await buscar(USER, 'pendente');
     expect(c).toEqual({
       id: 'c-p',
+      titulo: 'pendente?',
+      fontes: [],
       pergunta: 'pendente?',
       resposta: null,
       criada_em: '2026-09-19T12:00:00.000Z',

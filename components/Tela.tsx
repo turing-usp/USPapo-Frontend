@@ -19,7 +19,8 @@
  *
  * Applied through each stack's `screenLayout`, so screens don't opt in.
  */
-import React, { useEffect, useState, type ReactNode } from 'react';
+import { useFocusEffect } from 'expo-router';
+import React, { useCallback, useState, type ReactNode } from 'react';
 import { Animated, Easing, View } from 'react-native';
 
 
@@ -31,14 +32,27 @@ const DESLOCAMENTO = 10;
 export default function Tela({ children }: { children: ReactNode }) {
   const [entrada] = useState(() => new Animated.Value(0));
 
-  useEffect(() => {
-    Animated.timing(entrada, {
-      toValue: 1,
-      duration: DURACAO,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [entrada]);
+  /**
+   * Driven by FOCUS, not by mount. On a native stack the screen is mounted
+   * before react-native-screens attaches it, so a mount-time animation had
+   * already finished by the time the screen was on screen — the entrance
+   * simply never appeared on Android, while web (no native screen container)
+   * showed it. Focus fires once the screen is actually the visible one, and
+   * re-running it means a `back` gets the same entrance as a `push`.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      entrada.setValue(0);
+      const animacao = Animated.timing(entrada, {
+        toValue: 1,
+        duration: DURACAO,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      });
+      animacao.start();
+      return () => animacao.stop();
+    }, [entrada]),
+  );
 
   return (
     <View style={{ flex: 1 }}>

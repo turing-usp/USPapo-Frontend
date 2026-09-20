@@ -108,6 +108,8 @@ function fakeBanco(): { banco: BancoOffline; store: Store } {
   const chave = (u: string, i: string) => `${u}:${i}`;
   const semUser = (c: { user_id: string; id: string; pergunta: string; resposta: string | null; criada_em: string; atualizada_em: string; favorita: boolean }) => ({
     id: c.id,
+    titulo: '',
+    fontes: [],
     pergunta: c.pergunta,
     resposta: c.resposta,
     criada_em: c.criada_em,
@@ -347,7 +349,7 @@ describe('replay', () => {
     expect(await filaPendente()).toHaveLength(0);
 
     // Each answer was persisted via the P9 completion call, in order.
-    const completions = anexarFake.mock.calls.filter((c) => c.length === 4);
+    const completions = anexarFake.mock.calls.filter((c) => c.length >= 4);
     expect(completions.map((c) => [c[1], c[3]])).toEqual([
       ['c-a', 'resposta P-A'],
       ['c-b', 'resposta P-B'],
@@ -406,6 +408,8 @@ describe('replay', () => {
     lerFake.mockImplementation(async () => [
       {
         id: 'c-a',
+        titulo: '',
+        fontes: [],
         pergunta: 'P-A',
         resposta: 'já foi respondida',
         criada_em: '2026-09-19T12:00:00.000Z',
@@ -431,6 +435,8 @@ describe('replay', () => {
     await queue.enqueue(enfileirar('c-b', 'P-B'));
     await salvarConversa({
       id: 'c-a',
+      titulo: '',
+      fontes: [],
       user_id: 'u-1',
       pergunta: 'P-A',
       resposta: 'resposta no cache',

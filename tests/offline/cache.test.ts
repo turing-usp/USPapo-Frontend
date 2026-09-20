@@ -40,6 +40,8 @@ function fakeBanco(): { banco: BancoOffline; store: Store } {
   const chave = (u: string, i: string) => `${u}:${i}`;
   const semUser = (c: ConversaCacheada): Conversa => ({
     id: c.id,
+    titulo: c.titulo,
+    fontes: c.fontes,
     pergunta: c.pergunta,
     resposta: c.resposta,
     criada_em: c.criada_em,
@@ -107,6 +109,8 @@ function conversa(
 ): ConversaCacheada {
   return {
     id,
+    titulo: over.titulo ?? '',
+    fontes: over.fontes ?? [],
     pergunta: over.pergunta ?? `pergunta ${id}`,
     resposta: over.resposta === undefined ? `resposta ${id}` : over.resposta,
     criada_em: over.criada_em ?? '2026-09-19T12:00:00.000Z',
@@ -127,6 +131,8 @@ describe('round-trip', () => {
     const [c] = await carregarHistoricoOffline('u-1');
     expect(c).toEqual({
       id: 'c-1',
+      titulo: '',
+      fontes: [],
       pergunta: 'pergunta c-1',
       resposta: null,
       criada_em: '2026-09-19T12:00:00.000Z',
@@ -220,8 +226,8 @@ describe('accessors', () => {
   it('salvarConversas is the bulk write-through (the history screen)', async () => {
     await limpar();
     await salvarConversas('u-1', [
-      { id: 'b-1', pergunta: 'p1', resposta: 'r1', criada_em: 'a', atualizada_em: '2026-09-19T00:00:00.000Z', favorita: false },
-      { id: 'b-2', pergunta: 'p2', resposta: null, criada_em: 'a', atualizada_em: '2026-09-19T01:00:00.000Z', favorita: true },
+      { id: 'b-1', titulo: '', fontes: [], pergunta: 'p1', resposta: 'r1', criada_em: 'a', atualizada_em: '2026-09-19T00:00:00.000Z', favorita: false },
+      { id: 'b-2', titulo: '', fontes: [], pergunta: 'p2', resposta: null, criada_em: 'a', atualizada_em: '2026-09-19T01:00:00.000Z', favorita: true },
     ]);
     expect(await tamanho()).toBe(2);
     const [b2, b1] = await carregarHistoricoOffline('u-1');
@@ -239,6 +245,8 @@ describe('accessors', () => {
 describe('fundirHistorico', () => {
   const C1: Conversa = {
     id: 'c-1',
+    titulo: '',
+    fontes: [],
     pergunta: 'P1',
     resposta: 'cache r1',
     criada_em: '2026-09-19T10:00:00.000Z',
@@ -247,6 +255,8 @@ describe('fundirHistorico', () => {
   };
   const C2: Conversa = {
     id: 'c-2',
+    titulo: '',
+    fontes: [],
     pergunta: 'P2',
     resposta: 'cache r2',
     criada_em: '2026-09-19T11:00:00.000Z',
@@ -288,6 +298,8 @@ describe('fundirHistorico', () => {
   it('the union keeps ids present in only one side', () => {
     const soServidor: Conversa = {
       id: 's-9',
+      titulo: '',
+      fontes: [],
       pergunta: 'P9',
       resposta: 'r9',
       criada_em: '2026-09-19T09:00:00.000Z',

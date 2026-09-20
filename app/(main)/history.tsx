@@ -18,23 +18,36 @@
  *   with 6s undo is out of the light-offline scope).
  */
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
+  Pressable,
   RefreshControl,
   Text,
+  TextInput,
   View,
   useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ALTURA_CHROME } from '../../components/Chrome';
+import { BackdropDesvanecido } from '../../components/Backdrop';
 import CampoVidro from '../../components/CampoVidro';
+import { MenuConversa } from '../../components/MenuConversa';
+import { StarIcon } from '../../components/BrandMarks';
 import Container from '../../components/Container';
 import Glass from '../../components/Glass';
 
 import { carregarHistoricoOffline, fundirHistorico, salvarConversas } from '../../lib/cache';
-import { lerHistorico, type Conversa } from '../../lib/conversations';
+import {
+  excluir,
+  favoritar,
+  lerHistorico,
+  renomear,
+  rotuloDa,
+  type Conversa,
+} from '../../lib/conversations';
+import { haptics } from '../../lib/haptics';
 import { marcarFalhaRede, marcarSucessoRede } from '../../lib/offline';
 import { supabase } from '../../lib/supabase';
 import { fonts, useTheme } from '../../theme';
@@ -71,19 +84,28 @@ function grupoDa(conversa: Conversa, agora: number): Grupo {
   return 'Anteriores';
 }
 
-/** One FlatList row: a group header or a conversation item. */
+/** One FlatList row: a group header, a conversation, or a skeleton block. */
 type Linha =
   | { tipo: 'grupo'; id: string; texto: Grupo }
-  | { tipo: 'item'; id: string; conversa: Conversa };
+  | { tipo: 'item'; id: string; conversa: Conversa }
+  | { tipo: 'esqueleto'; id: string; largura: `${number}%` };
 
-/** Static skeleton rows (the loading state only). */
-const LINHAS: Linha[] = GRUPOS.flatMap((grupo, i) =>
-  [0, 1].map((n) => ({
-    tipo: 'grupo' as const,
-    id: `grupo:${grupo}-${n}`,
-    texto: grupo,
-  })),
-);
+/**
+ * The loading state.
+ *
+ * It used to be built from GRUPOS, which meant the first paint of the screen
+ * spelled out "Favoritas / Hoje / Ontem / Últimos 7 dias / Últimos 30 dias /
+ * Anteriores" — twice each — as if the student had conversations in every
+ * bucket. Those headings then vanished once the real (often empty) list
+ * arrived. A skeleton must not assert anything, so these are plain blocks of
+ * varying width and carry no text at all.
+ */
+const LARGURAS: `${number}%`[] = ['72%', '54%', '83%', '61%', '77%', '48%'];
+const LINHAS: Linha[] = LARGURAS.map((largura, i) => ({
+  tipo: 'esqueleto' as const,
+  id: `esqueleto:${i}`,
+  largura,
+}));
 
 export default function Historico() {
   const { colors, layout, radius, spacing, typography } = useTheme();
@@ -98,6 +120,14 @@ export default function Historico() {
   /** True when the last load could not reach Supabase (cache only). */
   const [doCache, setDoCache] = useState(false);
   const [atualizando, setAtualizando] = useState(false);
+  /** The row removed from the UI, still inside its undo window. */
+  const [pendente, setPendente] = useState<Conversa | null>(null);
+  /** Inline notice (the favourites cap the DB trigger enforces). */
+  const [aviso, setAviso] = useState<string | null>(null);
+  /** The row being renamed in place, and the text being typed into it. */
+  const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [novoTitulo, setNovoTitulo] = useState('');
+  const temporizador = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /**
    * The load (mount + pull-to-refresh): Supabase first; when it fails the
@@ -150,13 +180,122 @@ export default function Historico() {
     void carregar();
   }, [carregar]);
 
+  /**
+   * Delete with a 6s undo, exactly the old site's `apagarComDesfazer`: the
+   * row leaves the list at once and the DB write only happens when the
+   * window closes. Starting a second delete commits the first one, and so
+   * does leaving the screen — the pending row must never survive as a
+   * conversation the student already dismissed.
+   */
+  const apagarComDesfazer = useCallback(
+    (conversa: Conversa) => {
+      if (temporizador.current) {
+        clearTimeout(temporizador.current);
+        const anterior = pendente;
+        if (anterior) {
+          void (async () => {
+            const { data } = await supabase.auth.getSession();
+            const uid = data.session?.user?.id ?? '';
+            if (uid) await excluir(uid, anterior.id).catch(() => undefined);
+          })();
+        }
+      }
+      void haptics.press();
+      setPendente(conversa);
+      setConversas((atuais) => (atuais ?? []).filter((c) => c.id !== conversa.id));
+      temporizador.current = setTimeout(() => {
+        temporizador.current = null;
+        setPendente(null);
+        void (async () => {
+          try {
+            const { data } = await supabase.auth.getSession();
+            const uid = data.session?.user?.id ?? '';
+            if (uid) await excluir(uid, conversa.id);
+          } catch (err) {
+            console.warn('[history] exclusão falhou:', err);
+          }
+        })();
+      }, 6000);
+    },
+    [pendente],
+  );
+
+  const desfazer = useCallback(() => {
+    if (temporizador.current) clearTimeout(temporizador.current);
+    temporizador.current = null;
+    const volta = pendente;
+    setPendente(null);
+    if (volta) setConversas((atuais) => [volta, ...(atuais ?? [])]);
+  }, [pendente]);
+
+  /** Commit a still-pending delete when the screen goes away. */
+  useEffect(
+    () => () => {
+      if (temporizador.current) clearTimeout(temporizador.current);
+    },
+    [],
+  );
+
+  const iniciarEdicao = useCallback((conversa: Conversa) => {
+    setEditandoId(conversa.id);
+    setNovoTitulo(rotuloDa(conversa));
+  }, []);
+
+  /**
+   * Commit on blur or on submit, like the old site: a blank title is thrown
+   * away rather than stored, because the row would then have no label.
+   */
+  const confirmarEdicao = useCallback(async () => {
+    const alvo = editandoId;
+    const titulo = novoTitulo.trim();
+    setEditandoId(null);
+    if (!alvo || titulo === '') return;
+    setConversas((atuais) =>
+      (atuais ?? []).map((c) => (c.id === alvo ? { ...c, titulo } : c)),
+    );
+    try {
+      const { data } = await supabase.auth.getSession();
+      const uid = data.session?.user?.id ?? '';
+      if (uid) await renomear(uid, alvo, titulo);
+    } catch (err) {
+      console.warn('[history] renomear falhou:', err);
+      setAviso('Não foi possível renomear a conversa.');
+    }
+  }, [editandoId, novoTitulo]);
+
+  /** Optimistic favourite toggle; the DB trigger caps it at 5. */
+  const alternarFavorita = useCallback(async (conversa: Conversa) => {
+    const alvo = !conversa.favorita;
+    setConversas((atuais) =>
+      (atuais ?? []).map((c) => (c.id === conversa.id ? { ...c, favorita: alvo } : c)),
+    );
+    try {
+      const { data } = await supabase.auth.getSession();
+      const uid = data.session?.user?.id ?? '';
+      if (!uid) throw new Error('sem sessão');
+      await favoritar(uid, conversa.id, alvo);
+      void haptics.favorite();
+    } catch (err) {
+      // The trigger rejected it (5 favourites) or the write failed: put the
+      // flag back where it was and say so.
+      setConversas((atuais) =>
+        (atuais ?? []).map((c) => (c.id === conversa.id ? { ...c, favorita: !alvo } : c)),
+      );
+      setAviso(err instanceof Error ? err.message : 'Não foi possível favoritar.');
+      void haptics.error();
+    }
+  }, []);
+
   /** Search over the loaded window (local substring, case-insensitive). */
   const filtradas = useMemo(() => {
     if (conversas === null) return null;
     const termo = busca.trim().toLowerCase();
     if (termo === '') return conversas;
     return conversas.filter(
-      (c) => c.pergunta.toLowerCase().includes(termo) || (c.resposta ?? '').toLowerCase().includes(termo),
+      (c) =>
+        rotuloDa(c).toLowerCase().includes(termo) ||
+        c.pergunta.toLowerCase().includes(termo) ||
+        (c.resposta ?? '').toLowerCase().includes(termo),
     );
   }, [conversas, busca]);
 
@@ -188,6 +327,10 @@ export default function Historico() {
           // Clear the floating chrome (hamburger / avatar) above.
           paddingTop: insets.top + ALTURA_CHROME + spacing.md,
           paddingBottom: spacing.md,
+          // Above the edge dissolve: the overlay is absolutely positioned and
+          // would otherwise repaint the scene over the title and the search
+          // field, which are chrome, not scrolling content.
+          zIndex: 1,
         }}
       >
         <Text
@@ -221,6 +364,19 @@ export default function Historico() {
             }}
           >
             mostrando o último cache — sem conexão
+          </Text>
+        ) : null}
+        {aviso ? (
+          <Text
+            style={{
+              color: colors.danger,
+              fontFamily: fonts.body,
+              fontSize: typography.xs.fontSize,
+              textAlign: 'center',
+            }}
+            onPress={() => setAviso(null)}
+          >
+            {aviso}
           </Text>
         ) : null}
         {vazio && filtradas !== null && filtradas.length === 0 ? (
@@ -285,35 +441,89 @@ export default function Historico() {
               </View>
             );
           }
+          if (item.tipo === 'esqueleto') {
+            // Deliberately textless: a placeholder that spells out real group
+            // names claims the student has conversations they may not have.
+            return (
+              <Glass
+                radius={radius.md}
+                style={{
+                  marginBottom: spacing.sm,
+                  minHeight: 56,
+                  justifyContent: 'center',
+                  paddingHorizontal: 14,
+                }}
+              >
+                <View
+                  style={{
+                    backgroundColor: colors.mutedForeground,
+                    borderRadius: radius.sm,
+                    height: 10,
+                    opacity: 0.18,
+                    width: item.largura,
+                  }}
+                />
+              </Glass>
+            );
+          }
           const c = item.conversa;
           return (
             <Glass
-              onPress={() => router.push(`/(main)/chat/${c.id}`)}
-              onLongPress={() => {
-                // Out of the light-offline scope: favorite/rename/delete
-                // with 6s undo (kept as the placeholder it started as).
-                console.log('[uspapo] Histórico — ação do item (long-press): placeholder');
-              }}
+              onPress={
+                editandoId === c.id
+                  ? undefined
+                  : () => router.push(`/(main)/chat/${c.id}`)
+              }
               radius={radius.md}
               style={{
-                marginBottom: spacing.xs,
-                minHeight: 56,
+                marginBottom: spacing.sm,
+                minHeight: 60,
                 paddingVertical: 12,
-                paddingHorizontal: 14,
+                paddingLeft: 14,
+                paddingRight: 6,
               }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-                <Text
-                  numberOfLines={2}
-                  style={{
-                    flex: 1,
-                    color: colors.foreground,
-                    fontFamily: fonts.body,
-                    fontSize: typography.sm.fontSize,
-                  }}
-                >
-                  {c.pergunta}
-                </Text>
+                {c.favorita ? <StarIcon size={15} color={colors.brand} /> : null}
+                {editandoId === c.id ? (
+                  // Edited in place, as the old site does: commit on submit
+                  // or on blur, discard on an empty value.
+                  <TextInput
+                    value={novoTitulo}
+                    onChangeText={setNovoTitulo}
+                    onBlur={() => void confirmarEdicao()}
+                    onSubmitEditing={() => void confirmarEdicao()}
+                    autoFocus
+                    // Select the whole title on open, the way a rename field
+                    // should: the caret would otherwise land at the end of a
+                    // long question and scroll the start of it out of view,
+                    // and typing would append instead of replace.
+                    selectTextOnFocus
+                    returnKeyType="done"
+                    selectionColor={colors.brand}
+                    style={{
+                      flex: 1,
+                      color: colors.foreground,
+                      fontFamily: fonts.body,
+                      fontSize: typography.sm.fontSize,
+                      padding: 0,
+                      outlineStyle: 'none',
+                    } as object}
+                  />
+                ) : (
+                  <Text
+                    numberOfLines={2}
+                    style={{
+                      flex: 1,
+                      color: colors.foreground,
+                      fontFamily: fonts.body,
+                      fontSize: typography.sm.fontSize,
+                      lineHeight: typography.sm.lineHeight,
+                    }}
+                  >
+                    {rotuloDa(c)}
+                  </Text>
+                )}
                 {/* The P9 pending rule: resposta null = still pending. */}
                 {c.resposta === null ? (
                   <Text
@@ -327,11 +537,80 @@ export default function Historico() {
                     pendente
                   </Text>
                 ) : null}
+                <MenuConversa
+                  favorita={c.favorita}
+                  aoFavoritar={() => void alternarFavorita(c)}
+                  aoRenomear={() => iniciarEdicao(c)}
+                  aoApagar={() => apagarComDesfazer(c)}
+                />
               </View>
             </Glass>
           );
         }}
       />
+
+      {/* The edge dissolve (old `page-fade-b` / `page-fade-t`): the scene
+          repainted over the list, solid under the floating chrome and at the
+          bottom edge, so rows melt into the backdrop instead of being cut. */}
+      <BackdropDesvanecido lado="topo" solido={insets.top + ALTURA_CHROME} />
+      <BackdropDesvanecido lado="base" solido={insets.bottom} />
+
+      {/* The 6s undo window (old `apagarComDesfazer`). Above the dissolve. */}
+      {pendente ? (
+        <View
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: insets.bottom + spacing.md,
+            paddingHorizontal: layout.gutter(largura),
+            zIndex: 2,
+          }}
+        >
+          <Glass
+            variante="raised"
+            radius={radius.lg}
+            style={{
+              alignItems: 'center',
+              alignSelf: 'center',
+              flexDirection: 'row',
+              gap: spacing.md,
+              maxWidth: layout.containerMaxWidth,
+              paddingHorizontal: spacing.md,
+              paddingVertical: 10,
+              width: '100%',
+            }}
+          >
+            <Text
+              numberOfLines={1}
+              style={{
+                color: colors.foreground,
+                flex: 1,
+                fontFamily: fonts.body,
+                fontSize: typography.sm.fontSize,
+              }}
+            >
+              Conversa apagada
+            </Text>
+            <Pressable
+              onPress={desfazer}
+              hitSlop={8}
+              accessibilityRole="button"
+              style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+            >
+              <Text
+                style={{
+                  color: colors.brand,
+                  fontFamily: fonts.bodyBold,
+                  fontSize: typography.sm.fontSize,
+                }}
+              >
+                Desfazer
+              </Text>
+            </Pressable>
+          </Glass>
+        </View>
+      ) : null}
     </View>
   );
 }

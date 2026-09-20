@@ -9,7 +9,14 @@
  */
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
-import { Redirect, Stack, useSegments } from 'expo-router';
+import {
+  DarkTheme,
+  DefaultTheme,
+  Redirect,
+  Stack,
+  ThemeProvider as TemaDeNavegacao,
+  useSegments,
+} from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
@@ -233,18 +240,34 @@ function PortaDeSessao({ children }: { children: ReactNode }) {
 }
 
 function PilhaRaiz() {
-  const { colors } = useTheme();
+  const { colors, scheme } = useTheme();
+  /**
+   * React Navigation paints its OWN theme background behind every navigator,
+   * and its default is an opaque `rgb(242,242,242)`. That was harmless while
+   * components/Tela drew the backdrop inside each screen, but the scene now
+   * lives once in components/Cena, BEHIND the navigator — so that default
+   * covered it and the web app rendered a flat grey page with no gradient.
+   * Transparent hands the scene back; `colors.canvas` below stays as the
+   * opaque base layer, so there is still no white flash during a push.
+   */
+  const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
+  const temaTransparente = {
+    ...base,
+    colors: { ...base.colors, background: 'transparent' },
+  };
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: colors.canvas },
-      }}
-    >
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(main)" />
-      <Stack.Screen name="(admin)" />
-    </Stack>
+    <TemaDeNavegacao value={temaTransparente}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.canvas },
+        }}
+      >
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(main)" />
+        <Stack.Screen name="(admin)" />
+      </Stack>
+    </TemaDeNavegacao>
   );
 }
 

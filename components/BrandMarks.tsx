@@ -11,7 +11,7 @@
  * original 142.53:36.14 aspect.
  */
 import React from 'react';
-import { Path, Svg } from 'react-native-svg';
+import { Circle, Path, Svg } from 'react-native-svg';
 
 /** Brand orange (uspapo/site globals: `--brand`); never changes with scheme. */
 const BRAND = '#f1863d';
@@ -188,5 +188,90 @@ export function EyeOffIcon(props: IconeProps) {
       d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858-5.908A8.962 8.962 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21M3 3l18 18"
       {...props}
     />
+  );
+}
+
+// ─────────────────────────────────────────────
+// Answer feedback + conversation actions
+//
+// Monochrome line icons in the same 24x24 stroked style as the field
+// adornments above. These replace the 👍/👎 emoji the feedback row used to
+// render: an emoji is full-colour, sized by the text engine and drawn
+// differently on every platform, so it could not take the brand/danger tint
+// the state needs and never matched the rest of the chrome.
+// ─────────────────────────────────────────────
+
+/** Thumbs up — "a resposta foi útil". */
+export function ThumbsUpIcon(props: IconeProps) {
+  return (
+    <IconeTracado
+      d={[
+        'M7 10.5v10',
+        'M7 10.5h2.4a1.6 1.6 0 0 0 1.43-.89l2.6-5.2A2.2 2.2 0 0 1 17 5.4l-.7 3.6h4.05a1.6 1.6 0 0 1 1.55 2l-1.9 6.9a2.2 2.2 0 0 1-2.12 1.6H7',
+        'M4.6 9.9h1.2a1.2 1.2 0 0 1 1.2 1.2v8.2a1.2 1.2 0 0 1-1.2 1.2H4.6a1.2 1.2 0 0 1-1.2-1.2v-8.2a1.2 1.2 0 0 1 1.2-1.2z',
+      ]}
+      {...props}
+    />
+  );
+}
+
+/** Thumbs down — "a resposta foi ruim" (the thumbs-up, mirrored). */
+export function ThumbsDownIcon(props: IconeProps) {
+  return (
+    <IconeTracado
+      d={[
+        'M7 13.5v-10',
+        'M7 13.5h2.4a1.6 1.6 0 0 1 1.43.89l2.6 5.2A2.2 2.2 0 0 0 17 18.6l-.7-3.6h4.05a1.6 1.6 0 0 0 1.55-2l-1.9-6.9A2.2 2.2 0 0 0 17.88 4.5H7',
+        'M4.6 14.1h1.2a1.2 1.2 0 0 0 1.2-1.2V4.7a1.2 1.2 0 0 0-1.2-1.2H4.6a1.2 1.2 0 0 0-1.2 1.2v8.2a1.2 1.2 0 0 0 1.2 1.2z',
+      ]}
+      {...props}
+    />
+  );
+}
+
+/** Check — the "Obrigado pelo seu feedback" confirmation. */
+export function CheckIcon(props: IconeProps) {
+  return <IconeTracado d="M20 6 9 17l-5-5" {...props} />;
+}
+
+/** X — closes the feedback form / the reason picker. */
+export function CloseIcon(props: IconeProps) {
+  return <IconeTracado d={['M18 6 6 18', 'M6 6l12 12']} {...props} />;
+}
+
+/** Star — the `favorita` flag on a history row. */
+export function StarIcon(props: IconeProps) {
+  return (
+    <IconeTracado
+      d="M12 3.5l2.6 5.27 5.82.85-4.21 4.1.99 5.78L12 16.77l-5.2 2.73.99-5.78-4.21-4.1 5.82-.85z"
+      {...props}
+    />
+  );
+}
+
+/** Trash — "Apagar" on a history row. */
+export function TrashIcon(props: IconeProps) {
+  return (
+    <IconeTracado
+      d={[
+        'M3.5 6h17',
+        'M18.5 6v13a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2V6',
+        'M9 6V4.5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2V6',
+        'M10.2 10.5v6',
+        'M13.8 10.5v6',
+      ]}
+      {...props}
+    />
+  );
+}
+
+/** Vertical kebab — opens the per-conversation action menu. */
+export function KebabIcon({ size = 20, color = MUTED }: IconeProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      {[5.5, 12, 18.5].map((cy) => (
+        <Circle key={cy} cx={12} cy={cy} r={1.7} fill={color} />
+      ))}
+    </Svg>
   );
 }

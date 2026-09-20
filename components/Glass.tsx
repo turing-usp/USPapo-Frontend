@@ -140,7 +140,13 @@ export default function Glass({
 
   const conteudo = (
     <>
+      {/* `pointerEvents="none"` is load-bearing, not tidiness: this layer is
+          absolutely positioned and the children are in normal flow, and CSS
+          paints positioned boxes ABOVE static ones whatever the DOM order.
+          Without it the blur pane sits over the content on web and swallows
+          every click — inputs never took focus from the mouse. */}
       <View
+        pointerEvents="none"
         style={[
           StyleSheet.absoluteFill,
           { borderRadius: raio, overflow: 'hidden' },
@@ -153,10 +159,22 @@ export default function Glass({
           // Android does not blur at all by default. `dimezisBlurViewSdk31Plus`
           // is the hardware path (RenderEffect, API 31+), which is both the
           // cheapest real blur on modern devices and free of the software
-          // method's banding artefacts.
-          experimentalBlurMethod={
+          // method's banding artefacts. (`experimentalBlurMethod` is the old
+          // name for this prop and now logs a deprecation warning per pane.)
+          blurMethod={
             Platform.OS === 'android' ? 'dimezisBlurViewSdk31Plus' : undefined
           }
+          /**
+           * Android divides the blur radius by this before handing it to
+           * RenderEffect, and the default 4 left the pane barely blurred: at
+           * intensity 32 that is an 8px radius on the captured backdrop, about
+           * 3dp on a 2.8x screen. The tint on top is at full strength either
+           * way, so the surface read as a flat opaque wash instead of glass.
+           * Halving the divisor puts the blur within a pixel of what the web
+           * build gets from `backdrop-filter` (intensity * 0.2 CSS px) without
+           * touching the tint, which is already calibrated.
+           */
+          blurReductionFactor={Platform.OS === 'android' ? 2 : undefined}
           style={StyleSheet.absoluteFill}
         />
         <View

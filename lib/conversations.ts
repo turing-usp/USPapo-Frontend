@@ -1,9 +1,21 @@
 /**
  * Conversation store over the Supabase client from lib/supabase.
  *
- * The table is `conversas` (RLS-owned by user_id); each row is ONE turn of a
- * conversation — `{pergunta, resposta}` — so the store is turn-granular and
- * the history screen and the backend context share one shape.
+ * The database is NORMALISED and shared with the old site, so this module is
+ * the adapter between it and the app's flat `Conversa`:
+ *
+ *   conversas  id, user_id, titulo, criada_em, atualizada_em, favorita
+ *   mensagens  id, conversa_id, pergunta, resposta, criada_em, ordem
+ *
+ * An earlier version wrote `pergunta`/`resposta` straight onto `conversas`,
+ * which does not have those columns: every read failed with 42703 and every
+ * write with PGRST204, so no conversation was ever saved or listed.
+ *
+ * The app's model is one question per conversation (a follow-up starts a new
+ * one — see app/(main)/chat/[id].tsx), so a `Conversa` is a `conversas` row
+ * joined to its FIRST `mensagens` row (`ordem` 0). The flat shape is what the
+ * history screen, the offline cache and the backend context all consume, and
+ * it is kept unchanged here on purpose.
  *
  * The P9 pending rule (ported from the old site's `resposta NULL = pending`
  * pattern): a turn row is INSERTED with `resposta = null` the moment the
@@ -28,6 +40,12 @@ import { supabase } from './supabase';
 /** One row of the `conversas` table (one turn of a conversation). */
 export type Conversa = {
   id: string;
+  /**
+   * The conversation's label (`conversas.titulo`) — what the history list
+   * shows and what "Renomear" edits. Empty for a row that has no title yet,
+   * and the question stands in for it.
+   */
+  titulo: string;
   pergunta: string;
   /** null = pending (the stream has not completed yet — the P9 pattern). */
   resposta: string | null;
@@ -36,13 +54,49 @@ export type Conversa = {
   /** ISO-8601 timestamp (server trigger keeps it fresh on updates). */
   atualizada_em: string;
   favorita: boolean;
+  /** Source URLs the answer cited (`mensagens.fontes`, a text[]). */
+  fontes: string[];
 };
 
 /** The supabase client seam (lib/supabase by default; fakes in tests). */
 export type ConversasDb = typeof supabase;
 
 const TABELA = 'conversas';
-const COLUNAS = 'id,pergunta,resposta,criada_em,atualizada_em,favorita';
+const TABELA_MENSAGENS = 'mensagens';
+const COLUNAS = 'id,titulo,criada_em,atualizada_em,favorita';
+const COLUNAS_MENSAGEM = 'conversa_id,pergunta,resposta,ordem,fontes';
+
+/** The app is one question per conversation, so every turn is the first. */
+const ORDEM_PRIMEIRA = 0;
+/** `titulo` is the conversation's label in the old site's schema. */
+const TITULO_MAX = 80;
+
+/**
+ * What the history row should read.
+ *
+ * `titulo` is the conversation's own label and the thing "Renomear" edits,
+ * so it has to win — otherwise a rename would not show. But the rows the old
+ * site wrote store the question already cut at 50 characters ("Tô na estação
+ * butanta. Como chego na sala A5 da me..."), and this app has the full
+ * question on hand. So: show the title, UNLESS the title is merely the
+ * question cut short, in which case show the question in full. A renamed row
+ * stops being a prefix of the question and starts showing its new name.
+ */
+export function rotuloDa(conversa: Pick<Conversa, 'titulo' | 'pergunta'>): string {
+  const titulo = conversa.titulo.trim();
+  const pergunta = conversa.pergunta.trim();
+  if (titulo === '') return pergunta;
+  if (pergunta === '') return titulo;
+  const semCorte = titulo.replace(/(\.\.\.|…)$/, '').trim();
+  if (semCorte !== '' && pergunta.startsWith(semCorte)) return pergunta;
+  return titulo;
+}
+
+/** The question, trimmed to something that reads as a list label. */
+function tituloDe(pergunta: string): string {
+  const limpo = pergunta.trim().replace(/\s+/g, ' ');
+  return limpo.length <= TITULO_MAX ? limpo : `${limpo.slice(0, TITULO_MAX - 1)}…`;
+}
 
 /** Generic write-failure message (the cause stays in the console). */
 const ERRO_ESCRITA = 'A operação falhou: não foi possível salvar a conversa';
@@ -59,14 +113,27 @@ function falhou(operacao: string, error: { message?: string } | null): void {
   throw new Error(ERRO_ESCRITA);
 }
 
-function linhaParaConversa(linha: Record<string, unknown>): Conversa {
+/**
+ * Flattens a `conversas` row plus its first `mensagens` row into a Conversa.
+ * A conversation with no message yet still has to render, so `titulo` is the
+ * fallback question — that is exactly what it holds.
+ */
+function linhaParaConversa(
+  linha: Record<string, unknown>,
+  mensagem: Record<string, unknown> | undefined,
+): Conversa {
+  const pergunta = mensagem?.pergunta ?? linha.titulo ?? '';
+  const resposta = mensagem?.resposta;
+  const fontes = mensagem?.fontes;
   return {
     id: String(linha.id ?? ''),
-    pergunta: String(linha.pergunta ?? ''),
-    resposta: linha.resposta === null || linha.resposta === undefined ? null : String(linha.resposta),
+    titulo: String(linha.titulo ?? ''),
+    pergunta: String(pergunta),
+    resposta: resposta === null || resposta === undefined ? null : String(resposta),
     criada_em: String(linha.criada_em ?? ''),
     atualizada_em: String(linha.atualizada_em ?? ''),
     favorita: linha.favorita === true,
+    fontes: Array.isArray(fontes) ? fontes.map(String) : [],
   };
 }
 
@@ -90,7 +157,27 @@ export async function lerHistorico(
     .order('atualizada_em', { ascending: false })
     .limit(limite);
   falhou('lerHistorico', error);
-  return (data ?? []).map((l) => linhaParaConversa(l as Record<string, unknown>));
+  const linhas = (data ?? []) as Record<string, unknown>[];
+  if (linhas.length === 0) return [];
+
+  // The turns come in a second query rather than a PostgREST embed: the embed
+  // needs the FK relationship to be exposed in the schema cache, and falling
+  // back to two plain selects keeps this working either way.
+  const ids = linhas.map((l) => String(l.id ?? ''));
+  const { data: msgs, error: erroMsgs } = await db
+    .from(TABELA_MENSAGENS)
+    .select(COLUNAS_MENSAGEM)
+    .in('conversa_id', ids)
+    .order('ordem', { ascending: true });
+  falhou('lerHistorico (mensagens)', erroMsgs);
+
+  // First message per conversation wins (ordered by `ordem` above).
+  const porConversa = new Map<string, Record<string, unknown>>();
+  for (const m of (msgs ?? []) as Record<string, unknown>[]) {
+    const chave = String(m.conversa_id ?? '');
+    if (!porConversa.has(chave)) porConversa.set(chave, m);
+  }
+  return linhas.map((l) => linhaParaConversa(l, porConversa.get(String(l.id ?? ''))));
 }
 
 /**
@@ -108,32 +195,77 @@ export async function anexarTurno(
   id: string,
   pergunta: string,
   resposta?: string,
+  fontes?: string[],
   db: ConversasDb = supabase,
 ): Promise<void> {
   const agora = new Date().toISOString();
 
   if (resposta === undefined) {
-    const { error } = await db.from(TABELA).insert({
+    // The conversation row first: `mensagens.conversa_id` points at it, so
+    // the message insert would violate the FK if this failed.
+    const { error: erroConversa } = await db.from(TABELA).insert({
       id,
       user_id: userId,
-      pergunta,
-      resposta: null,
+      titulo: tituloDe(pergunta),
       favorita: false,
       criada_em: agora,
       atualizada_em: agora,
     });
-    falhou('anexarTurno (pergunta)', error);
+    falhou('anexarTurno (conversa)', erroConversa);
+
+    // `id` is left to the database default; `ordem` is explicit because the
+    // app only ever writes the first turn of a conversation.
+    const { error: erroMensagem } = await db.from(TABELA_MENSAGENS).insert({
+      conversa_id: id,
+      pergunta,
+      resposta: null,
+      ordem: ORDEM_PRIMEIRA,
+      criada_em: agora,
+    });
+    falhou('anexarTurno (pergunta)', erroMensagem);
     return;
   }
 
   const { error } = await db
-    .from(TABELA)
-    .update({ resposta, atualizada_em: agora })
-    .eq('id', id)
-    .eq('user_id', userId)
+    .from(TABELA_MENSAGENS)
+    // The sources travel with the answer, as the old site wrote them: they
+    // are part of the completed turn, and without this the "Fontes
+    // consultadas" row was empty on every reopened conversation.
+    .update({ resposta, ...(fontes !== undefined ? { fontes } : {}) })
+    .eq('conversa_id', id)
     // The P9 guard: complete only rows that are still pending.
     .is('resposta', null);
   falhou('anexarTurno (resposta)', error);
+
+  // Keep the conversation's ordering key fresh — `lerHistorico` sorts on it.
+  // Scoped by user_id so a wrong id can never touch someone else's row.
+  const { error: erroToque } = await db
+    .from(TABELA)
+    .update({ atualizada_em: agora })
+    .eq('id', id)
+    .eq('user_id', userId);
+  falhou('anexarTurno (atualizada_em)', erroToque);
+}
+
+/**
+ * Renames the conversation (`conversas.titulo`) — the old site's
+ * `renomearConversa`. A blank title is refused rather than stored: the
+ * history list would then show an unlabelled row.
+ */
+export async function renomear(
+  userId: string,
+  id: string,
+  titulo: string,
+  db: ConversasDb = supabase,
+): Promise<void> {
+  const limpo = titulo.trim();
+  if (limpo === '') return;
+  const { error } = await db
+    .from(TABELA)
+    .update({ titulo: limpo, atualizada_em: new Date().toISOString() })
+    .eq('id', id)
+    .eq('user_id', userId);
+  falhou('renomear', error);
 }
 
 /**
