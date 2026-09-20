@@ -22,7 +22,30 @@ const MUTED = '#55618a';
 const LOGO_PATH =
   'M22.84,8.22V13.7H19.18v3.66H17.36V11.88H21V10.05H11.88v1.83h3.65V21H7.82A1.42,1.42,0,0,1,6.4,19.59v-15H25.07A1.43,1.43,0,0,1,26.49,6v13.6A1.43,1.43,0,0,1,25.07,21H19.18v1.83h7.31v5.48H24.66V24.66H18.78a1.42,1.42,0,0,1-1.42-1.42V19.18h7.3V6.4H8.22V19.18H13.7V13.7H10.05v-4a1.43,1.43,0,0,1,1.43-1.43Z';
 
-/** USPapo logo mark, brand orange. Square; `size` is both width and height. */
+/**
+ * The USPapo mark (site/public/uspapo.svg): an open book/screen drawn as a
+ * single stroked path. This is the app's own logo — distinct from LogoMark
+ * below, which is Turing's maze "T" and only appears in the "Desenvolvido
+ * por" footer.
+ */
+export function LogoUSPapo({ size = 40 }: { size?: number }) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="131.297 24.502 249.939 453.875"
+    >
+      <Path
+        fill="none"
+        stroke="#ff914c"
+        strokeWidth={25}
+        d="m 228.1516,306.48441 h -39.14196 m 39.1358,-77.8353 h -39.1358 m 39.12939,-77.92258 H 189.00964 M 227.99942,94.767333 143.79671,46.152882 V 374.86912 l 141.78215,81.85796 V 404.10032 M 228.13173,55.371627 368.70639,137.28661 367.44383,451.80426 228.15668,370.63953 Z"
+      />
+    </Svg>
+  );
+}
+
+/** Turing's maze mark, brand orange. Square; `size` is width and height. */
 export function LogoMark({ size = 32 }: { size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 32.89 32.89">

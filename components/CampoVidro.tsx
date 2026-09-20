@@ -18,6 +18,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import Glass from './Glass';
 import { fonts, useTheme } from '../theme';
 
 export type CampoVidroProps = {
@@ -41,23 +42,20 @@ export default function CampoVidro({
   style,
   ...resto
 }: CampoVidroProps) {
-  const { colors, glass, radius, typography } = useTheme();
+  const { colors, radius, typography } = useTheme();
   return (
-    <View
+    <Glass
+      radius={radius.full}
+      borda={focado ? { borderColor: colors.brand, borderWidth: 2 } : undefined}
       style={[
-        glass.surface,
-        focado
-          ? { borderColor: colors.brand, borderWidth: 2 }
-          : glass.hairline,
         {
           alignItems: 'center',
-          borderRadius: radius.full,
           flexDirection: 'row',
           minHeight: 52,
           paddingHorizontal: 18,
           paddingVertical: 14,
         },
-        style,
+        style ?? {},
       ]}
     >
       {icone ? <View pointerEvents="none">{icone}</View> : null}
@@ -79,6 +77,6 @@ export default function CampoVidro({
         } as object}
       />
       {botaoFinal ?? null}
-    </View>
+    </Glass>
   );
 }

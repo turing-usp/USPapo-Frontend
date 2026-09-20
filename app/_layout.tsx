@@ -25,6 +25,7 @@ import {
 import { carregarPreferencia } from '../lib/haptics';
 import { supabase } from '../lib/supabase';
 import { ThemeProvider, fonts, useTheme } from '../theme';
+import Glass from '../components/Glass';
 
 type StatusSessao = 'carregando' | 'falhou' | 'pronta';
 
@@ -105,22 +106,17 @@ function EsqueletoDeSessao() {
  * auth API down…). One explicit retry — no silent auto-retry loop.
  */
 function TelaSessaoFalhou({ aoTentarNovamente }: { aoTentarNovamente: () => void }) {
-  const { colors, glass, radius, spacing, typography } = useTheme();
+  const { colors, radius, spacing, typography } = useTheme();
   return (
     <View style={[styles.telaInteira, { backgroundColor: colors.canvas }]}>
-      <View
-        style={[
-          glass.surface,
-          glass.hairline,
-          glass.shadow,
-          {
+      <Glass
+        radius={radius.xl}
+        style={{
             alignItems: 'center',
-            borderRadius: radius.xl,
             gap: spacing.lg,
             padding: spacing['2xl'],
             width: '85%',
-          },
-        ]}
+        }}
       >
         <Text
           style={[
@@ -170,7 +166,7 @@ function TelaSessaoFalhou({ aoTentarNovamente }: { aoTentarNovamente: () => void
             Tentar novamente
           </Text>
         </Pressable>
-      </View>
+            </Glass>
     </View>
   );
 }

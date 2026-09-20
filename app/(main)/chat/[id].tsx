@@ -36,6 +36,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ALTURA_CHROME } from '../../../components/Chrome';
 import Composer from '../../../components/Composer';
+import Glass from '../../../components/Glass';
 import Container from '../../../components/Container';
 import { BolhaAssistente, BolhaUsuario, LinhaErro, LinhaFerramenta, LinhaNota } from '../../../components/chat/bolhas';
 import { FeedbackResposta } from '../../../components/chat/feedback';
@@ -63,7 +64,7 @@ function novoId(): string {
 export default function Chat() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { colors, glass, layout, radius, spacing, typography } = useTheme();
+  const { colors, layout, radius, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
   const { width: largura } = useWindowDimensions();
 
@@ -241,18 +242,9 @@ export default function Chat() {
                   }}
                 >
                   <Animated.View
-                    style={[
-                      glass.surface,
-                      glass.hairline,
-                      {
-                        borderRadius: radius.lg,
-                        borderBottomLeftRadius: 4,
-                        opacity: pulso,
-                        padding: spacing.md,
-                        alignSelf: 'flex-start',
-                      },
-                    ]}
+                    style={{ alignSelf: 'flex-start', opacity: pulso }}
                   >
+                    <Glass radius={radius.lg} style={{ padding: spacing.md }}>
                     <Text
                       style={{
                         color: colors.mutedForeground,
@@ -262,6 +254,7 @@ export default function Chat() {
                     >
                       respondendo…
                     </Text>
+                    </Glass>
                   </Animated.View>
                 </View>
               ) : null

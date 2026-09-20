@@ -19,8 +19,19 @@
  */
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, Text, TextInput, View } from 'react-native';
+import {
+  FlatList,
+  RefreshControl,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { ALTURA_CHROME } from '../../components/Chrome';
+import CampoVidro from '../../components/CampoVidro';
+import Container from '../../components/Container';
+import Glass from '../../components/Glass';
 
 import { carregarHistoricoOffline, fundirHistorico, salvarConversas } from '../../lib/cache';
 import { lerHistorico, type Conversa } from '../../lib/conversations';
@@ -75,11 +86,13 @@ const LINHAS: Linha[] = GRUPOS.flatMap((grupo, i) =>
 );
 
 export default function Historico() {
-  const { colors, glass, radius, spacing, typography } = useTheme();
+  const { colors, layout, radius, spacing, typography } = useTheme();
+  const { width: largura } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
   const [busca, setBusca] = useState('');
+  const [buscaFocada, setBuscaFocada] = useState(false);
   /** null = still loading (the skeleton); [] = loaded and empty. */
   const [conversas, setConversas] = useState<Conversa[] | null>(null);
   /** True when the last load could not reach Supabase (cache only). */
@@ -166,12 +179,15 @@ export default function Historico() {
   const vazio = conversas !== null && conversas.length === 0;
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
-      <View
+    // No canvas fill: an opaque background here would hide the shared
+    // backdrop that Tela paints behind every screen.
+    <View style={{ flex: 1 }}>
+      <Container
         style={{
-          padding: spacing.lg,
           gap: spacing.md,
-          paddingTop: insets.top + spacing.md,
+          // Clear the floating chrome (hamburger / avatar) above.
+          paddingTop: insets.top + ALTURA_CHROME + spacing.md,
+          paddingBottom: spacing.md,
         }}
       >
         <Text
@@ -183,26 +199,15 @@ export default function Historico() {
         >
           Histórico
         </Text>
-        <TextInput
+        <CampoVidro
+          focado={buscaFocada}
+          aoFocar={() => setBuscaFocada(true)}
+          aoPerderFoco={() => setBuscaFocada(false)}
           value={busca}
           onChangeText={setBusca}
           placeholder="Buscar nas conversas"
-          placeholderTextColor={colors.faintForeground}
           autoCapitalize="none"
           autoCorrect={false}
-          style={[
-            glass.surface,
-            glass.hairline,
-            {
-              borderRadius: radius.full,
-              color: colors.foreground,
-              fontFamily: fonts.body,
-              fontSize: typography.base.fontSize,
-              minHeight: 48,
-              paddingVertical: 12,
-              paddingHorizontal: 20,
-            },
-          ]}
         />
         {/* The honest offline note (pull-to-refresh became "reload from
             cache"). */}
@@ -232,15 +237,19 @@ export default function Historico() {
               : 'Nenhuma conversa encontrada'}
           </Text>
         ) : null}
-      </View>
+      </Container>
 
       <FlatList
         data={linhas}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{
-          padding: spacing.lg,
+          // Same 64rem measure as the header above (old .app-container).
+          alignSelf: 'center',
+          maxWidth: layout.containerMaxWidth,
+          paddingHorizontal: layout.gutter(largura),
           paddingTop: spacing.sm,
           paddingBottom: insets.bottom + spacing.xl,
+          width: '100%',
         }}
         // Pull-to-refresh: re-runs the load (Supabase first; when offline
         // it is the reload-from-cache).
@@ -278,24 +287,20 @@ export default function Historico() {
           }
           const c = item.conversa;
           return (
-            <Pressable
+            <Glass
               onPress={() => router.push(`/(main)/chat/${c.id}`)}
               onLongPress={() => {
                 // Out of the light-offline scope: favorite/rename/delete
                 // with 6s undo (kept as the placeholder it started as).
                 console.log('[uspapo] Histórico — ação do item (long-press): placeholder');
               }}
-              style={[
-                glass.surface,
-                glass.hairline,
-                {
-                  borderRadius: radius.md,
-                  marginBottom: spacing.xs,
-                  minHeight: 56,
-                  paddingVertical: 12,
-                  paddingHorizontal: 14,
-                },
-              ]}
+              radius={radius.md}
+              style={{
+                marginBottom: spacing.xs,
+                minHeight: 56,
+                paddingVertical: 12,
+                paddingHorizontal: 14,
+              }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
                 <Text
@@ -323,7 +328,7 @@ export default function Historico() {
                   </Text>
                 ) : null}
               </View>
-            </Pressable>
+            </Glass>
           );
         }}
       />

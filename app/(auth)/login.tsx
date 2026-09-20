@@ -14,17 +14,14 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import CampoVidro from '../../components/CampoVidro';
+import ColunaAuth from '../../components/ColunaAuth';
 import {
   EnvelopeIcon,
   EyeIcon,
@@ -38,13 +35,9 @@ import { mapAuthError } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { fonts, useTheme } from '../../theme';
 
-/** Old site column width (max-w-md); keeps the layout centered on tablets. */
-const LARGURA_COLUNA = 448;
-
 export default function Login() {
   const { colors, glass, radius, spacing, typography, scheme } = useTheme();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
 
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
@@ -90,26 +83,7 @@ export default function Login() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        contentContainerStyle={{
-          flexGrow: 1,
-          justifyContent: 'center',
-          paddingHorizontal: spacing.xl,
-          paddingTop: spacing.xl,
-          paddingBottom: insets.bottom + spacing.xl,
-        }}
-      >
-        <View
-          style={{
-            alignItems: 'stretch',
-            maxWidth: LARGURA_COLUNA,
-            width: '100%',
-          }}
-        >
+    <ColunaAuth>
           {/* Wordmark + title (old: logo above "Entre com sua conta"). */}
           <View style={{ alignItems: 'center' }}>
             <TuringMark size={144} />
@@ -334,8 +308,6 @@ export default function Login() {
               </Text>
             </Pressable>
           </View>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+    </ColunaAuth>
   );
 }

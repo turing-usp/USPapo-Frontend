@@ -7,17 +7,14 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
-  ScrollView,
-  StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import CampoVidro from '../../components/CampoVidro';
+import ColunaAuth from '../../components/ColunaAuth';
 import {
   EnvelopeIcon,
   EyeIcon,
@@ -30,6 +27,7 @@ import { haptics } from '../../lib/haptics';
 import { mapAuthError } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { fonts, useTheme } from '../../theme';
+import Glass from '../../components/Glass';
 import {
   REGRAS_DE_SENHA,
   checarSenha,
@@ -37,7 +35,7 @@ import {
 } from './regrasSenha';
 
 export default function Cadastro() {
-  const { colors, glass, radius, spacing, typography } = useTheme();
+  const { colors, radius, spacing, typography } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -110,19 +108,14 @@ export default function Cadastro() {
           paddingBottom: insets.bottom + spacing.xl,
         }}
       >
-        <View
-          style={[
-            glass.surface,
-            glass.hairline,
-            glass.shadow,
-            {
+        <Glass
+          radius={radius.xl}
+          style={{
               alignItems: 'center',
-              borderRadius: radius.xl,
               gap: spacing.md,
               padding: spacing['2xl'],
               width: '100%',
-            },
-          ]}
+          }}
         >
           <Text
             style={{
@@ -168,24 +161,13 @@ export default function Cadastro() {
               Ir para o login
             </Text>
           </Pressable>
-        </View>
+                </Glass>
       </View>
     );
   }
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        contentContainerStyle={{
-          flexGrow: 1,
-          justifyContent: 'center',
-          padding: spacing.xl,
-          paddingBottom: insets.bottom + spacing.xl,
-        }}
-      >
+    <ColunaAuth>
         {/* Same masthead as login: wordmark over a centred Geom title. */}
         <View style={{ alignItems: 'center' }}>
           <TuringMark size={144} />
@@ -369,7 +351,6 @@ export default function Cadastro() {
             </Text>
           </Pressable>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+    </ColunaAuth>
   );
 }

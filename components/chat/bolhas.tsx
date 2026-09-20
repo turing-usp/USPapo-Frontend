@@ -21,6 +21,7 @@ import {
 import { fonts, useTheme } from '../../theme';
 import type { Turno } from '../../app/(main)/chat/useChat';
 import { Matematica } from './Matematica';
+import Glass from '../Glass';
 
 // ─────────────────────────────────────────────
 // Sources ("Fontes consultadas")
@@ -64,33 +65,33 @@ export function Fontes({ urls }: { urls: string[] }) {
             onPress={() => {
               void Linking.openURL(url).catch(() => undefined);
             }}
-            style={({ pressed }) => [
-              glass.surface,
-              glass.hairline,
-              {
-                borderRadius: radius.full,
+            style={{ maxWidth: '100%' }}
+          >
+            <Glass
+              radius={radius.full}
+              style={{
                 flexDirection: 'row',
                 alignItems: 'center',
                 gap: 6,
                 paddingVertical: 5,
                 paddingHorizontal: spacing.sm,
-                opacity: pressed ? 0.7 : 1,
-                maxWidth: '100%',
-              },
-            ]}
-          >
-            <Text style={{ color: colors.brand, fontSize: typography.xs.fontSize }}>↗</Text>
-            <Text
-              numberOfLines={1}
-              style={{
-                color: colors.mutedForeground,
-                fontFamily: fonts.body,
-                fontSize: typography.xs.fontSize,
-                flexShrink: 1,
               }}
             >
+              <Text style={{ color: colors.brand, fontSize: typography.xs.fontSize }}>
+                ↗
+              </Text>
+              <Text
+                numberOfLines={1}
+                style={{
+                  color: colors.mutedForeground,
+                  fontFamily: fonts.body,
+                  fontSize: typography.xs.fontSize,
+                  flexShrink: 1,
+                }}
+              >
               {rotular(url)}
-            </Text>
+              </Text>
+            </Glass>
           </Pressable>
         ))}
       </View>
@@ -116,19 +117,15 @@ export function LinhaFerramenta({
       : turno.rotulo;
   return (
     <View style={{ alignSelf: 'flex-start', maxWidth: '92%' }}>
-      <View
-        style={[
-          glass.surface,
-          glass.hairline,
-          {
-            borderRadius: radius.full,
+      <Glass
+        radius={radius.full}
+        style={{
             flexDirection: 'row',
             alignItems: 'center',
             gap: spacing.xs,
             paddingHorizontal: spacing.md,
             paddingVertical: 6,
-          },
-        ]}
+        }}
       >
         {turno.pronta ? (
           <Text style={{ color: colors.brand, fontSize: typography.xs.fontSize }}>✓</Text>
@@ -155,7 +152,7 @@ export function LinhaFerramenta({
         >
           {rotulo}
         </Text>
-      </View>
+            </Glass>
     </View>
   );
 }
@@ -261,20 +258,15 @@ export function BolhaUsuario({ texto }: { texto: string }) {
   const { colors, glass, typography } = useTheme();
   const { width } = useWindowDimensions();
   return (
-    <View
-      style={[
-        glass.surface,
-        glass.hairline,
-        glass.shadow,
-        {
+    <Glass
+      radius={32}
+      style={{
           alignSelf: 'flex-end',
-          borderRadius: 32,
           // Old: max-w-[85%] with a sm: step down to 75%.
           maxWidth: width >= 640 ? '75%' : '85%',
           paddingHorizontal: 20,
           paddingVertical: 12,
-        },
-      ]}
+      }}
     >
       <Text
         style={{
@@ -286,7 +278,7 @@ export function BolhaUsuario({ texto }: { texto: string }) {
       >
         {texto}
       </Text>
-    </View>
+        </Glass>
   );
 }
 

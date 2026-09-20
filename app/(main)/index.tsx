@@ -14,7 +14,6 @@
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-  Pressable,
   ScrollView,
   Text,
   View,
@@ -22,7 +21,9 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { LogoMark, LogoUSPapo } from '../../components/BrandMarks';
 import Composer from '../../components/Composer';
+import Glass from '../../components/Glass';
 import Container from '../../components/Container';
 import { ALTURA_CHROME } from '../../components/Chrome';
 import { ultimasConversasOffline } from '../../lib/cache';
@@ -83,9 +84,6 @@ function sortearPerguntas(): PerguntaFrequente[] {
   return copia.slice(0, total);
 }
 
-/** Once per launch (module-level memo, set inside the effect below). */
-let sorteadasNesteLancamento: PerguntaFrequente[] | null = null;
-
 /** crypto.randomUUID (web) with a native v4-style fallback. */
 function novoId(): string {
   const crypto = (
@@ -115,13 +113,11 @@ export default function Inicio() {
   const [naFila, setNaFila] = useState(0);
   const { online } = net.useConnection();
 
-  // Shuffle once per launch (module-level memo so a remount keeps the same
-  // 3 for the whole session).
+  // Reshuffled on every visit, like the old site (its client component
+  // re-runs the shuffle in a mount effect) — a module-level memo froze the
+  // same three for the whole session.
   useEffect(() => {
-    if (!sorteadasNesteLancamento) {
-      sorteadasNesteLancamento = sortearPerguntas();
-    }
-    setPerguntas(sorteadasNesteLancamento);
+    setPerguntas(sortearPerguntas());
   }, []);
 
   // P9: the resume list comes from the OFFLINE CACHE (no network needed)
@@ -193,17 +189,57 @@ export default function Inicio() {
   return (
     <ScrollView
       contentContainerStyle={{
+        // The old home is `flex min-h-full flex-col` with the hero block as
+        // `flex-1 justify-center`: the content sits VERTICALLY CENTRED and the
+        // credit line is pushed to the bottom. It is not top-aligned.
         flexGrow: 1,
-        // The chrome floats over the content, so the first section clears it
-        // and then takes the old `mt-8 md:mt-10`.
-        paddingTop: insets.top + ALTURA_CHROME + (larguraPills ? 40 : 32),
-        paddingBottom: insets.bottom + spacing['3xl'],
+        paddingTop: insets.top + ALTURA_CHROME,
+        paddingBottom: insets.bottom + spacing.lg,
       }}
       keyboardShouldPersistTaps="handled"
     >
-      {/* The composer is the top of the old home — there is no hero above it:
-          the wordmark lives in the drawer, and the backdrop carries the rest
-          of the identity. */}
+      <View style={{ flex: 1, justifyContent: 'center', paddingVertical: 32 }}>
+        {/* Hero: mark + wordmark, then the tagline (old `app-container flex
+            flex-col items-center`). */}
+        <Container style={{ alignItems: 'center' }}>
+          <View
+            style={{
+              alignItems: 'center',
+              flexDirection: larguraPills ? 'row' : 'column',
+              gap: spacing.sm,
+              justifyContent: 'center',
+              marginBottom: spacing.md,
+            }}
+          >
+            <LogoUSPapo size={40} />
+            <Text
+              style={{
+                color: colors.brand,
+                fontFamily: fonts.display,
+                fontSize: larguraPills ? 48 : 36,
+                marginLeft: 4,
+              }}
+            >
+              USPapo
+            </Text>
+          </View>
+          <Text
+            style={{
+              color: colors.foreground,
+              fontFamily: fonts.display,
+              fontSize: larguraPills
+                ? typography.xl.fontSize
+                : typography.base.fontSize,
+              marginTop: spacing.md,
+              marginBottom: spacing['2xl'],
+              textAlign: 'center',
+            }}
+          >
+            Seu <Text style={{ color: colors.brand }}>assistente inteligente</Text>
+            {' '}para navegar pela USP
+          </Text>
+        </Container>
+
       <Container>
         <Composer
           value={pergunta}
@@ -213,18 +249,14 @@ export default function Inicio() {
 
         {/* Offline queue badge — honest about what is waiting to send. */}
         {naFila > 0 ? (
-          <View
-            style={[
-              glass.surface,
-              glass.hairline,
-              {
-                alignSelf: 'flex-start',
-                borderRadius: radius.full,
-                marginTop: spacing.md,
-                paddingVertical: 6,
-                paddingHorizontal: 12,
-              },
-            ]}
+          <Glass
+            radius={radius.full}
+            style={{
+              alignSelf: 'flex-start',
+              marginTop: spacing.md,
+              paddingVertical: 6,
+              paddingHorizontal: 12,
+            }}
           >
             <Text
               style={{
@@ -237,7 +269,7 @@ export default function Inicio() {
                 ? '1 pergunta aguardando a conexão'
                 : `${naFila} perguntas aguardando a conexão`}
             </Text>
-          </View>
+          </Glass>
         ) : null}
       </Container>
 
@@ -270,31 +302,25 @@ export default function Inicio() {
           }}
         >
           {perguntas.map((p) => (
-            <Pressable
+            <Glass
               key={p.trecho}
               onPress={() => iniciarConversa(p.prompt)}
-              style={({ pressed }) => [
-                glass.surface,
-                glass.hairline,
-                glass.shadow,
-                {
-                  alignItems: 'center',
-                  alignSelf: 'center',
-                  // Old pill: h-14, rounded-[2rem], max-w-[18rem], and on a
-                  // wide window an equal-basis row item with an 11rem floor.
-                  borderRadius: 32,
-                  flexBasis: larguraPills ? 0 : 'auto',
-                  flexGrow: larguraPills ? 1 : 0,
-                  height: 56,
-                  justifyContent: 'center',
-                  maxWidth: 288,
-                  minWidth: larguraPills ? 176 : undefined,
-                  opacity: pressed ? 0.85 : 1,
-                  paddingHorizontal: spacing.lg,
-                  paddingVertical: spacing.sm,
-                  width: larguraPills ? undefined : '100%',
-                },
-              ]}
+              radius={32}
+              style={{
+                alignItems: 'center',
+                alignSelf: 'center',
+                // Old pill: h-14, rounded-[2rem], max-w-[18rem], and on a
+                // wide window an equal-basis row item with an 11rem floor.
+                flexBasis: larguraPills ? 0 : 'auto',
+                flexGrow: larguraPills ? 1 : 0,
+                height: 56,
+                justifyContent: 'center',
+                maxWidth: 288,
+                minWidth: larguraPills ? 176 : undefined,
+                paddingHorizontal: spacing.lg,
+                paddingVertical: spacing.sm,
+                width: larguraPills ? undefined : '100%',
+              }}
             >
               <Text
                 style={{
@@ -306,7 +332,7 @@ export default function Inicio() {
               >
                 {p.trecho}
               </Text>
-            </Pressable>
+            </Glass>
           ))}
         </View>
       </Container>
@@ -329,20 +355,14 @@ export default function Inicio() {
           </Text>
           <View style={{ gap: spacing.md }}>
             {ultimas.map((c) => (
-              <Pressable
+              <Glass
                 key={c.id}
                 onPress={() => router.push(`/(main)/chat/${c.id}`)}
-                style={({ pressed }) => [
-                  glass.surface,
-                  glass.hairline,
-                  glass.shadow,
-                  {
-                    borderRadius: radius.lg,
-                    opacity: pressed ? 0.85 : 1,
-                    paddingVertical: spacing.md,
-                    paddingHorizontal: spacing.lg,
-                  },
-                ]}
+                radius={radius.lg}
+                style={{
+                  paddingVertical: spacing.md,
+                  paddingHorizontal: spacing.lg,
+                }}
               >
                 <View
                   style={{
@@ -374,11 +394,47 @@ export default function Inicio() {
                     </Text>
                   ) : null}
                 </View>
-              </Pressable>
+              </Glass>
             ))}
           </View>
         </Container>
       ) : null}
+      </View>
+
+      {/* Credit line, pinned under the centred block (old `py-6` row). */}
+      <Container
+        style={{
+          alignItems: 'center',
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          gap: spacing.sm,
+          justifyContent: 'center',
+          paddingVertical: spacing['2xl'],
+        }}
+      >
+        <Text
+          style={{
+            color: colors.brand,
+            fontFamily: fonts.display,
+            fontSize: typography.base.fontSize,
+          }}
+        >
+          Desenvolvido por
+        </Text>
+        <View style={{ alignItems: 'center', flexDirection: 'row', gap: 4 }}>
+          <LogoMark size={30} />
+          <Text
+            style={{
+              color: colors.brand,
+              // The one place the old site uses Orbitron.
+              fontFamily: fonts.accent,
+              fontSize: typography.base.fontSize,
+            }}
+          >
+            turing.usp
+          </Text>
+        </View>
+      </Container>
     </ScrollView>
   );
 }

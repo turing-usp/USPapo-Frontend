@@ -2,10 +2,11 @@
  * App chrome — port of the old site's AppShell header (site/app/components).
  *
  * The old site has no bottom tab bar: every screen sits under a floating
- * glass hamburger on the left and the account avatar on the right, and the
- * hamburger opens a glass panel that slides in from the left over a scrim.
- * This component is that chrome, and it is the only navigation surface, so
- * the route group renders it once around a plain Stack.
+ * glass hamburger on the left and the account avatar on the right. The
+ * hamburger opens a glass panel that slides in from the left over a scrim,
+ * and the avatar opens a small account menu. This component is that chrome,
+ * and it is the only navigation surface, so the route group renders it once
+ * around a plain Stack.
  *
  * Icon paths are the old site's Heroicons outline set, verbatim.
  */
@@ -14,7 +15,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   Animated,
   Easing,
-  Modal,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -24,6 +25,7 @@ import {
 import { Path, Svg } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import Glass from './Glass';
 import { LogoMark } from './BrandMarks';
 import { haptics } from '../lib/haptics';
 import { supabase } from '../lib/supabase';
@@ -75,6 +77,68 @@ const ITENS: ItemNav[] = [
   { rotulo: 'Configurações', icone: ICONE_AJUSTES, destino: '/(main)/settings' },
 ];
 
+/** Signed-in account, for the avatar and the account menu. */
+type Conta = { inicial: string; nome: string; email: string; foto: string | null };
+
+/**
+ * The account shown in the chrome. The name and photo live on the `Perfis`
+ * row (that is what the old site rendered, and what the profile screen
+ * writes), so auth metadata is only the fallback for a session whose row has
+ * not been filled in yet — which is why nothing showed before.
+ */
+function useConta(): Conta {
+  const [conta, setConta] = useState<Conta>({
+    inicial: 'U',
+    nome: '',
+    email: '',
+    foto: null,
+  });
+  useEffect(() => {
+    let ativo = true;
+    void (async () => {
+      const { data } = await supabase.auth.getUser();
+      const u = data.user;
+      if (!ativo || !u) return;
+
+      const email = u.email ?? '';
+      const meta = (u.user_metadata ?? {}) as {
+        full_name?: string;
+        name?: string;
+        avatar_url?: string;
+        picture?: string;
+      };
+
+      let nome = meta.full_name ?? meta.name ?? '';
+      let foto = meta.avatar_url ?? meta.picture ?? null;
+
+      try {
+        const { data: perfil } = await supabase
+          .from('Perfis')
+          .select('nome, avatar_url')
+          .eq('id', u.id)
+          .maybeSingle<{ nome: string | null; avatar_url: string | null }>();
+        if (perfil?.nome) nome = perfil.nome;
+        if (perfil?.avatar_url) foto = perfil.avatar_url;
+      } catch {
+        // No row yet, or RLS said no: the auth metadata above still stands.
+      }
+
+      if (!ativo) return;
+      const exibido = nome || email.split('@')[0] || '';
+      setConta({
+        inicial: (exibido || 'U').slice(0, 1).toUpperCase(),
+        nome: exibido,
+        email,
+        foto,
+      });
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, []);
+  return conta;
+}
+
 /**
  * One drawer row: brand-orange icon, Geom label, and the old hover wash
  * (`hover:bg-brand/15` with a `hover:border-brand/30` ring) reused as the
@@ -121,30 +185,32 @@ function LinhaNav({
   );
 }
 
-/** The sliding panel plus its scrim, mounted only while open. */
-function Gaveta({
-  aberta,
-  aoFechar,
-}: {
-  aberta: boolean;
-  aoFechar: () => void;
-}) {
-  const { scheme, colors, fonts, glass, spacing, typography } = useTheme();
+/** The sliding panel plus its scrim. */
+function Gaveta({ aberta, aoFechar }: { aberta: boolean; aoFechar: () => void }) {
+  const { colors, fonts, spacing, typography } = useTheme();
   const router = useRouter();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const largura = width >= 768 ? LARGURA_LARGA : LARGURA_ESTREITA;
 
-  const [deslocamento] = useState(() => new Animated.Value(0));
+  /**
+   * The panel stays mounted and is hidden with `pointerEvents` + opacity
+   * instead of being unmounted. It used to live in a <Modal visible={aberta}>,
+   * which tore the view down the instant `aberta` went false: that detached
+   * the native animated node mid-flight, so the value never settled back to 0
+   * and every open after the first jumped straight to its final position.
+   * Staying mounted also means no state has to be set from an effect.
+   */
+  const [progresso] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
-    Animated.timing(deslocamento, {
+    Animated.timing(progresso, {
       toValue: aberta ? 1 : 0,
       duration: DURACAO,
-      easing: Easing.inOut(Easing.ease),
+      easing: aberta ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
       useNativeDriver: true,
     }).start();
-  }, [aberta, deslocamento]);
+  }, [aberta, progresso]);
 
   const navegar = useCallback(
     (destino: string) => {
@@ -154,116 +220,177 @@ function Gaveta({
     [aoFechar, router],
   );
 
-  const x = deslocamento.interpolate({
+  const x = progresso.interpolate({
     inputRange: [0, 1],
     outputRange: [-largura, 0],
   });
 
   return (
-    <Modal
-      visible={aberta}
-      transparent
-      animationType="none"
-      onRequestClose={aoFechar}
+    <View
+      // Ignores touches entirely while closed, so the chrome underneath and
+      // the screen behind stay fully interactive.
+      pointerEvents={aberta ? 'auto' : 'none'}
+      style={[StyleSheet.absoluteFill, styles.camadaGaveta]}
     >
-      {/* Scrim — the old `bg-scrim/10 dark:bg-scrim/25`. */}
-      <Pressable
-        accessibilityLabel="Fechar menu lateral"
-        onPress={aoFechar}
-        style={[
-          StyleSheet.absoluteFill,
-          {
-            backgroundColor:
-              scheme === 'dark' ? 'rgba(0,0,0,0.25)' : 'rgba(11,16,48,0.10)',
-          },
-        ]}
-      />
+      {/* Scrim — the old `bg-scrim/10 dark:bg-scrim/25`, fading with the panel. */}
+      <Animated.View style={[StyleSheet.absoluteFill, { opacity: progresso }]}>
+        <Pressable
+          accessibilityLabel="Fechar menu lateral"
+          onPress={aoFechar}
+          style={[StyleSheet.absoluteFill, { backgroundColor: colors.scrim + '33' }]}
+        />
+      </Animated.View>
+
       <Animated.View
-        style={[
-          styles.gaveta,
-          glass.panel,
-          {
-            width: largura,
+        style={[styles.gaveta, { width: largura, transform: [{ translateX: x }] }]}
+      >
+        {/* The panel's blurred pane, behind the drawer's own content. */}
+        <Glass variante="panel" radius={0} semSombra style={styles.preencherAbsoluto} />
+        <View
+          style={{
+            flex: 1,
             paddingTop: insets.top + spacing.lg,
             paddingBottom: insets.bottom + spacing.lg,
             paddingHorizontal: spacing.lg,
-            borderRightColor: glass.hairline.borderRightColor,
-            transform: [{ translateX: x }],
-          },
-        ]}
-      >
-        {/* Header: logo + wordmark, with the close button opposite. */}
-        <View
-          style={[
-            styles.cabecalhoGaveta,
-            {
-              borderBottomColor: colors.line + '1a',
-              paddingBottom: spacing.lg,
-            },
-          ]}
+          }}
         >
-          <View style={[styles.marca, { gap: 10 }]}>
-            <LogoMark size={32} />
-            <Text
-              style={{
-                color: colors.brand,
-                fontFamily: fonts.displayBold,
-                fontSize: typography.xl.fontSize,
-              }}
-            >
-              USPapo
-            </Text>
-          </View>
-          <Pressable
-            accessibilityLabel="Fechar menu lateral"
-            onPress={aoFechar}
-            hitSlop={8}
-            style={{ padding: 6 }}
+          {/* Header: logo + wordmark, with the close button opposite. */}
+          <View
+            style={[
+              styles.cabecalhoGaveta,
+              { borderBottomColor: colors.line + '1a', paddingBottom: spacing.lg },
+            ]}
           >
-            <Icone size={24} color={colors.mutedForeground} d={ICONE_FECHAR} />
-          </Pressable>
-        </View>
+            <View style={[styles.marca, { gap: 10 }]}>
+              <LogoMark size={32} />
+              <Text
+                style={{
+                  color: colors.brand,
+                  fontFamily: fonts.displayBold,
+                  fontSize: typography.xl.fontSize,
+                }}
+              >
+                USPapo
+              </Text>
+            </View>
+            <Pressable
+              accessibilityLabel="Fechar menu lateral"
+              onPress={aoFechar}
+              hitSlop={8}
+              style={{ padding: 6 }}
+            >
+              <Icone size={24} color={colors.mutedForeground} d={ICONE_FECHAR} />
+            </Pressable>
+          </View>
 
-        <View style={{ gap: spacing.sm, marginTop: spacing.lg }}>
-          {ITENS.map((item) => (
-            <LinhaNav key={item.rotulo} item={item} aoTocar={navegar} />
-          ))}
+          <View style={{ gap: spacing.sm, marginTop: spacing.lg }}>
+            {ITENS.map((item) => (
+              <LinhaNav key={item.rotulo} item={item} aoTocar={navegar} />
+            ))}
+          </View>
         </View>
       </Animated.View>
-    </Modal>
+    </View>
   );
 }
 
 /**
- * First letter of the signed-in account, for the avatar. Falls back to "U"
- * while the session is still loading or when there is no email on it.
+ * The account menu behind the avatar — the old site's `role="menu"` panel:
+ * name over email, a hairline divider, and "Sair" in the danger colour. The
+ * avatar used to navigate straight to Settings, which the drawer already
+ * offers and which left no way to sign out.
  */
-function useInicialDaConta(): string {
-  const [inicial, setInicial] = useState('U');
-  useEffect(() => {
-    let ativo = true;
-    void supabase.auth.getUser().then(({ data }) => {
-      const email = data.user?.email;
-      if (ativo && email) setInicial(email.slice(0, 1).toUpperCase());
-    });
-    return () => {
-      ativo = false;
-    };
-  }, []);
-  return inicial;
+function MenuConta({ conta, aoFechar }: { conta: Conta; aoFechar: () => void }) {
+  const { colors, fonts, radius, spacing, typography } = useTheme();
+  const router = useRouter();
+
+  const sair = useCallback(async () => {
+    aoFechar();
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // Already signed out locally: the redirect below is what matters.
+    }
+    router.replace('/(auth)/login');
+  }, [aoFechar, router]);
+
+  return (
+    <Glass
+      variante="raised"
+      radius={radius.lg}
+      style={styles.menuConta}
+    >
+      <View style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
+        {conta.nome ? (
+          <Text
+            numberOfLines={1}
+            style={{
+              color: colors.foreground,
+              fontFamily: fonts.body,
+              fontSize: typography.sm.fontSize,
+            }}
+          >
+            {conta.nome}
+          </Text>
+        ) : null}
+        <Text
+          numberOfLines={1}
+          style={{
+            color: colors.faintForeground,
+            fontFamily: fonts.body,
+            fontSize: typography.xs.fontSize,
+          }}
+        >
+          {conta.email}
+        </Text>
+      </View>
+
+      <View
+        style={{
+          borderTopColor: colors.line + '1a',
+          borderTopWidth: 1,
+          marginVertical: 4,
+        }}
+      />
+
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => {
+          void haptics.press();
+          void sair();
+        }}
+        style={({ pressed }) => ({
+          backgroundColor: pressed ? colors.tint + '14' : 'transparent',
+          borderRadius: radius.md,
+          paddingHorizontal: 12,
+          paddingVertical: spacing.sm,
+        })}
+      >
+        <Text
+          style={{
+            color: colors.danger,
+            fontFamily: fonts.body,
+            fontSize: typography.sm.fontSize,
+          }}
+        >
+          Sair
+        </Text>
+      </Pressable>
+    </Glass>
+  );
 }
 
 /**
- * The floating header: hamburger on the left, avatar on the right. Both
- * float over the scrolling content exactly as they do on the old site, so
- * this renders as an absolutely positioned overlay, not a layout row.
+ * The floating header: hamburger on the left, avatar on the right. Both float
+ * over the scrolling content exactly as they do on the old site, so this
+ * renders as an absolutely positioned overlay, not a layout row.
  */
 export default function Chrome() {
-  const { colors, fonts, glass, radius, spacing, typography } = useTheme();
+  const { colors, fonts, radius, spacing, typography } = useTheme();
   const [aberta, setAberta] = useState(false);
+  const [menu, setMenu] = useState(false);
   const insets = useSafeAreaInsets();
-  const router = useRouter();
-  const letra = useInicialDaConta();
+  const conta = useConta();
 
   return (
     <>
@@ -274,44 +401,52 @@ export default function Chrome() {
           { paddingTop: insets.top + spacing.md, paddingHorizontal: spacing.lg },
         ]}
       >
-        <Pressable
-          accessibilityLabel="Abrir menu lateral"
-          onPress={() => {
-            void haptics.selection();
-            setAberta(true);
-          }}
-          style={[
-            styles.botaoMenu,
-            glass.surface,
-            glass.hairline,
-            glass.shadow,
-            { borderRadius: radius.md, padding: 10 },
-          ]}
-        >
-          <Icone size={24} color={colors.mutedForeground} d={ICONE_MENU} />
-        </Pressable>
-
-        <Pressable
-          accessibilityLabel="Menu do usuário"
-          onPress={() => {
-            void haptics.selection();
-            router.push('/(main)/settings' as never);
-          }}
-          style={[
-            styles.avatar,
-            { backgroundColor: colors.brand, borderRadius: radius.full },
-          ]}
-        >
-          <Text
-            style={{
-              color: colors.brandForeground,
-              fontFamily: fonts.bodyBold,
-              fontSize: typography.sm.fontSize,
+        <Glass variante="surface" radius={radius.md} style={styles.botaoMenu}>
+          <Pressable
+            accessibilityLabel="Abrir menu lateral"
+            onPress={() => {
+              void haptics.selection();
+              setAberta(true);
             }}
+            style={styles.preencher}
           >
-            {letra}
-          </Text>
-        </Pressable>
+            <Icone size={24} color={colors.mutedForeground} d={ICONE_MENU} />
+          </Pressable>
+        </Glass>
+
+        {/* Anchor: the account menu is positioned against this. */}
+        <View>
+          <Pressable
+            accessibilityLabel="Menu do usuário"
+            onPress={() => {
+              void haptics.selection();
+              setMenu((v) => !v);
+            }}
+            style={[
+              styles.avatar,
+              { backgroundColor: colors.brand, borderRadius: radius.full },
+            ]}
+          >
+            {conta.foto ? (
+              <Image
+                source={{ uri: conta.foto }}
+                style={styles.avatarFoto}
+                accessibilityIgnoresInvertColors
+              />
+            ) : (
+              <Text
+                style={{
+                  color: colors.brandForeground,
+                  fontFamily: fonts.bodyBold,
+                  fontSize: typography.sm.fontSize,
+                }}
+              >
+                {conta.inicial}
+              </Text>
+            )}
+          </Pressable>
+          {menu ? <MenuConta conta={conta} aoFechar={() => setMenu(false)} /> : null}
+        </View>
       </View>
 
       <Gaveta
@@ -339,23 +474,43 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 30,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
   },
-  botaoMenu: { alignItems: 'center', justifyContent: 'center' },
+  botaoMenu: { width: 44, height: 44 },
+  preencher: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  preencherAbsoluto: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   avatar: {
     width: 36,
     height: 36,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarFoto: { width: '100%', height: '100%' },
+  menuConta: {
+    position: 'absolute',
+    right: 0,
+    top: 44,
+    width: 224,
+    padding: 4,
+    zIndex: 40,
   },
   gaveta: {
     position: 'absolute',
     top: 0,
     bottom: 0,
     left: 0,
-    borderRightWidth: 1,
   },
+  // Above the chrome bar (zIndex 30) so the panel and its scrim cover the
+  // hamburger and the avatar while the drawer is open.
+  camadaGaveta: { zIndex: 40 },
   cabecalhoGaveta: {
     flexDirection: 'row',
     alignItems: 'center',

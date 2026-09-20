@@ -18,6 +18,7 @@ import React, { useState } from 'react';
 import { favoritar } from '../../lib/conversations';
 import { haptics } from '../../lib/haptics';
 import { fonts, useTheme } from '../../theme';
+import Glass from '../Glass';
 
 /** The old site's suggested reasons (MOTIVOS_SUGERIDOS, ported verbatim). */
 const MOTIVOS = [
@@ -37,7 +38,7 @@ export type FeedbackRespostaProps = {
 };
 
 export function FeedbackResposta({ userId, conversaId, inicial }: FeedbackRespostaProps) {
-  const { colors, glass, radius, spacing, typography } = useTheme();
+  const { colors, radius, spacing, typography } = useTheme();
   const [avaliacao, setAvaliacao] = useState<'none' | 'like' | 'dislike'>(
     inicial ? 'like' : 'none',
   );
@@ -182,18 +183,14 @@ export function FeedbackResposta({ userId, conversaId, inicial }: FeedbackRespos
       ) : null}
 
       {avaliacao === 'dislike' && !enviado ? (
-        <View
-          style={[
-            glass.surface,
-            glass.hairline,
-            {
-              borderRadius: radius.lg,
+        <Glass
+          radius={radius.lg}
+          style={{
               marginTop: spacing.sm,
               padding: spacing.md,
               gap: spacing.sm,
               width: '100%',
-            },
-          ]}
+          }}
         >
           <Text
             style={{
@@ -224,7 +221,7 @@ export function FeedbackResposta({ userId, conversaId, inicial }: FeedbackRespos
               </Pressable>
             ))}
           </View>
-        </View>
+                </Glass>
       ) : null}
 
       {avaliacao === 'dislike' && enviado ? (

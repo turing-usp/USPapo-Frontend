@@ -9,11 +9,12 @@
 import { Stack } from 'expo-router';
 import React from 'react';
 
+import Cena from '../../components/Cena';
 import Tela from '../../components/Tela';
 
 export default function LayoutAutenticacao() {
   return (
-    <>
+    <Cena>
       <Stack
         screenLayout={({ children }) => <Tela>{children}</Tela>}
         screenOptions={{
@@ -32,6 +33,6 @@ export default function LayoutAutenticacao() {
         <Stack.Screen name="register" />
         <Stack.Screen name="reset" />
       </Stack>
-    </>
+    </Cena>
   );
 }

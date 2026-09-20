@@ -28,6 +28,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { fonts, useTheme } from '../../theme';
+import Glass from '../../components/Glass';
 import {
   ROTULO_JANELA,
   ROTULO_JANELA_SERVICO,
@@ -73,18 +74,9 @@ function CartaoKpi({
 }) {
   const { colors, glass, radius, spacing, typography } = useTheme();
   return (
-    <View
-      testID={testID}
-      style={[
-        glass.surface,
-        glass.hairline,
-        {
-          borderRadius: radius.md,
-          gap: spacing.xs,
-          padding: spacing.lg,
-          width: '47%',
-        },
-      ]}
+    <Glass
+      radius={radius.md}
+      style={{ gap: spacing.xs, padding: spacing.lg, width: '47%' }}
     >
       <Text style={{ color: colors.mutedForeground, fontSize: typography.sm.fontSize }}>
         {rotulo}
@@ -99,7 +91,7 @@ function CartaoKpi({
         {valor}
       </Text>
       <Text style={{ color: colors.faintForeground, fontSize: typography.xs.fontSize }}>{sub}</Text>
-    </View>
+    </Glass>
   );
 }
 
@@ -179,14 +171,11 @@ function Esqueleto() {
         Carregando métricas…
       </Text>
       {Array.from({ length: 6 }, (_, i) => (
-        <View
+        <Glass
           key={i}
           testID="esqueleto"
-          style={[
-            glass.surface,
-            glass.hairline,
-            { borderRadius: radius.md, height: 84, width: '47%' },
-          ]}
+          radius={radius.md}
+          style={{ height: 84, width: '47%' }}
         />
       ))}
     </View>
@@ -197,17 +186,13 @@ function Esqueleto() {
 function TelaErro({ aoTentarNovamente }: { aoTentarNovamente: () => void }) {
   const { colors, glass, radius, spacing, typography } = useTheme();
   return (
-    <View
-      style={[
-        glass.surface,
-        glass.hairline,
-        {
+    <Glass
+      radius={radius.lg}
+      style={{
           alignItems: 'center',
-          borderRadius: radius.lg,
           gap: spacing.md,
           padding: spacing['2xl'],
-        },
-      ]}
+      }}
     >
       <Text
         style={{
@@ -238,7 +223,7 @@ function TelaErro({ aoTentarNovamente }: { aoTentarNovamente: () => void }) {
           Tentar novamente
         </Text>
       </Pressable>
-    </View>
+        </Glass>
   );
 }
 
@@ -311,8 +296,6 @@ export default function PainelMetricas() {
                 testID={`janela-${opcao.valor}`}
                 onPress={() => setJanela(opcao.valor)}
                 style={({ pressed }) => [
-                  glass.surface,
-                  glass.hairline,
                   {
                     borderRadius: radius.full,
                     opacity: pressed ? 0.85 : 1,
@@ -385,26 +368,20 @@ export default function PainelMetricas() {
           </View>
 
           {/* Perguntas por dia: N bars for N days of the selected window. */}
-          <View
-            style={[
-              glass.surface,
-              glass.hairline,
-              { borderRadius: radius.lg, gap: spacing.md, padding: spacing['2xl'] },
-            ]}
+          <Glass
+            radius={radius.lg}
+            style={{ gap: spacing.md, padding: spacing['2xl'] }}
           >
             <Text style={{ color: colors.foreground, fontSize: typography.lg.fontSize, fontWeight: '700' }}>
               Perguntas por dia
             </Text>
             <GraficoPerguntas barras={barras} />
-          </View>
+          </Glass>
 
           {/* Fontes mais citadas: the 7th KPI, palette per the theme rule. */}
-          <View
-            style={[
-              glass.surface,
-              glass.hairline,
-              { borderRadius: radius.lg, gap: spacing.sm, padding: spacing['2xl'] },
-            ]}
+          <Glass
+            radius={radius.lg}
+            style={{ gap: spacing.sm, padding: spacing['2xl'] }}
           >
             <Text style={{ color: colors.foreground, fontSize: typography.lg.fontSize, fontWeight: '700' }}>
               Fontes mais citadas
@@ -424,7 +401,7 @@ export default function PainelMetricas() {
                 />
               ))
             )}
-          </View>
+          </Glass>
         </>
       )}
     </ScrollView>

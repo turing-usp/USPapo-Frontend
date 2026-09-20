@@ -12,16 +12,13 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
-  ScrollView,
   Text,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import CampoVidro from '../../components/CampoVidro';
+import ColunaAuth from '../../components/ColunaAuth';
 import { EnvelopeIcon, LockIcon } from '../../components/BrandMarks';
 import { haptics } from '../../lib/haptics';
 import { mapAuthError } from '../../lib/auth';
@@ -32,9 +29,8 @@ import { todasAsRegrasPassam } from './regrasSenha';
 type Etapa = 'email' | 'linkEnviado' | 'novaSenha';
 
 export default function Reset() {
-  const { colors, glass, radius, spacing, typography } = useTheme();
+  const { colors, radius, spacing, typography } = useTheme();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
 
   const [etapa, setEtapa] = useState<Etapa>('email');
   const [email, setEmail] = useState('');
@@ -136,18 +132,7 @@ export default function Reset() {
   );
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        contentContainerStyle={{
-          flexGrow: 1,
-          justifyContent: 'center',
-          padding: spacing.xl,
-          paddingBottom: insets.bottom + spacing.xl,
-        }}
-      >
+    <ColunaAuth>
         {etapa === 'email' ? (
           <>
             <Text
@@ -309,7 +294,6 @@ export default function Reset() {
             {botaoPrimario('Salvar nova senha', definirNovaSenha, carregando)}
           </>
         ) : null}
-      </ScrollView>
-    </KeyboardAvoidingView>
+    </ColunaAuth>
   );
 }

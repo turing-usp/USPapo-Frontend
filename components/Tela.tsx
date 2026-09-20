@@ -1,5 +1,5 @@
 /**
- * Screen shell: a still scene backdrop, and content that animates itself in.
+ * Screen shell: content that animates itself in over the shared scene.
  *
  * Getting all three of these at once took some doing, because the navigator's
  * own transitions can only give two:
@@ -22,7 +22,6 @@
 import React, { useEffect, useState, type ReactNode } from 'react';
 import { Animated, Easing, View } from 'react-native';
 
-import Backdrop from './Backdrop';
 
 /** Close to the old site's `duration-200 ease-in-out` content transitions. */
 const DURACAO = 220;
@@ -43,7 +42,6 @@ export default function Tela({ children }: { children: ReactNode }) {
 
   return (
     <View style={{ flex: 1 }}>
-      <Backdrop />
       <Animated.View
         style={{
           flex: 1,

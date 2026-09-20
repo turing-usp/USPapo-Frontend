@@ -34,6 +34,8 @@
  * - network failure / abort propagate as-is (TypeError / AbortError) so
  *   mapAuthError can route them to the connection message.
  */
+import { Platform } from 'react-native';
+
 declare const process: { env: Record<string, string | undefined> };
 
 // ─────────────────────────────────────────────
@@ -95,12 +97,23 @@ export function labelDaFerramenta(name: string): string {
 // ─────────────────────────────────────────────
 
 /**
- * The backend base URL. Mobile points it at the Render service (prod) or the
- * local dev server; the web build goes through the same-origin `/api/*`
- * proxy, so it may set EXPO_PUBLIC_BACKEND_URL accordingly. Trailing slashes
- * are stripped so `backendUrl() + '/api/chat'` never double-slashes.
+ * The backend base URL. Trailing slashes are stripped so
+ * `backendUrl() + '/api/chat'` never double-slashes.
+ *
+ * Web always resolves to the empty string — a same-origin, host-relative
+ * `/api/...`. That is not a preference but a requirement: the deployment
+ * serves `Content-Security-Policy: connect-src 'self' <supabase>`, so any
+ * absolute backend origin is blocked by the browser before the request
+ * leaves, which surfaces to the user as "check your connection". vercel.json
+ * rewrites `/api/*` to the Render service, so same-origin reaches the backend
+ * from whatever host the app is served on — the Vercel URL today, a custom
+ * domain later — with no rebuild.
+ *
+ * Native has no CSP and no proxy, so it uses EXPO_PUBLIC_BACKEND_URL (the
+ * Render service in production, a LAN address in development).
  */
 export function backendUrl(): string {
+  if (Platform.OS === 'web') return '';
   const configurado = process.env.EXPO_PUBLIC_BACKEND_URL;
   const base = configurado && configurado.trim() !== '' ? configurado : 'http://127.0.0.1:8000';
   return base.replace(/\/+$/, '');

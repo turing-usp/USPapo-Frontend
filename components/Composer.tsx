@@ -21,6 +21,7 @@ import {
 } from 'react-native';
 import { Path, Svg } from 'react-native-svg';
 
+import Glass from './Glass';
 import { haptics } from '../lib/haptics';
 import { useTheme } from '../theme';
 
@@ -37,8 +38,13 @@ const ICONE_ANEXAR = 'M12 5v14m-7-7h14';
 const ICONE_ENVIAR = 'M12 19V5m0 0l-6 6m6-6l6 6';
 /** Stop square, for the streaming state. */
 const ICONE_PARAR = 'M6.75 6.75h10.5v10.5H6.75z';
+/**
+ * The old site's microphone, verbatim. The Heroicons mic used before sits
+ * low in its 24x24 box, which read as the button being off-centre.
+ */
 const ICONE_MICROFONE = [
-  'M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z',
+  'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z',
+  'M18 11a6 6 0 0 1-12 0M12 17v4m-3 0h6',
 ];
 
 function Icone({
@@ -106,21 +112,27 @@ export default function Composer({
     setAltura(Math.min(Math.max(LINHA, medida), ALTURA_MAX));
   };
 
+  /**
+   * The row is `items-end` so the buttons stay put as the input grows. That
+   * only lines up if a single line is exactly as tall as the 44pt buttons —
+   * Android reports a taller contentSize than the bare line height, which
+   * made the row taller than the buttons and left the + and microphone
+   * sitting visibly below the text.
+   */
+  const alturaEntrada = Math.min(Math.max(ALVO, altura + 20), ALTURA_MAX + 20);
+
   return (
-    <View
-      style={[
-        styles.pilula,
-        glass.surface,
-        glass.brand,
-        glass.shadow,
-        { borderRadius: RAIO },
-      ]}
+    <Glass
+      variante="brand"
+      radius={RAIO}
+      borda={glass.brand}
+      style={styles.pilula}
     >
       <Pressable
         accessibilityLabel="Anexar arquivo"
         onPress={onAttach}
         disabled={!onAttach}
-        style={[styles.alvo, { borderRadius: radius.full, opacity: onAttach ? 1 : 0 }]}
+        style={[styles.alvo, { borderRadius: radius.full }]}
       >
         <Icone color={colors.mutedForeground} d={ICONE_ANEXAR} />
       </Pressable>
@@ -143,7 +155,7 @@ export default function Composer({
             color: colors.foreground,
             fontFamily: fonts.body,
             fontSize: typography.base.fontSize,
-            height: altura + 20,
+            height: alturaEntrada,
             lineHeight: LINHA,
           },
         ]}
@@ -191,7 +203,7 @@ export default function Composer({
           <Icone color={colors.mutedForeground} d={ICONE_MICROFONE} />
         )}
       </Pressable>
-    </View>
+    </Glass>
   );
 }
 
@@ -220,6 +232,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     paddingVertical: 10,
+    textAlignVertical: 'center',
     paddingHorizontal: 4,
     // RN Web draws a focus ring on the DOM input; the glass-field edge is
     // the old site's focus affordance instead.

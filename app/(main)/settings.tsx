@@ -15,10 +15,14 @@ import {
   ScrollView,
   Text,
   View,
+  useWindowDimensions,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { ALTURA_CHROME } from '../../components/Chrome';
+import Glass from '../../components/Glass';
 
 import {
   carregarPreferencia,
@@ -44,8 +48,9 @@ function ePreferencia(v: string | null): v is ThemePreference {
 }
 
 export default function Ajustes() {
-  const { colors, glass, radius, spacing, typography } = useTheme();
+  const { colors, glass, radius, layout, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
+  const { width: largura } = useWindowDimensions();
 
   const [preferencia, setPreferencia] = useState<ThemePreference>('system');
   const [vibracao, setVibracao] = useState(hapticsEnabled);
@@ -91,13 +96,8 @@ export default function Ajustes() {
     );
   }
 
+  // Section cards are blurred glass; the edge and tint come from <Glass>.
   const estiloSecao: ViewStyle = {
-    // `colors.line` is a *base* colour meant to be taken with an opacity; used
-    // raw it is solid #ffffff in the dark scheme. glass.hairline is the
-    // calibrated edge every other glass surface uses.
-    ...glass.surface,
-    ...glass.hairline,
-    borderRadius: radius.lg,
     gap: spacing.md,
     padding: spacing.lg,
     marginTop: spacing.lg,
@@ -114,9 +114,13 @@ export default function Ajustes() {
   return (
     <ScrollView
       contentContainerStyle={{
-        padding: spacing.lg,
-        paddingTop: insets.top + spacing.md,
+        // Old .app-container measure, centred, clearing the floating chrome.
+        alignSelf: 'center',
+        maxWidth: layout.containerMaxWidth,
+        paddingHorizontal: layout.gutter(largura),
+        paddingTop: insets.top + ALTURA_CHROME + spacing.md,
         paddingBottom: insets.bottom + spacing.xl,
+        width: '100%',
       }}
     >
       <Text
@@ -130,50 +134,64 @@ export default function Ajustes() {
       </Text>
 
       {/* Tema */}
-      <View style={estiloSecao}>
+      <Glass radius={radius.lg} style={estiloSecao}>
         <Text style={tituloSecao}>Tema</Text>
         <View style={{ flexDirection: 'row', gap: spacing.xs }}>
           {OPCOES_DE_TEMA.map(({ valor, rotulo }) => {
             const ativa = preferencia === valor;
-            return (
+            // Selected is a solid brand pill; the rest are the same blurred
+            // glass as every other surface. They used to be an opaque fill
+            // with a raw `colors.line` ring — solid white in the dark scheme —
+            // which is why the control looked bolted on.
+            const etiqueta = (
+              <Text
+                style={{
+                  color: ativa ? colors.brandForeground : colors.foreground,
+                  fontFamily: fonts.display,
+                  fontSize: typography.sm.fontSize,
+                }}
+              >
+                {rotulo}
+              </Text>
+            );
+            const medidas = {
+              alignItems: 'center' as const,
+              flex: 1,
+              justifyContent: 'center' as const,
+              minHeight: 44,
+            };
+            return ativa ? (
               <Pressable
                 key={valor}
                 onPress={() => escolherTema(valor)}
                 style={({ pressed }) => [
+                  medidas,
                   {
-                    alignItems: 'center',
-                    backgroundColor: ativa
-                      ? colors.brand
-                      : glass.raised.backgroundColor,
-                    borderColor: ativa ? colors.brand : colors.line,
+                    backgroundColor: colors.brand,
                     borderRadius: radius.full,
-                    borderWidth: 1,
-                    flex: 1,
-                    justifyContent: 'center',
-                    minHeight: 44,
                     opacity: pressed ? 0.85 : 1,
                   },
                 ]}
               >
-                <Text
-                  style={{
-                    color: ativa
-                      ? colors.brandForeground
-                      : colors.foreground,
-                    fontFamily: fonts.bodyBold,
-                    fontSize: typography.sm.fontSize,
-                  }}
-                >
-                  {rotulo}
-                </Text>
+                {etiqueta}
               </Pressable>
+            ) : (
+              <Glass
+                key={valor}
+                onPress={() => escolherTema(valor)}
+                radius={radius.full}
+                semSombra
+                style={medidas}
+              >
+                {etiqueta}
+              </Glass>
             );
           })}
         </View>
-      </View>
+      </Glass>
 
       {/* Vibração */}
-      <View style={estiloSecao}>
+      <Glass radius={radius.lg} style={estiloSecao}>
         <Text style={tituloSecao}>Vibração</Text>
         <Pressable
           accessibilityRole="switch"
@@ -230,10 +248,10 @@ export default function Ajustes() {
         >
           Sem efeito na versão web, que não vibra.
         </Text>
-      </View>
+      </Glass>
 
       {/* Dados e armazenamento */}
-      <View style={estiloSecao}>
+      <Glass radius={radius.lg} style={estiloSecao}>
         <Text style={tituloSecao}>Dados e armazenamento</Text>
         <View
           style={{ flexDirection: 'row', justifyContent: 'space-between' }}
@@ -288,10 +306,10 @@ export default function Ajustes() {
         >
           A gestão do cache local chega com a persistência (P9).
         </Text>
-      </View>
+      </Glass>
 
       {/* Sobre */}
-      <View style={estiloSecao}>
+      <Glass radius={radius.lg} style={estiloSecao}>
         <Text style={tituloSecao}>Sobre</Text>
         <View
           style={{ flexDirection: 'row', justifyContent: 'space-between' }}
@@ -336,7 +354,7 @@ export default function Ajustes() {
             uspapao.turingusp.com
           </Text>
         </Pressable>
-      </View>
+      </Glass>
     </ScrollView>
   );
 }

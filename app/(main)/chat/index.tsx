@@ -8,9 +8,10 @@ import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fonts, useTheme } from '../../../theme';
+import Glass from '../../../components/Glass';
 
 export default function NovaConversa() {
-  const { colors, glass, radius, spacing, typography } = useTheme();
+  const { colors, radius, spacing, typography } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -25,19 +26,14 @@ export default function NovaConversa() {
         paddingBottom: insets.bottom + spacing.xl,
       }}
     >
-      <View
-        style={[
-          glass.surface,
-          glass.hairline,
-          glass.shadow,
-          {
+      <Glass
+        radius={radius.xl}
+        style={{
             alignItems: 'center',
-            borderRadius: radius.xl,
             gap: spacing.md,
             padding: spacing['2xl'],
             width: '100%',
-          },
-        ]}
+        }}
       >
         <Text
           style={{
@@ -83,7 +79,7 @@ export default function NovaConversa() {
             Fazer minha primeira pergunta
           </Text>
         </Pressable>
-      </View>
+            </Glass>
     </View>
   );
 }

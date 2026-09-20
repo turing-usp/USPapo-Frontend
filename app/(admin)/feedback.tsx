@@ -13,6 +13,7 @@ import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { fonts, useTheme } from '../../theme';
+import Glass from '../../components/Glass';
 import {
   carregarFeedback,
   formataDataFeedback,
@@ -25,18 +26,10 @@ export function LinhaFeedback({ item }: { item: ItemFeedbackWeb }) {
   const { colors, glass, radius, spacing, typography } = useTheme();
   const ehLike = item.nota === 'like';
   return (
-    <View
+    <Glass
       testID="linha-feedback"
-      style={[
-        glass.surface,
-        glass.hairline,
-        {
-          borderRadius: radius.md,
-          flexDirection: 'row',
-          gap: spacing.md,
-          padding: spacing.lg,
-        },
-      ]}
+      radius={radius.md}
+      style={{ flexDirection: 'row', gap: spacing.md, padding: spacing.lg }}
     >
       <View
         testID={ehLike ? 'nota-like' : 'nota-dislike'}
@@ -61,7 +54,7 @@ export function LinhaFeedback({ item }: { item: ItemFeedbackWeb }) {
           </Text>
         ) : null}
       </View>
-    </View>
+    </Glass>
   );
 }
 
@@ -113,17 +106,13 @@ export default function PainelFeedback() {
       )}
 
       {!falhou && itens !== null && itens.length === 0 && (
-        <View
-          style={[
-            glass.surface,
-            glass.hairline,
-            {
+        <Glass
+          radius={radius.lg}
+          style={{
               alignItems: 'center',
-              borderRadius: radius.lg,
               gap: spacing.sm,
               padding: spacing['2xl'],
-            },
-          ]}
+          }}
         >
           {/* Documented empty state (the backend endpoint arrives with P11). */}
           <Text
@@ -139,7 +128,7 @@ export default function PainelFeedback() {
           <Text style={{ color: colors.faintForeground, fontSize: typography.sm.fontSize }}>
             Aqui aparecerão as notas (gostei / não gostei) e os motivos.
           </Text>
-        </View>
+                </Glass>
       )}
 
       {!falhou && itens !== null && itens.length > 0 && (

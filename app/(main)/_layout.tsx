@@ -9,12 +9,13 @@ import { Stack } from 'expo-router';
 import React from 'react';
 import { View } from 'react-native';
 
+import Cena from '../../components/Cena';
 import Chrome from '../../components/Chrome';
 import Tela from '../../components/Tela';
 
 export default function LayoutPrincipal() {
   return (
-    <View style={{ flex: 1 }}>
+    <Cena>
       <Stack
         screenLayout={({ children }) => <Tela>{children}</Tela>}
         screenOptions={{
@@ -35,6 +36,6 @@ export default function LayoutPrincipal() {
         <Stack.Screen name="settings" />
       </Stack>
       <Chrome />
-    </View>
+    </Cena>
   );
 }
