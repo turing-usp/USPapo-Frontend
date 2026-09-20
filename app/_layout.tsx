@@ -7,6 +7,7 @@
  * - ready, no session and a non-public route → <Redirect> to /(auth)/login;
  * - public group: (auth)/*.
  */
+import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { Redirect, Stack, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -21,8 +22,9 @@ import {
   View,
 } from 'react-native';
 
+import { carregarPreferencia } from '../lib/haptics';
 import { supabase } from '../lib/supabase';
-import { ThemeProvider, useTheme } from '../theme';
+import { ThemeProvider, fonts, useTheme } from '../theme';
 
 type StatusSessao = 'carregando' | 'falhou' | 'pronta';
 
@@ -72,7 +74,11 @@ function EsqueletoDeSessao() {
         <Text
           style={[
             styles.marcaNome,
-            { color: colors.brand, fontSize: typography['3xl'].fontSize },
+            {
+              color: colors.brand,
+              fontFamily: fonts.displayBold,
+              fontSize: typography['3xl'].fontSize,
+            },
           ]}
         >
           USPapo
@@ -80,7 +86,11 @@ function EsqueletoDeSessao() {
         <Text
           style={[
             styles.marcaStatus,
-            { color: colors.mutedForeground, fontSize: typography.sm.fontSize },
+            {
+              color: colors.mutedForeground,
+              fontFamily: fonts.body,
+              fontSize: typography.sm.fontSize,
+            },
           ]}
         >
           Carregando…
@@ -115,7 +125,11 @@ function TelaSessaoFalhou({ aoTentarNovamente }: { aoTentarNovamente: () => void
         <Text
           style={[
             styles.tituloCentro,
-            { color: colors.foreground, fontSize: typography.lg.fontSize },
+            {
+              color: colors.foreground,
+              fontFamily: fonts.displayBold,
+              fontSize: typography.lg.fontSize,
+            },
           ]}
         >
           Não foi possível carregar sua sessão
@@ -123,7 +137,11 @@ function TelaSessaoFalhou({ aoTentarNovamente }: { aoTentarNovamente: () => void
         <Text
           style={[
             styles.textoCentro,
-            { color: colors.mutedForeground, fontSize: typography.sm.fontSize },
+            {
+              color: colors.mutedForeground,
+              fontFamily: fonts.body,
+              fontSize: typography.sm.fontSize,
+            },
           ]}
         >
           Verifique sua conexão e tente de novo.
@@ -142,7 +160,11 @@ function TelaSessaoFalhou({ aoTentarNovamente }: { aoTentarNovamente: () => void
           <Text
             style={[
               styles.botaoTexto,
-              { color: colors.brandForeground, fontSize: typography.base.fontSize },
+              {
+              color: colors.brandForeground,
+              fontFamily: fonts.bodyBold,
+              fontSize: typography.base.fontSize,
+            },
             ]}
           >
             Tentar novamente
@@ -231,11 +253,32 @@ function PilhaRaiz() {
 }
 
 export default function Raiz() {
+  // The old site's families (theme `fonts`). Bold is a separate face because
+  // React Native selects by family name instead of synthesising weight.
+  const [fontesProntas, erroDeFonte] = useFonts({
+    Roboto: require('../assets/fonts/Roboto-Regular.ttf'),
+    'Roboto-Bold': require('../assets/fonts/Roboto-Bold.ttf'),
+    Geom: require('../assets/fonts/Geom-Regular.ttf'),
+    'Geom-Bold': require('../assets/fonts/Geom-Bold.ttf'),
+    Orbitron: require('../assets/fonts/Orbitron-Regular.ttf'),
+    'Orbitron-Bold': require('../assets/fonts/Orbitron-Bold.ttf'),
+  });
+
   useEffect(() => {
-    // The native splash screen stays up until the router tree is ready;
-    // hide it as soon as JS is running so the session gate takes over.
-    void SplashScreen.hideAsync();
+    // Apply the saved haptics preference before the first interaction, so a
+    // user who turned vibration off never feels it once on a cold start.
+    void carregarPreferencia();
   }, []);
+
+  useEffect(() => {
+    // The native splash screen stays up until the router tree is ready and
+    // the brand faces are in memory, so no screen renders in a fallback face
+    // and then reflows. A font failure is not fatal: the system faces still
+    // read, so the gate is allowed to take over anyway.
+    if (fontesProntas || erroDeFonte) void SplashScreen.hideAsync();
+  }, [fontesProntas, erroDeFonte]);
+
+  if (!fontesProntas && !erroDeFonte) return null;
 
   return (
     <ThemeProvider>
@@ -255,9 +298,9 @@ const styles = StyleSheet.create({
     height: 72,
     borderRadius: 20,
   },
-  marcaNome: { fontWeight: '800', letterSpacing: 0.5 },
+  marcaNome: { letterSpacing: 0.5 },
   marcaStatus: { marginTop: 2 },
-  tituloCentro: { textAlign: 'center', fontWeight: '700' },
+  tituloCentro: { textAlign: 'center' },
   textoCentro: { textAlign: 'center' },
   botao: {
     alignItems: 'center',
@@ -266,5 +309,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     minWidth: 200,
   },
-  botaoTexto: { fontWeight: '700' },
+  botaoTexto: {},
 });

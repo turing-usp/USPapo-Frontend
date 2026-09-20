@@ -24,7 +24,7 @@
 import React, { useMemo, useState } from 'react';
 import { Platform, Text, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 
-import { useTheme } from '../../theme';
+import { fonts, useTheme } from '../../theme';
 
 /** The detection rule (exported so the contract is unit-visible). */
 export function temDelimitadorMatematico(texto: string): boolean {
@@ -184,7 +184,12 @@ export function Matematica({ texto, pronto, style }: MatematicaProps) {
     return (
       <Text
         style={[
-          { color: colors.foreground, fontSize: typography.base.fontSize, lineHeight: typography.base.lineHeight },
+          {
+            color: colors.foreground,
+            fontFamily: fonts.body,
+            fontSize: typography.base.fontSize,
+            lineHeight: typography.base.lineHeight,
+          },
           style,
         ]}
       >

@@ -9,9 +9,16 @@
  * Matematica renderer (raw text while streaming).
  */
 import type { ReactNode } from 'react';
-import { Animated, Linking, Pressable, Text, View } from 'react-native';
+import {
+  Animated,
+  Linking,
+  Pressable,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 
-import { useTheme } from '../../theme';
+import { fonts, useTheme } from '../../theme';
 import type { Turno } from '../../app/(main)/chat/useChat';
 import { Matematica } from './Matematica';
 
@@ -39,8 +46,8 @@ export function Fontes({ urls }: { urls: string[] }) {
       <Text
         style={{
           color: colors.mutedForeground,
+          fontFamily: fonts.bodyBold,
           fontSize: typography.xs.fontSize,
-          fontWeight: '600',
           marginBottom: spacing.xs,
           textTransform: 'uppercase',
           letterSpacing: 0.6,
@@ -77,6 +84,7 @@ export function Fontes({ urls }: { urls: string[] }) {
               numberOfLines={1}
               style={{
                 color: colors.mutedForeground,
+                fontFamily: fonts.body,
                 fontSize: typography.xs.fontSize,
                 flexShrink: 1,
               }}
@@ -128,6 +136,7 @@ export function LinhaFerramenta({
           <Animated.Text
             style={{
               color: colors.brand,
+              fontFamily: fonts.body,
               fontSize: typography.xs.fontSize,
               opacity: pulso,
             }}
@@ -139,8 +148,8 @@ export function LinhaFerramenta({
           numberOfLines={1}
           style={{
             color: turno.pronta ? colors.mutedForeground : colors.brand,
+            fontFamily: fonts.body,
             fontSize: typography.xs.fontSize,
-            fontWeight: '500',
             flexShrink: 1,
           }}
         >
@@ -181,6 +190,7 @@ export function LinhaErro({
       <Text
         style={{
           color: colors.foreground,
+          fontFamily: fonts.body,
           fontSize: typography.sm.fontSize,
           lineHeight: typography.sm.lineHeight,
         }}
@@ -204,8 +214,8 @@ export function LinhaErro({
           <Text
             style={{
               color: colors.brandForeground,
+              fontFamily: fonts.bodyBold,
               fontSize: typography.xs.fontSize,
-              fontWeight: '700',
             }}
           >
             Tentar de novo
@@ -226,6 +236,7 @@ export function LinhaNota({ texto }: { texto: string }) {
     <Text
       style={{
         color: colors.faintForeground,
+        fontFamily: fonts.body,
         fontSize: typography.xs.fontSize,
         fontStyle: 'italic',
         alignSelf: 'flex-start',
@@ -241,24 +252,36 @@ export function LinhaNota({ texto }: { texto: string }) {
 // Bubbles
 // ─────────────────────────────────────────────
 
+/**
+ * The question, as the old site draws it: a glass pill on the right — not a
+ * brand-filled messenger bubble — with foreground text at the `text-lg` step
+ * and the fully rounded `rounded-[2rem]` corner.
+ */
 export function BolhaUsuario({ texto }: { texto: string }) {
-  const { colors, radius, spacing, typography } = useTheme();
+  const { colors, glass, typography } = useTheme();
+  const { width } = useWindowDimensions();
   return (
     <View
-      style={{
-        alignSelf: 'flex-end',
-        backgroundColor: colors.brand,
-        borderRadius: radius.lg,
-        borderBottomRightRadius: 4,
-        padding: spacing.md,
-        maxWidth: '85%',
-      }}
+      style={[
+        glass.surface,
+        glass.hairline,
+        glass.shadow,
+        {
+          alignSelf: 'flex-end',
+          borderRadius: 32,
+          // Old: max-w-[85%] with a sm: step down to 75%.
+          maxWidth: width >= 640 ? '75%' : '85%',
+          paddingHorizontal: 20,
+          paddingVertical: 12,
+        },
+      ]}
     >
       <Text
         style={{
-          color: colors.brandForeground,
-          fontSize: typography.base.fontSize,
-          lineHeight: typography.base.lineHeight,
+          color: colors.foreground,
+          fontFamily: fonts.body,
+          fontSize: typography.lg.fontSize,
+          lineHeight: typography.lg.lineHeight,
         }}
       >
         {texto}
@@ -275,21 +298,12 @@ export function BolhaAssistente({
   /** The feedback row (like/dislike), rendered under the answer. */
   children?: ReactNode;
 }) {
-  const { glass, radius, spacing } = useTheme();
   return (
-    <View style={{ alignSelf: 'flex-start', maxWidth: '92%' }}>
-      <View
-        style={[
-          glass.surface,
-          glass.hairline,
-          {
-            borderRadius: radius.lg,
-            borderBottomLeftRadius: 4,
-            padding: spacing.md,
-          },
-        ]}
-      >
-        {/* Math only on the completed text; raw (incremental) while streaming. */}
+    <View style={{ alignSelf: 'stretch', width: '100%' }}>
+      <View>
+        {/* The answer has no bubble on the old site: it is body copy set on
+            the page, full measure, which is what makes a long reply readable.
+            Math only on the completed text; raw (incremental) while streaming. */}
         <Matematica texto={turno.texto} pronto={turno.completo} />
       </View>
       <Fontes urls={turno.fontes} />

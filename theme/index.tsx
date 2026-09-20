@@ -152,6 +152,39 @@ export const radius = {
   full: 9999,
 } as const;
 
+/**
+ * Type families, ported from the old site. `body` is what `body { font-family }`
+ * resolved to there (Roboto); `display` is `.font-geom`, used for the wordmark,
+ * screen titles and the drawer's nav labels. Orbitron ships with the app but
+ * the old site never rendered it — only the CSS variable was declared.
+ *
+ * React Native picks a face by family name, not by synthesising weight, so the
+ * bold faces are separate families rather than a `fontWeight` on the regular.
+ */
+export const fonts = {
+  body: 'Roboto',
+  bodyBold: 'Roboto-Bold',
+  display: 'Geom',
+  displayBold: 'Geom-Bold',
+  accent: 'Orbitron',
+  accentBold: 'Orbitron-Bold',
+} as const;
+
+/**
+ * Content measures, ported from `.app-container` / `.app-container-chat`:
+ * 64rem and 48rem with `padding-inline: clamp(1rem, 10vw, 4rem)`.
+ */
+export const layout = {
+  containerMaxWidth: 1024,
+  chatMaxWidth: 768,
+  gutterMin: 16,
+  gutterMax: 64,
+  /** The clamp(1rem, 10vw, 4rem) gutter resolved for a viewport width. */
+  gutter(width: number): number {
+    return Math.max(16, Math.min(64, width * 0.1));
+  },
+} as const;
+
 export type TypographyStep = {
   fontSize: number;
   lineHeight: number;
@@ -172,19 +205,30 @@ export const typography = {
 } as const;
 
 /**
- * The glass "blade" as plain React Native style objects (viewBox-safe: only
- * string/number properties that React Native — and victory-native chart
- * views — understand; no backdrop-filter, no CSS-only keywords).
+ * The glass "blade", rendered with the old site's own **no-blur profile**
+ * (`:root[data-vidro=leve]` / `--glass-blur: 0px` in globals.css). That path
+ * swaps every translucent tint for the calibrated opaque `--glass-opaco`
+ * colors, so it costs one flat fill instead of a 44px backdrop-filter — the
+ * reason the old site shipped it as the fast option in the first place.
  *
- * - surface: the main translucent panel (chat bubbles, cards)
- * - raised:  a more opaque glass for floating menus / toasts
- * - brand:   the composer variant (hairline in the brand orange)
- * - hairline: the 1px edge filament
- * - shadow:  the short, diffuse lift (spread the object last)
+ * The edge is the one place a single RN border cannot match the original:
+ * the old `.glass:after` paints a 165deg gradient ring from `--glass-edge-hi`
+ * down to `--glass-edge-lo`. Per-side border colors reproduce the part that
+ * actually reads — a bright top filament over dimmer sides.
+ *
+ *   surface — chat bubbles, cards, pills    (--glass-opaco)
+ *   panel   — the drawer and floating menus (--glass-opaco-panel)
+ *   raised  — glass stacked on glass        (--glass-opaco-empilhado)
+ *   brand   — the composer                  (edge in the brand orange)
+ *   hairline / shadow — spread onto any of the above
  */
 export type GlassSlot = {
   backgroundColor?: string;
   borderColor?: string;
+  borderTopColor?: string;
+  borderRightColor?: string;
+  borderBottomColor?: string;
+  borderLeftColor?: string;
   borderWidth?: number;
   shadowColor?: string;
   shadowOffset?: { width: number; height: number };
@@ -195,6 +239,7 @@ export type GlassSlot = {
 
 export type GlassStyles = {
   surface: GlassSlot;
+  panel: GlassSlot;
   raised: GlassSlot;
   brand: GlassSlot;
   hairline: GlassSlot;
@@ -202,27 +247,25 @@ export type GlassStyles = {
 };
 
 export const glass: Record<Scheme, GlassStyles> = {
-  // Flat "opaco" tints calibrated against the scene in the old site
-  // (--glass-opaco #e6e1ec, --glass-opaco-panel #e2dbeb, 13x13 grid over
-  // the backdrop); the alpha keeps them translucent without a blur.
   light: {
-    surface: {
-      backgroundColor: 'rgba(230,225,236,0.80)',
-    },
-    raised: {
-      backgroundColor: 'rgba(226,219,235,0.92)',
-    },
+    surface: { backgroundColor: '#e6e1ec' },
+    panel: { backgroundColor: '#e2dbeb' },
+    raised: { backgroundColor: '#e8e3eb' },
+    // --glass-brand: the ring becomes the brand orange on all four sides.
     brand: {
-      backgroundColor: 'rgba(238,239,255,0.65)',
-      borderColor: 'rgba(241,134,61,0.65)',
+      borderColor: '#f1863d',
       borderWidth: 1.5,
     },
+    // --glass-edge-hi #fffffff2 over --glass-edge-lo #0b103024.
     hairline: {
-      borderColor: 'rgba(255,255,255,0.90)',
+      borderTopColor: 'rgba(255,255,255,0.95)',
+      borderRightColor: 'rgba(11,16,48,0.14)',
+      borderBottomColor: 'rgba(11,16,48,0.14)',
+      borderLeftColor: 'rgba(11,16,48,0.14)',
       borderWidth: 1,
     },
-    // Old value: 0 6px 20px -3px rgb(11 16 48 / 0.20). RN has no negative
-    // spread, so the -3px is dropped and the blur mapped to shadowRadius.
+    // --glass-shadow: 0 6px 20px -3px var(--glass-shadow-color). RN has no
+    // negative spread, so the -3px is dropped and 20px maps to shadowRadius.
     shadow: {
       shadowColor: 'rgb(11,16,48)',
       shadowOffset: { width: 0, height: 6 },
@@ -231,24 +274,22 @@ export const glass: Record<Scheme, GlassStyles> = {
       elevation: 6,
     },
   },
-  // Same method as light: --glass-opaco #0d1983, --glass-opaco-panel #081165.
   dark: {
-    surface: {
-      backgroundColor: 'rgba(13,25,131,0.66)',
-    },
-    raised: {
-      backgroundColor: 'rgba(8,17,101,0.85)',
-    },
+    surface: { backgroundColor: '#0d1983' },
+    panel: { backgroundColor: '#081165' },
+    raised: { backgroundColor: '#031dbb' },
     brand: {
-      backgroundColor: 'rgba(13,25,131,0.50)',
-      borderColor: 'rgba(241,134,61,0.8)',
+      borderColor: '#f1863d',
       borderWidth: 1.5,
     },
+    // --glass-edge-hi #ffffff61 over --glass-edge-lo #ffffff12.
     hairline: {
-      borderColor: 'rgba(255,255,255,0.38)',
+      borderTopColor: 'rgba(255,255,255,0.38)',
+      borderRightColor: 'rgba(255,255,255,0.07)',
+      borderBottomColor: 'rgba(255,255,255,0.07)',
+      borderLeftColor: 'rgba(255,255,255,0.07)',
       borderWidth: 1,
     },
-    // Old value: 0 6px 20px -3px rgb(0 0 0 / 0.58).
     shadow: {
       shadowColor: 'rgb(0,0,0)',
       shadowOffset: { width: 0, height: 6 },
@@ -267,6 +308,8 @@ export type Theme = {
   spacing: typeof spacing;
   radius: typeof radius;
   typography: typeof typography;
+  fonts: typeof fonts;
+  layout: typeof layout;
   glass: GlassStyles;
 };
 
@@ -315,6 +358,8 @@ function buildTheme(scheme: Scheme): Theme {
     spacing,
     radius,
     typography,
+    fonts,
+    layout,
     glass: glass[scheme],
   };
 }

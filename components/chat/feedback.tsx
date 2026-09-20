@@ -17,7 +17,7 @@ import React, { useState } from 'react';
 
 import { favoritar } from '../../lib/conversations';
 import { haptics } from '../../lib/haptics';
-import { useTheme } from '../../theme';
+import { fonts, useTheme } from '../../theme';
 
 /** The old site's suggested reasons (MOTIVOS_SUGERIDOS, ported verbatim). */
 const MOTIVOS = [
@@ -118,6 +118,7 @@ export function FeedbackResposta({ userId, conversaId, inicial }: FeedbackRespos
         <Text
           style={{
             color: colors.mutedForeground,
+            fontFamily: fonts.body,
             fontSize: typography.xs.fontSize,
             opacity: 0.8,
           }}
@@ -134,8 +135,8 @@ export function FeedbackResposta({ userId, conversaId, inicial }: FeedbackRespos
             <Text
               style={{
                 color: avaliacao === 'like' ? colors.brandForeground : colors.mutedForeground,
+                fontFamily: fonts.bodyBold,
                 fontSize: typography.xs.fontSize,
-                fontWeight: '600',
               }}
             >
               👍 útil
@@ -157,8 +158,8 @@ export function FeedbackResposta({ userId, conversaId, inicial }: FeedbackRespos
             <Text
               style={{
                 color: avaliacao === 'dislike' ? colors.foreground : colors.mutedForeground,
+                fontFamily: fonts.bodyBold,
                 fontSize: typography.xs.fontSize,
-                fontWeight: '600',
               }}
             >
               👎 ruim
@@ -171,6 +172,7 @@ export function FeedbackResposta({ userId, conversaId, inicial }: FeedbackRespos
         <Text
           style={{
             color: colors.brand,
+            fontFamily: fonts.body,
             fontSize: typography.xs.fontSize,
             marginTop: spacing.xs,
           }}
@@ -196,8 +198,8 @@ export function FeedbackResposta({ userId, conversaId, inicial }: FeedbackRespos
           <Text
             style={{
               color: colors.foreground,
+              fontFamily: fonts.bodyBold,
               fontSize: typography.sm.fontSize,
-              fontWeight: '600',
             }}
           >
             Como podemos melhorar esta resposta?
@@ -213,6 +215,7 @@ export function FeedbackResposta({ userId, conversaId, inicial }: FeedbackRespos
                 <Text
                   style={{
                     color: colors.mutedForeground,
+                    fontFamily: fonts.body,
                     fontSize: typography.xs.fontSize,
                   }}
                 >
@@ -228,6 +231,7 @@ export function FeedbackResposta({ userId, conversaId, inicial }: FeedbackRespos
         <Text
           style={{
             color: colors.brand,
+            fontFamily: fonts.body,
             fontSize: typography.xs.fontSize,
             marginTop: spacing.xs,
           }}
@@ -240,6 +244,7 @@ export function FeedbackResposta({ userId, conversaId, inicial }: FeedbackRespos
         <Text
           style={{
             color: colors.danger,
+            fontFamily: fonts.body,
             fontSize: typography.xs.fontSize,
             marginTop: spacing.xs,
           }}

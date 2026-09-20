@@ -13,16 +13,23 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
-  type TextStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import CampoVidro from '../../components/CampoVidro';
+import {
+  EnvelopeIcon,
+  EyeIcon,
+  EyeOffIcon,
+  LockIcon,
+  TuringMark,
+  UserIcon,
+} from '../../components/BrandMarks';
 import { haptics } from '../../lib/haptics';
 import { mapAuthError } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
-import { useTheme } from '../../theme';
+import { fonts, useTheme } from '../../theme';
 import {
   REGRAS_DE_SENHA,
   checarSenha,
@@ -42,20 +49,10 @@ export default function Cadastro() {
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState(false);
+  /** Which pill owns the brand focus ring. */
+  const [foco, setFoco] = useState<string | null>(null);
 
   const regras = checarSenha(senha);
-
-  const estiloCampo: TextStyle = {
-    backgroundColor: glass.surface.backgroundColor,
-    borderColor: colors.line,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    color: colors.foreground,
-    fontSize: typography.base.fontSize,
-    minHeight: 52,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-  };
 
   async function cadastrar() {
     if (carregando) return;
@@ -130,8 +127,8 @@ export default function Cadastro() {
           <Text
             style={{
               color: colors.foreground,
+              fontFamily: fonts.displayBold,
               fontSize: typography.xl.fontSize,
-              fontWeight: '700',
               textAlign: 'center',
             }}
           >
@@ -140,6 +137,7 @@ export default function Cadastro() {
           <Text
             style={{
               color: colors.mutedForeground,
+              fontFamily: fonts.body,
               fontSize: typography.sm.fontSize,
               textAlign: 'center',
             }}
@@ -163,8 +161,8 @@ export default function Cadastro() {
             <Text
               style={{
                 color: colors.brandForeground,
+                fontFamily: fonts.bodyBold,
                 fontSize: typography.base.fontSize,
-                fontWeight: '700',
               }}
             >
               Ir para o login
@@ -188,79 +186,70 @@ export default function Cadastro() {
           paddingBottom: insets.bottom + spacing.xl,
         }}
       >
+        {/* Same masthead as login: wordmark over a centred Geom title. */}
+        <View style={{ alignItems: 'center' }}>
+          <TuringMark size={144} />
+        </View>
         <Text
           style={{
+            alignSelf: 'center',
             color: colors.foreground,
+            fontFamily: fonts.displayBold,
             fontSize: typography.xl.fontSize,
-            fontWeight: '700',
+            letterSpacing: 0.5,
+            marginTop: spacing.xl,
+            textAlign: 'center',
           }}
         >
           Criar conta
         </Text>
 
         <View style={{ gap: spacing.sm, marginTop: spacing.xl }}>
-          <TextInput
+          <CampoVidro
+            focado={foco === 'nome'}
+            aoFocar={() => setFoco('nome')}
+            aoPerderFoco={() => setFoco(null)}
+            icone={<UserIcon color={colors.mutedForeground} />}
             value={nome}
             onChangeText={setNome}
             placeholder="Nome"
-            placeholderTextColor={colors.faintForeground}
             autoCapitalize="words"
-            style={estiloCampo}
           />
-          <TextInput
+          <CampoVidro
+            focado={foco === 'email'}
+            aoFocar={() => setFoco('email')}
+            aoPerderFoco={() => setFoco(null)}
+            icone={<EnvelopeIcon color={colors.mutedForeground} />}
             value={email}
             onChangeText={setEmail}
             placeholder="Email"
-            placeholderTextColor={colors.faintForeground}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="email-address"
-            style={estiloCampo}
           />
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              backgroundColor: glass.surface.backgroundColor,
-              borderColor: colors.line,
-              borderRadius: radius.full,
-              borderWidth: 1,
-              paddingVertical: 14,
-              paddingHorizontal: 20,
-              minHeight: 52,
-            }}
-          >
-            <TextInput
-              value={senha}
-              onChangeText={setSenha}
-              placeholder="Senha"
-              placeholderTextColor={colors.faintForeground}
-              secureTextEntry={!mostrarSenha}
-              style={{
-                flex: 1,
-                color: colors.foreground,
-                fontSize: typography.base.fontSize,
-              }}
-            />
-            <Pressable
-              onPress={() => setMostrarSenha((v) => !v)}
-              hitSlop={8}
-              accessibilityLabel={
-                mostrarSenha ? 'Ocultar senha' : 'Mostrar senha'
-              }
-            >
-              <Text
-                style={{
-                  color: colors.brand,
-                  fontSize: typography.sm.fontSize,
-                  fontWeight: '600',
-                }}
+          <CampoVidro
+            focado={foco === 'senha'}
+            aoFocar={() => setFoco('senha')}
+            aoPerderFoco={() => setFoco(null)}
+            icone={<LockIcon color={colors.mutedForeground} />}
+            value={senha}
+            onChangeText={setSenha}
+            placeholder="Senha"
+            secureTextEntry={!mostrarSenha}
+            botaoFinal={
+              <Pressable
+                onPress={() => setMostrarSenha((v) => !v)}
+                hitSlop={8}
+                accessibilityLabel={mostrarSenha ? 'Ocultar senha' : 'Mostrar senha'}
               >
-                {mostrarSenha ? 'Ocultar' : 'Mostrar'}
-              </Text>
-            </Pressable>
-          </View>
+                {mostrarSenha ? (
+                  <EyeOffIcon color={colors.mutedForeground} />
+                ) : (
+                  <EyeIcon color={colors.mutedForeground} />
+                )}
+              </Pressable>
+            }
+          />
 
           {/* Live 5-rule checklist — UX only; the server-side hook is the
               source of truth (plan §4, finding 007). */}
@@ -275,8 +264,8 @@ export default function Cadastro() {
                   <Text
                     style={{
                       color: ok ? colors.brand : colors.faintForeground,
+                      fontFamily: fonts.bodyBold,
                       fontSize: typography.sm.fontSize,
-                      fontWeight: '700',
                     }}
                   >
                     {ok ? '✓' : '•'}
@@ -284,6 +273,7 @@ export default function Cadastro() {
                   <Text
                     style={{
                       color: ok ? colors.foreground : colors.mutedForeground,
+                      fontFamily: fonts.body,
                       fontSize: typography.sm.fontSize,
                     }}
                   >
@@ -294,19 +284,22 @@ export default function Cadastro() {
             })}
           </View>
 
-          <TextInput
+          <CampoVidro
+            focado={foco === 'confirma'}
+            aoFocar={() => setFoco('confirma')}
+            aoPerderFoco={() => setFoco(null)}
+            icone={<LockIcon color={colors.mutedForeground} />}
             value={confirma}
             onChangeText={setConfirma}
             placeholder="Confirmar senha"
-            placeholderTextColor={colors.faintForeground}
             secureTextEntry={!mostrarSenha}
-            style={estiloCampo}
           />
 
           {erro ? (
             <Text
               style={{
                 color: colors.danger,
+                fontFamily: fonts.body,
                 fontSize: typography.sm.fontSize,
                 textAlign: 'center',
               }}
@@ -337,8 +330,8 @@ export default function Cadastro() {
             <Text
               style={{
                 color: colors.brandForeground,
+                fontFamily: fonts.bodyBold,
                 fontSize: typography.base.fontSize,
-                fontWeight: '700',
               }}
             >
               Cadastrar
@@ -346,21 +339,36 @@ export default function Cadastro() {
           )}
         </Pressable>
 
-        <Pressable
-          onPress={() => router.push('/(auth)/login')}
-          hitSlop={8}
-          style={{ marginTop: spacing['2xl'] }}
+        {/* Same footer shape as login: muted question, brand-orange action. */}
+        <View
+          style={{
+            alignItems: 'center',
+            flexDirection: 'row',
+            justifyContent: 'center',
+            marginTop: spacing['2xl'],
+          }}
         >
           <Text
             style={{
               color: colors.mutedForeground,
+              fontFamily: fonts.body,
               fontSize: typography.sm.fontSize,
-              textAlign: 'center',
             }}
           >
-            Já tem conta? Entrar
+            Já tem conta?{' '}
           </Text>
-        </Pressable>
+          <Pressable onPress={() => router.push('/(auth)/login')} hitSlop={8}>
+            <Text
+              style={{
+                color: colors.brand,
+                fontFamily: fonts.body,
+                fontSize: typography.sm.fontSize,
+              }}
+            >
+              Entrar
+            </Text>
+          </Pressable>
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );

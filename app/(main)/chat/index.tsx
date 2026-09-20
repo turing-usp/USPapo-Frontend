@@ -7,7 +7,7 @@ import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useTheme } from '../../../theme';
+import { fonts, useTheme } from '../../../theme';
 
 export default function NovaConversa() {
   const { colors, glass, radius, spacing, typography } = useTheme();
@@ -42,8 +42,8 @@ export default function NovaConversa() {
         <Text
           style={{
             color: colors.foreground,
+            fontFamily: fonts.displayBold,
             fontSize: typography.xl.fontSize,
-            fontWeight: '700',
             textAlign: 'center',
           }}
         >
@@ -52,6 +52,7 @@ export default function NovaConversa() {
         <Text
           style={{
             color: colors.mutedForeground,
+            fontFamily: fonts.body,
             fontSize: typography.sm.fontSize,
             textAlign: 'center',
           }}
@@ -75,8 +76,8 @@ export default function NovaConversa() {
           <Text
             style={{
               color: colors.brandForeground,
+              fontFamily: fonts.bodyBold,
               fontSize: typography.base.fontSize,
-              fontWeight: '700',
             }}
           >
             Fazer minha primeira pergunta

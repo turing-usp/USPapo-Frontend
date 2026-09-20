@@ -26,7 +26,7 @@ import { carregarHistoricoOffline, fundirHistorico, salvarConversas } from '../.
 import { lerHistorico, type Conversa } from '../../lib/conversations';
 import { marcarFalhaRede, marcarSucessoRede } from '../../lib/offline';
 import { supabase } from '../../lib/supabase';
-import { useTheme } from '../../theme';
+import { fonts, useTheme } from '../../theme';
 
 const GRUPOS = [
   'Favoritas',
@@ -177,8 +177,8 @@ export default function Historico() {
         <Text
           style={{
             color: colors.foreground,
+            fontFamily: fonts.displayBold,
             fontSize: typography['2xl'].fontSize,
-            fontWeight: '800',
           }}
         >
           Histórico
@@ -196,6 +196,7 @@ export default function Historico() {
             {
               borderRadius: radius.full,
               color: colors.foreground,
+              fontFamily: fonts.body,
               fontSize: typography.base.fontSize,
               minHeight: 48,
               paddingVertical: 12,
@@ -209,6 +210,7 @@ export default function Historico() {
           <Text
             style={{
               color: colors.mutedForeground,
+              fontFamily: fonts.body,
               fontSize: typography.xs.fontSize,
               textAlign: 'center',
             }}
@@ -220,6 +222,7 @@ export default function Historico() {
           <Text
             style={{
               color: colors.mutedForeground,
+              fontFamily: fonts.body,
               fontSize: typography.sm.fontSize,
               textAlign: 'center',
             }}
@@ -262,8 +265,8 @@ export default function Historico() {
                 <Text
                   style={{
                     color: colors.mutedForeground,
+                    fontFamily: fonts.bodyBold,
                     fontSize: typography.sm.fontSize,
-                    fontWeight: '700',
                     textTransform: 'uppercase',
                     letterSpacing: 0.6,
                   }}
@@ -300,6 +303,7 @@ export default function Historico() {
                   style={{
                     flex: 1,
                     color: colors.foreground,
+                    fontFamily: fonts.body,
                     fontSize: typography.sm.fontSize,
                   }}
                 >
@@ -310,8 +314,8 @@ export default function Historico() {
                   <Text
                     style={{
                       color: colors.danger,
+                      fontFamily: fonts.bodyBold,
                       fontSize: typography.xs.fontSize,
-                      fontWeight: '600',
                       textTransform: 'uppercase',
                     }}
                   >

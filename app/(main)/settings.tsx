@@ -20,7 +20,13 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useTheme } from '../../theme';
+import {
+  carregarPreferencia,
+  haptics,
+  hapticsEnabled,
+  setHapticsEnabled,
+} from '../../lib/haptics';
+import { fonts, useTheme } from '../../theme';
 import {
   THEME_STORAGE_KEY,
   setScheme,
@@ -42,6 +48,7 @@ export default function Ajustes() {
   const insets = useSafeAreaInsets();
 
   const [preferencia, setPreferencia] = useState<ThemePreference>('system');
+  const [vibracao, setVibracao] = useState(hapticsEnabled);
 
   useEffect(() => {
     // Initial read of the persisted preference (same AsyncStorage key the
@@ -53,7 +60,27 @@ export default function Ajustes() {
       .catch(() => undefined);
   }, []);
 
+  useEffect(() => {
+    let ativo = true;
+    void carregarPreferencia().then((v) => {
+      if (ativo) setVibracao(v);
+    });
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
+  function alternarVibracao() {
+    const proximo = !vibracao;
+    setVibracao(proximo);
+    // Enable first, then buzz, so turning it ON confirms itself.
+    void setHapticsEnabled(proximo).then(() => {
+      if (proximo) void haptics.toggle();
+    });
+  }
+
   function escolherTema(valor: ThemePreference) {
+    void haptics.toggle();
     setPreferencia(valor);
     void setScheme(valor);
   }
@@ -65,10 +92,12 @@ export default function Ajustes() {
   }
 
   const estiloSecao: ViewStyle = {
-    backgroundColor: glass.surface.backgroundColor,
-    borderColor: colors.line,
+    // `colors.line` is a *base* colour meant to be taken with an opacity; used
+    // raw it is solid #ffffff in the dark scheme. glass.hairline is the
+    // calibrated edge every other glass surface uses.
+    ...glass.surface,
+    ...glass.hairline,
     borderRadius: radius.lg,
-    borderWidth: 1,
     gap: spacing.md,
     padding: spacing.lg,
     marginTop: spacing.lg,
@@ -76,8 +105,8 @@ export default function Ajustes() {
 
   const tituloSecao: TextStyle = {
     color: colors.mutedForeground,
+    fontFamily: fonts.bodyBold,
     fontSize: typography.sm.fontSize,
-    fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   };
@@ -93,8 +122,8 @@ export default function Ajustes() {
       <Text
         style={{
           color: colors.foreground,
+          fontFamily: fonts.displayBold,
           fontSize: typography['2xl'].fontSize,
-          fontWeight: '800',
         }}
       >
         Ajustes
@@ -131,8 +160,8 @@ export default function Ajustes() {
                     color: ativa
                       ? colors.brandForeground
                       : colors.foreground,
+                    fontFamily: fonts.bodyBold,
                     fontSize: typography.sm.fontSize,
-                    fontWeight: '600',
                   }}
                 >
                   {rotulo}
@@ -141,6 +170,66 @@ export default function Ajustes() {
             );
           })}
         </View>
+      </View>
+
+      {/* Vibração */}
+      <View style={estiloSecao}>
+        <Text style={tituloSecao}>Vibração</Text>
+        <Pressable
+          accessibilityRole="switch"
+          accessibilityState={{ checked: vibracao }}
+          onPress={alternarVibracao}
+          style={({ pressed }) => [
+            {
+              alignItems: 'center',
+              flexDirection: 'row',
+              gap: spacing.md,
+              minHeight: 44,
+              opacity: pressed ? 0.85 : 1,
+            },
+          ]}
+        >
+          <View
+            style={{
+              alignItems: vibracao ? 'flex-end' : 'flex-start',
+              backgroundColor: vibracao ? colors.brand : colors.line + '33',
+              borderRadius: radius.full,
+              height: 28,
+              justifyContent: 'center',
+              padding: 3,
+              width: 48,
+            }}
+          >
+            <View
+              style={{
+                backgroundColor: colors.brandForeground,
+                borderRadius: radius.full,
+                height: 22,
+                width: 22,
+              }}
+            />
+          </View>
+          <Text
+            style={{
+              color: colors.foreground,
+              flex: 1,
+              fontFamily: fonts.body,
+              fontSize: typography.base.fontSize,
+            }}
+          >
+            Resposta tátil ao tocar, enviar e receber
+          </Text>
+        </Pressable>
+        <Text
+          style={{
+            color: colors.faintForeground,
+            fontFamily: fonts.body,
+            fontSize: typography.xs.fontSize,
+            marginTop: spacing.sm,
+          }}
+        >
+          Sem efeito na versão web, que não vibra.
+        </Text>
       </View>
 
       {/* Dados e armazenamento */}
@@ -152,6 +241,7 @@ export default function Ajustes() {
           <Text
             style={{
               color: colors.foreground,
+              fontFamily: fonts.body,
               fontSize: typography.base.fontSize,
             }}
           >
@@ -161,6 +251,7 @@ export default function Ajustes() {
           <Text
             style={{
               color: colors.faintForeground,
+              fontFamily: fonts.body,
               fontSize: typography.base.fontSize,
             }}
           >
@@ -181,8 +272,8 @@ export default function Ajustes() {
           <Text
             style={{
               color: colors.foreground,
+              fontFamily: fonts.bodyBold,
               fontSize: typography.base.fontSize,
-              fontWeight: '600',
             }}
           >
             Limpar cache
@@ -191,6 +282,7 @@ export default function Ajustes() {
         <Text
           style={{
             color: colors.faintForeground,
+            fontFamily: fonts.body,
             fontSize: typography.xs.fontSize,
           }}
         >
@@ -207,6 +299,7 @@ export default function Ajustes() {
           <Text
             style={{
               color: colors.foreground,
+              fontFamily: fonts.body,
               fontSize: typography.base.fontSize,
             }}
           >
@@ -216,6 +309,7 @@ export default function Ajustes() {
           <Text
             style={{
               color: colors.faintForeground,
+              fontFamily: fonts.body,
               fontSize: typography.base.fontSize,
             }}
           >
@@ -225,6 +319,7 @@ export default function Ajustes() {
         <Text
           style={{
             color: colors.mutedForeground,
+            fontFamily: fonts.body,
             fontSize: typography.sm.fontSize,
           }}
         >
@@ -234,8 +329,8 @@ export default function Ajustes() {
           <Text
             style={{
               color: colors.brand,
+              fontFamily: fonts.bodyBold,
               fontSize: typography.sm.fontSize,
-              fontWeight: '600',
             }}
           >
             uspapao.turingusp.com

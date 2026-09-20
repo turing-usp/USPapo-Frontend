@@ -1,83 +1,88 @@
 /**
  * Scene backdrop — port of the old site's `--page-backdrop` (globals.css):
- * a 135deg linear base (backdropFrom → backdropTo) with two soft radial
- * glows — top-right (~0.9 / 0.1) and bottom-left (~0.1 / 0.9). Orange
- * glows in the light scheme, blue in dark.
  *
- * Approximation (documented): the old app used real CSS radial gradients
- * and glass on top of them via backdrop-filter blur(44px), which are not
- * portable to React Native. Each radial is emulated with a large rounded
- * square centered on the same point as the CSS circle; its size follows
- * the CSS fade stops (glow A fades out at 65%, glow B at 55%, so B is a
- * touch smaller). A LinearGradient runs from the square's center to its
- * far corner, so the two edges that stay on screen fade to transparent
- * while the near edges sit off-screen — a soft, tonal glow instead of a
- * hard circle.
+ *   radial-gradient(circle at 90% 10%, var(--glow-a)  0%, transparent 65%),
+ *   radial-gradient(circle at 10% 90%, var(--glow-b)  0%, transparent 55%),
+ *   linear-gradient(135deg, var(--backdrop-from) 0%, var(--backdrop-to) 100%)
  *
- * Usage: render <Backdrop /> as the first child of a screen or group
- * layout, behind the content. No props; it never intercepts touches.
+ * Drawn with react-native-svg so the two glows are *real* radial gradients.
+ * An earlier version faked them with a linear gradient clipped to a rounded
+ * square, which left a visible hard arc across the screen — the circle's own
+ * edge — instead of a glow that fades out. SVG gradients render identically
+ * on web and native, so this is one code path with no platform branch.
+ *
+ * The Svg uses a 0..1 objectBoundingBox space (`viewBox="0 0 1 1"` with
+ * `preserveAspectRatio="none"`), which lets the CSS percentages carry over as
+ * literal coordinates and stretches the scene to any window shape.
+ *
+ * Usage: render <Backdrop /> as the first child of a group layout, behind the
+ * content. No props; it never intercepts touches.
  */
-import { Dimensions, StyleSheet, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { StyleSheet, View } from 'react-native';
+import Svg, {
+  Defs,
+  LinearGradient,
+  RadialGradient,
+  Rect,
+  Stop,
+} from 'react-native-svg';
 
 import { useTheme } from '../theme';
 
-const INVISIVEL = 'rgba(0,0,0,0)';
+/**
+ * Split an `rgba(r,g,b,a)` token into the parts SVG wants separately.
+ * The scene tokens are authored as rgba to mirror the CSS hex+alpha values
+ * (`--glow-a: #1d2c87d9`), but `<Stop>` takes colour and opacity apart.
+ */
+function separar(rgba: string): { cor: string; opacidade: number } {
+  const m = /rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)/.exec(
+    rgba,
+  );
+  if (!m) return { cor: rgba, opacidade: 1 };
+  return {
+    cor: `rgb(${m[1]},${m[2]},${m[3]})`,
+    opacidade: m[4] === undefined ? 1 : Number(m[4]),
+  };
+}
 
 export default function Backdrop() {
   const { scene } = useTheme();
-  const { width, height } = Dimensions.get('window');
-
-  const sizeA = Math.round(height * 0.65);
-  const sizeB = Math.round(height * 0.55);
+  const a = separar(scene.glowA);
+  const b = separar(scene.glowB);
 
   return (
     <View pointerEvents="none" style={styles.base}>
-      {/* Base 135deg gradient, same stops as the old --page-backdrop. */}
-      <LinearGradient
-        style={styles.fill}
-        colors={[scene.backdropFrom, scene.backdropTo]}
-        start={{ x: 0.15, y: 0 }}
-        end={{ x: 0.85, y: 1 }}
-      />
+      <Svg
+        style={StyleSheet.absoluteFill}
+        viewBox="0 0 1 1"
+        preserveAspectRatio="none"
+      >
+        <Defs>
+          {/* linear-gradient(135deg, from, to): CSS 135deg runs top-left to
+              bottom-right, which is the box diagonal in this unit space. */}
+          <LinearGradient id="base" x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0" stopColor={scene.backdropFrom} />
+            <Stop offset="1" stopColor={scene.backdropTo} />
+          </LinearGradient>
 
-      {/* Glow A: top-right (~0.9 / 0.1), fading toward its far corner,
-          which is the bottom-left of the square (its top/right edges are
-          off-screen by design). */}
-      <LinearGradient
-        style={[
-          styles.glow,
-          {
-            width: sizeA,
-            height: sizeA,
-            left: width * 0.9 - sizeA / 2,
-            top: height * 0.1 - sizeA / 2,
-            borderRadius: sizeA / 2,
-          },
-        ]}
-        colors={[scene.glowA, scene.glowA, INVISIVEL]}
-        locations={[0, 0.5, 1]}
-        start={{ x: 0.5, y: 0.5 }}
-        end={{ x: 0, y: 1 }}
-      />
+          {/* circle at 90% 10%, fading out at 65%. */}
+          <RadialGradient id="glowA" cx="0.9" cy="0.1" r="0.65">
+            <Stop offset="0" stopColor={a.cor} stopOpacity={a.opacidade} />
+            <Stop offset="1" stopColor={a.cor} stopOpacity={0} />
+          </RadialGradient>
 
-      {/* Glow B: bottom-left (~0.1 / 0.9), fading toward the top-right. */}
-      <LinearGradient
-        style={[
-          styles.glow,
-          {
-            width: sizeB,
-            height: sizeB,
-            left: width * 0.1 - sizeB / 2,
-            top: height * 0.9 - sizeB / 2,
-            borderRadius: sizeB / 2,
-          },
-        ]}
-        colors={[scene.glowB, scene.glowB, INVISIVEL]}
-        locations={[0, 0.5, 1]}
-        start={{ x: 0.5, y: 0.5 }}
-        end={{ x: 1, y: 0 }}
-      />
+          {/* circle at 10% 90%, fading out at 55%. */}
+          <RadialGradient id="glowB" cx="0.1" cy="0.9" r="0.55">
+            <Stop offset="0" stopColor={b.cor} stopOpacity={b.opacidade} />
+            <Stop offset="1" stopColor={b.cor} stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+
+        {/* Painted bottom-up, the reverse of the CSS layer order. */}
+        <Rect x="0" y="0" width="1" height="1" fill="url(#base)" />
+        <Rect x="0" y="0" width="1" height="1" fill="url(#glowB)" />
+        <Rect x="0" y="0" width="1" height="1" fill="url(#glowA)" />
+      </Svg>
     </View>
   );
 }
@@ -86,6 +91,4 @@ const styles = StyleSheet.create({
   // Absolute inset-0, painted first (and at zIndex 0) so the content that
   // follows it in the tree always covers it.
   base: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0 },
-  fill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
-  glow: { position: 'absolute' },
 });

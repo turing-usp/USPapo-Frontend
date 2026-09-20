@@ -18,6 +18,19 @@ const BRAND = '#f1863d';
 /** Muted gray-blue for field adornments (light `muted-foreground`). */
 const MUTED = '#55618a';
 
+/** The USPapo mark (site/public/logo.svg): the maze "T" on a 32.89 grid. */
+const LOGO_PATH =
+  'M22.84,8.22V13.7H19.18v3.66H17.36V11.88H21V10.05H11.88v1.83h3.65V21H7.82A1.42,1.42,0,0,1,6.4,19.59v-15H25.07A1.43,1.43,0,0,1,26.49,6v13.6A1.43,1.43,0,0,1,25.07,21H19.18v1.83h7.31v5.48H24.66V24.66H18.78a1.42,1.42,0,0,1-1.42-1.42V19.18h7.3V6.4H8.22V19.18H13.7V13.7H10.05v-4a1.43,1.43,0,0,1,1.43-1.43Z';
+
+/** USPapo logo mark, brand orange. Square; `size` is both width and height. */
+export function LogoMark({ size = 32 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 32.89 32.89">
+      <Path d={LOGO_PATH} fill={BRAND} />
+    </Svg>
+  );
+}
+
 /** Turing wordmark paths (site/app/turing-logo.svg), in draw order. */
 const TURING_PATHS: string[] = [
   'M26.32,9.85v5.48H22.66V19H20.84V13.5h3.65V11.67H15.36V13.5H19v9.14H11.3a1.42,1.42,0,0,1-1.42-1.43v-15H28.55A1.43,1.43,0,0,1,30,7.62V21.21a1.43,1.43,0,0,1-1.42,1.43H22.66v1.82H30v5.48H28.14V26.29H22.26a1.42,1.42,0,0,1-1.42-1.43V20.81h7.3V8H11.7V20.81h5.48V15.33H13.53V11.27A1.43,1.43,0,0,1,15,9.85Z',
@@ -107,6 +120,16 @@ export function EnvelopeIcon(props: IconeProps) {
   return (
     <IconeTracado
       d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+      {...props}
+    />
+  );
+}
+
+/** Person (register "Nome" field adornment). */
+export function UserIcon(props: IconeProps) {
+  return (
+    <IconeTracado
+      d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.5 20.25a7.5 7.5 0 1115 0v.75H4.5v-.75z"
       {...props}
     />
   );

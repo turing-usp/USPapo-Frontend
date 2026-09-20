@@ -12,7 +12,7 @@
 import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { useTheme } from '../../theme';
+import { fonts, useTheme } from '../../theme';
 import {
   carregarFeedback,
   formataDataFeedback,
@@ -93,8 +93,8 @@ export default function PainelFeedback() {
       <Text
         style={{
           color: colors.foreground,
+          fontFamily: fonts.displayBold,
           fontSize: typography['2xl'].fontSize,
-          fontWeight: '800',
         }}
       >
         Feedback dos alunos
@@ -129,6 +129,7 @@ export default function PainelFeedback() {
           <Text
             style={{
               color: colors.mutedForeground,
+              fontFamily: fonts.body,
               fontSize: typography.base.fontSize,
               textAlign: 'center',
             }}

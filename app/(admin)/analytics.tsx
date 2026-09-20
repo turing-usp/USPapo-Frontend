@@ -27,7 +27,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { useTheme } from '../../theme';
+import { fonts, useTheme } from '../../theme';
 import {
   ROTULO_JANELA,
   ROTULO_JANELA_SERVICO,
@@ -92,8 +92,8 @@ function CartaoKpi({
       <Text
         style={{
           color: colors.foreground,
+          fontFamily: fonts.displayBold,
           fontSize: typography['2xl'].fontSize,
-          fontWeight: '700',
         }}
       >
         {valor}
@@ -212,8 +212,8 @@ function TelaErro({ aoTentarNovamente }: { aoTentarNovamente: () => void }) {
       <Text
         style={{
           color: colors.foreground,
+          fontFamily: fonts.bodyBold,
           fontSize: typography.lg.fontSize,
-          fontWeight: '700',
           textAlign: 'center',
         }}
       >
@@ -296,8 +296,8 @@ export default function PainelMetricas() {
         <Text
           style={{
             color: colors.foreground,
+            fontFamily: fonts.displayBold,
             fontSize: typography['2xl'].fontSize,
-            fontWeight: '800',
           }}
         >
           Painel de métricas
@@ -331,8 +331,8 @@ export default function PainelMetricas() {
                 <Text
                   style={{
                     color: ativa ? colors.brandForeground : colors.mutedForeground,
+                    fontFamily: fonts.bodyBold,
                     fontSize: typography.sm.fontSize,
-                    fontWeight: '600',
                   }}
                 >
                   {opcao.rotulo}

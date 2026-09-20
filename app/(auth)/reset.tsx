@@ -17,16 +17,16 @@ import {
   Pressable,
   ScrollView,
   Text,
-  TextInput,
   View,
-  type TextStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import CampoVidro from '../../components/CampoVidro';
+import { EnvelopeIcon, LockIcon } from '../../components/BrandMarks';
 import { haptics } from '../../lib/haptics';
 import { mapAuthError } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
-import { useTheme } from '../../theme';
+import { fonts, useTheme } from '../../theme';
 import { todasAsRegrasPassam } from './regrasSenha';
 
 type Etapa = 'email' | 'linkEnviado' | 'novaSenha';
@@ -42,18 +42,8 @@ export default function Reset() {
   const [confirma, setConfirma] = useState('');
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-
-  const estiloCampo: TextStyle = {
-    backgroundColor: glass.surface.backgroundColor,
-    borderColor: colors.line,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    color: colors.foreground,
-    fontSize: typography.base.fontSize,
-    minHeight: 52,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-  };
+  /** Which pill owns the brand focus ring. */
+  const [foco, setFoco] = useState<string | null>(null);
 
   async function enviarLink() {
     if (carregando) return;
@@ -135,8 +125,8 @@ export default function Reset() {
         <Text
           style={{
             color: colors.brandForeground,
+            fontFamily: fonts.bodyBold,
             fontSize: typography.base.fontSize,
-            fontWeight: '700',
           }}
         >
           {rotulo}
@@ -163,8 +153,8 @@ export default function Reset() {
             <Text
               style={{
                 color: colors.foreground,
+                fontFamily: fonts.displayBold,
                 fontSize: typography.xl.fontSize,
-                fontWeight: '700',
               }}
             >
               Recuperar senha
@@ -172,6 +162,7 @@ export default function Reset() {
             <Text
               style={{
                 color: colors.mutedForeground,
+                fontFamily: fonts.body,
                 fontSize: typography.sm.fontSize,
                 marginTop: spacing.xs,
               }}
@@ -179,20 +170,23 @@ export default function Reset() {
               Informe seu e-mail e enviamos um link para redefinir a senha.
             </Text>
             <View style={{ gap: spacing.sm, marginTop: spacing.xl }}>
-              <TextInput
+              <CampoVidro
+                focado={foco === 'email'}
+                aoFocar={() => setFoco('email')}
+                aoPerderFoco={() => setFoco(null)}
+                icone={<EnvelopeIcon color={colors.mutedForeground} />}
                 value={email}
                 onChangeText={setEmail}
                 placeholder="Email"
-                placeholderTextColor={colors.faintForeground}
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="email-address"
-                style={estiloCampo}
               />
               {erro ? (
                 <Text
                   style={{
                     color: colors.danger,
+                    fontFamily: fonts.body,
                     fontSize: typography.sm.fontSize,
                     textAlign: 'center',
                   }}
@@ -210,6 +204,7 @@ export default function Reset() {
               <Text
                 style={{
                   color: colors.mutedForeground,
+                  fontFamily: fonts.body,
                   fontSize: typography.sm.fontSize,
                   textAlign: 'center',
                 }}
@@ -225,8 +220,8 @@ export default function Reset() {
             <Text
               style={{
                 color: colors.foreground,
+                fontFamily: fonts.displayBold,
                 fontSize: typography.xl.fontSize,
-                fontWeight: '700',
                 textAlign: 'center',
               }}
             >
@@ -235,6 +230,7 @@ export default function Reset() {
             <Text
               style={{
                 color: colors.mutedForeground,
+                fontFamily: fonts.body,
                 fontSize: typography.sm.fontSize,
                 textAlign: 'center',
                 marginTop: spacing.sm,
@@ -254,6 +250,7 @@ export default function Reset() {
               <Text
                 style={{
                   color: colors.mutedForeground,
+                  fontFamily: fonts.body,
                   fontSize: typography.sm.fontSize,
                   textAlign: 'center',
                 }}
@@ -269,33 +266,38 @@ export default function Reset() {
             <Text
               style={{
                 color: colors.foreground,
+                fontFamily: fonts.displayBold,
                 fontSize: typography.xl.fontSize,
-                fontWeight: '700',
               }}
             >
               Nova senha
             </Text>
             <View style={{ gap: spacing.sm, marginTop: spacing.xl }}>
-              <TextInput
+              <CampoVidro
+                focado={foco === 'senha'}
+                aoFocar={() => setFoco('senha')}
+                aoPerderFoco={() => setFoco(null)}
+                icone={<LockIcon color={colors.mutedForeground} />}
                 value={senha}
                 onChangeText={setSenha}
                 placeholder="Nova senha"
-                placeholderTextColor={colors.faintForeground}
                 secureTextEntry
-                style={estiloCampo}
               />
-              <TextInput
+              <CampoVidro
+                focado={foco === 'confirma'}
+                aoFocar={() => setFoco('confirma')}
+                aoPerderFoco={() => setFoco(null)}
+                icone={<LockIcon color={colors.mutedForeground} />}
                 value={confirma}
                 onChangeText={setConfirma}
                 placeholder="Confirmar senha"
-                placeholderTextColor={colors.faintForeground}
                 secureTextEntry
-                style={estiloCampo}
               />
               {erro ? (
                 <Text
                   style={{
                     color: colors.danger,
+                    fontFamily: fonts.body,
                     fontSize: typography.sm.fontSize,
                     textAlign: 'center',
                   }}

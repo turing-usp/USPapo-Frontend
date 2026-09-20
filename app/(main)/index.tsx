@@ -16,15 +16,15 @@ import React, { useEffect, useState } from 'react';
 import {
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
-  TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
-import { Path, Svg } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { TuringMark } from '../../components/BrandMarks';
+import Composer from '../../components/Composer';
+import Container from '../../components/Container';
+import { ALTURA_CHROME } from '../../components/Chrome';
 import { ultimasConversasOffline } from '../../lib/cache';
 import { haptics } from '../../lib/haptics';
 import * as net from '../../lib/net';
@@ -101,28 +101,11 @@ function novoId(): string {
   });
 }
 
-/**
- * The USPapo mark — port of the old site's public/uspapo.svg (viewBox and
- * path data verbatim, original #ff914c stroke). Rendered at 40x40 like the
- * old hero image.
- */
-function LogoUSPapo() {
-  return (
-    <Svg width={40} height={40} viewBox="131.297 24.502 249.939 453.875">
-      <Path
-        fill="none"
-        stroke="#ff914c"
-        strokeWidth={25}
-        d="m 228.1516,306.48441 h -39.14196 m 39.1358,-77.8353 h -39.1358 m 39.12939,-77.92258 H 189.00964 M 227.99942,94.767333 143.79671,46.152882 V 374.86912 l 141.78215,81.85796 V 404.10032 M 228.13173,55.371627 368.70639,137.28661 367.44383,451.80426 228.15668,370.63953 Z"
-      />
-    </Svg>
-  );
-}
-
 export default function Inicio() {
-  const { colors, glass, radius, spacing, typography } = useTheme();
+  const { colors, fonts, glass, radius, spacing, typography } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width: largura } = useWindowDimensions();
 
   const [pergunta, setPergunta] = useState('');
   const [perguntas, setPerguntas] = useState<PerguntaFrequente[]>([]);
@@ -132,8 +115,8 @@ export default function Inicio() {
   const [naFila, setNaFila] = useState(0);
   const { online } = net.useConnection();
 
-  // Shuffle once per launch (module-level memo so a tab remount keeps the
-  // same 3 for the whole session).
+  // Shuffle once per launch (module-level memo so a remount keeps the same
+  // 3 for the whole session).
   useEffect(() => {
     if (!sorteadasNesteLancamento) {
       sorteadasNesteLancamento = sortearPerguntas();
@@ -205,140 +188,87 @@ export default function Inicio() {
     router.push(`/(main)/chat/${id}`);
   }
 
+  const larguraPills = largura >= 768;
+
   return (
     <ScrollView
       contentContainerStyle={{
         flexGrow: 1,
-        padding: spacing.xl,
-        paddingTop: insets.top + spacing.lg,
-        paddingBottom: insets.bottom + spacing.xl,
+        // The chrome floats over the content, so the first section clears it
+        // and then takes the old `mt-8 md:mt-10`.
+        paddingTop: insets.top + ALTURA_CHROME + (larguraPills ? 40 : 32),
+        paddingBottom: insets.bottom + spacing['3xl'],
       }}
+      keyboardShouldPersistTaps="handled"
     >
-      {/* Old hero: USPapo mark + wordmark + tagline. */}
-      <View style={{ alignItems: 'center', gap: spacing.sm }}>
-        <LogoUSPapo />
-        <Text
-          style={{
-            color: colors.brand,
-            fontSize: 36,
-            fontWeight: '700',
-          }}
-        >
-          USPapo
-        </Text>
-        <Text
-          style={{
-            color: colors.foreground,
-            fontSize: typography.base.fontSize,
-            textAlign: 'center',
-          }}
-        >
-          Seu{' '}
-          <Text style={{ color: colors.brand }}>assistente inteligente</Text>{' '}
-          para navegar pela USP
-        </Text>
-      </View>
-
-      {/* Glass composer: multiline input + circular brand send. */}
-      <View
-        style={[
-          glass.brand,
-          glass.shadow,
-          {
-            borderRadius: radius.xl,
-            marginTop: spacing['2xl'],
-            padding: spacing.md,
-          },
-        ]}
-      >
-        <TextInput
+      {/* The composer is the top of the old home — there is no hero above it:
+          the wordmark lives in the drawer, and the backdrop carries the rest
+          of the identity. */}
+      <Container>
+        <Composer
           value={pergunta}
-          onChangeText={setPergunta}
-          placeholder="Pergunte sobre a USP…"
-          placeholderTextColor={colors.faintForeground}
-          multiline
-          numberOfLines={3}
-          textAlignVertical="top"
-          style={{
-            color: colors.foreground,
-            fontSize: typography.base.fontSize,
-            flex: 1,
-            maxHeight: 120,
-            paddingVertical: spacing.sm,
-          }}
+          onChange={setPergunta}
+          onSubmit={iniciarConversa}
         />
-        <Pressable
-          onPress={() => iniciarConversa(pergunta)}
-          disabled={!pergunta.trim()}
-          style={({ pressed }) => [
-            {
-              alignItems: 'center',
-              backgroundColor: colors.brand,
-              borderRadius: radius.full,
-              height: 44,
-              justifyContent: 'center',
-              width: 44,
-              alignSelf: 'flex-end',
-              marginTop: spacing.sm,
-              opacity: !pergunta.trim() ? 0.4 : pressed ? 0.85 : 1,
-            },
-          ]}
-          accessibilityLabel="Enviar pergunta"
-        >
-          <Text
-            style={{
-              color: colors.brandForeground,
-              fontSize: typography.lg.fontSize,
-              fontWeight: '700',
-            }}
-          >
-            ➤
-          </Text>
-        </Pressable>
-      </View>
 
-      {/* The offline queue badge (P9): honest about what is waiting. */}
-      {naFila > 0 ? (
-        <View
-          style={[
-            glass.surface,
-            glass.hairline,
-            {
-              borderRadius: radius.full,
-              marginTop: spacing.md,
-              paddingVertical: 8,
-              paddingHorizontal: 14,
-              alignSelf: 'flex-start',
-            },
-          ]}
-        >
-          <Text
-            style={{
-              color: colors.mutedForeground,
-              fontSize: typography.xs.fontSize,
-              fontWeight: '600',
-            }}
+        {/* Offline queue badge — honest about what is waiting to send. */}
+        {naFila > 0 ? (
+          <View
+            style={[
+              glass.surface,
+              glass.hairline,
+              {
+                alignSelf: 'flex-start',
+                borderRadius: radius.full,
+                marginTop: spacing.md,
+                paddingVertical: 6,
+                paddingHorizontal: 12,
+              },
+            ]}
           >
-            {naFila === 1
-              ? '1 pergunta aguardando a conexão'
-              : `${naFila} perguntas aguardando a conexão`}
-          </Text>
-        </View>
-      ) : null}
+            <Text
+              style={{
+                color: colors.mutedForeground,
+                fontFamily: fonts.body,
+                fontSize: typography.xs.fontSize,
+              }}
+            >
+              {naFila === 1
+                ? '1 pergunta aguardando a conexão'
+                : `${naFila} perguntas aguardando a conexão`}
+            </Text>
+          </View>
+        ) : null}
+      </Container>
 
-      {/* FAQ pills: 3 of 6, shuffled once per launch. */}
-      <View style={{ marginTop: spacing['2xl'] }}>
+      {/* "Perguntas Frequentes": 3 of 6, shuffled once per launch. */}
+      <Container
+        style={{
+          alignItems: 'center',
+          marginTop: larguraPills ? 48 : 40,
+        }}
+      >
         <Text
           style={{
-            color: colors.mutedForeground,
-            fontSize: typography.sm.fontSize,
-            fontWeight: '600',
-            marginBottom: spacing.sm,
+            color: colors.foreground,
+            fontFamily: fonts.display,
+            fontSize: typography.base.fontSize,
           }}
         >
-          Você também pode perguntar
+          Perguntas Frequentes
         </Text>
-        <View style={{ gap: spacing.sm }}>
+
+        <View
+          style={{
+            alignItems: 'stretch',
+            flexDirection: larguraPills ? 'row' : 'column',
+            flexWrap: larguraPills ? 'wrap' : 'nowrap',
+            gap: larguraPills ? 24 : 16,
+            justifyContent: 'center',
+            marginTop: 24,
+            width: '100%',
+          }}
+        >
           {perguntas.map((p) => (
             <Pressable
               key={p.trecho}
@@ -346,20 +276,32 @@ export default function Inicio() {
               style={({ pressed }) => [
                 glass.surface,
                 glass.hairline,
+                glass.shadow,
                 {
-                  // Old pills: rounded-[2rem] glass, ~56px tall.
+                  alignItems: 'center',
+                  alignSelf: 'center',
+                  // Old pill: h-14, rounded-[2rem], max-w-[18rem], and on a
+                  // wide window an equal-basis row item with an 11rem floor.
                   borderRadius: 32,
-                  minHeight: 56,
-                  opacity: pressed ? 0.8 : 1,
-                  paddingVertical: spacing.md,
+                  flexBasis: larguraPills ? 0 : 'auto',
+                  flexGrow: larguraPills ? 1 : 0,
+                  height: 56,
+                  justifyContent: 'center',
+                  maxWidth: 288,
+                  minWidth: larguraPills ? 176 : undefined,
+                  opacity: pressed ? 0.85 : 1,
                   paddingHorizontal: spacing.lg,
+                  paddingVertical: spacing.sm,
+                  width: larguraPills ? undefined : '100%',
                 },
               ]}
             >
               <Text
                 style={{
                   color: colors.foreground,
-                  fontSize: typography.sm.fontSize,
+                  fontFamily: fonts.body,
+                  fontSize: typography.base.fontSize,
+                  textAlign: 'center',
                 }}
               >
                 {p.trecho}
@@ -367,61 +309,25 @@ export default function Inicio() {
             </Pressable>
           ))}
         </View>
-      </View>
+      </Container>
 
-      {/* "Continuar de onde parou" — the last 3 cached conversations (P9:
-          from the offline store, so it renders with no network; pending
-          rows — resposta null — say so honestly). */}
-      <View style={{ marginTop: spacing['3xl'] }}>
-        <Text
-          style={{
-            color: colors.mutedForeground,
-            fontSize: typography.sm.fontSize,
-            fontWeight: '600',
-            marginBottom: spacing.sm,
-          }}
-        >
-          Continuar de onde parou
-        </Text>
-        {ultimas.length === 0 ? (
-          <View
-            style={[
-              glass.surface,
-              glass.hairline,
-              {
-                borderRadius: radius.lg,
-                gap: spacing.sm,
-                padding: spacing.lg,
-              },
-            ]}
+      {/* "Continuar de onde parou" — the last 3 cached conversations, read
+          from the offline store so the section renders with no network.
+          Hidden entirely when there is nothing to resume, which keeps the
+          old site's empty home intact on a first run. */}
+      {ultimas.length > 0 ? (
+        <Container style={{ marginTop: 48 }}>
+          <Text
+            style={{
+              color: colors.mutedForeground,
+              fontFamily: fonts.display,
+              fontSize: typography.sm.fontSize,
+              marginBottom: spacing.md,
+            }}
           >
-            <View
-              style={{
-                backgroundColor: colors.line,
-                borderRadius: radius.md,
-                height: 40,
-                opacity: 0.12,
-              }}
-            />
-            <View
-              style={{
-                backgroundColor: colors.line,
-                borderRadius: radius.md,
-                height: 40,
-                opacity: 0.08,
-              }}
-            />
-            <Text
-              style={{
-                color: colors.faintForeground,
-                fontSize: typography.xs.fontSize,
-              }}
-            >
-              Suas últimas conversas aparecem aqui.
-            </Text>
-          </View>
-        ) : (
-          <View style={{ gap: spacing.sm }}>
+            Continuar de onde parou
+          </Text>
+          <View style={{ gap: spacing.md }}>
             {ultimas.map((c) => (
               <Pressable
                 key={c.id}
@@ -429,21 +335,29 @@ export default function Inicio() {
                 style={({ pressed }) => [
                   glass.surface,
                   glass.hairline,
+                  glass.shadow,
                   {
-                    borderRadius: radius.md,
-                    opacity: pressed ? 0.8 : 1,
-                    paddingVertical: 12,
-                    paddingHorizontal: 14,
+                    borderRadius: radius.lg,
+                    opacity: pressed ? 0.85 : 1,
+                    paddingVertical: spacing.md,
+                    paddingHorizontal: spacing.lg,
                   },
                 ]}
               >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                <View
+                  style={{
+                    alignItems: 'center',
+                    flexDirection: 'row',
+                    gap: spacing.sm,
+                  }}
+                >
                   <Text
                     numberOfLines={1}
                     style={{
-                      flex: 1,
                       color: colors.foreground,
-                      fontSize: typography.sm.fontSize,
+                      flex: 1,
+                      fontFamily: fonts.body,
+                      fontSize: typography.base.fontSize,
                     }}
                   >
                     {c.pergunta}
@@ -452,9 +366,8 @@ export default function Inicio() {
                     <Text
                       style={{
                         color: colors.danger,
+                        fontFamily: fonts.bodyBold,
                         fontSize: typography.xs.fontSize,
-                        fontWeight: '600',
-                        textTransform: 'uppercase',
                       }}
                     >
                       pendente
@@ -464,42 +377,8 @@ export default function Inicio() {
               </Pressable>
             ))}
           </View>
-        )}
-      </View>
-
-      {/* Old site footer: "Desenvolvido por" + Turing mark + turing.usp. */}
-      <View
-        style={{
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          flexDirection: 'row',
-          gap: spacing.sm,
-          justifyContent: 'center',
-          marginTop: spacing['3xl'],
-        }}
-      >
-        <Text
-          style={{
-            color: colors.mutedForeground,
-            fontSize: typography.base.fontSize,
-          }}
-        >
-          Desenvolvido por
-        </Text>
-        <View style={{ alignItems: 'center', flexDirection: 'row', gap: spacing.xs }}>
-          {/* Brand orange by default — matches the old site's footer. */}
-          <TuringMark size={30} />
-          <Text
-            style={{
-              color: colors.brand,
-              fontSize: typography.base.fontSize,
-              fontWeight: '700',
-            }}
-          >
-            turing.usp
-          </Text>
-        </View>
-      </View>
+        </Container>
+      ) : null}
     </ScrollView>
   );
 }

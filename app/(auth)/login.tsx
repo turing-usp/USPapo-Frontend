@@ -11,7 +11,7 @@
  * Errors go through `mapAuthError` (lib/auth) — uniform pt-BR surface.
  */
 import { useRouter } from 'expo-router';
-import React, { useState, type ReactNode } from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -20,12 +20,11 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
-  type TextInputProps,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import CampoVidro from '../../components/CampoVidro';
 import {
   EnvelopeIcon,
   EyeIcon,
@@ -37,65 +36,10 @@ import {
 import { haptics } from '../../lib/haptics';
 import { mapAuthError } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
-import { useTheme } from '../../theme';
+import { fonts, useTheme } from '../../theme';
 
 /** Old site column width (max-w-md); keeps the layout centered on tablets. */
 const LARGURA_COLUNA = 448;
-
-type CampoVidroProps = {
-  /** Brand-colored focus ring (old `.glass-field:has(:focus-visible)`). */
-  focado: boolean;
-  aoFocar: () => void;
-  aoPerderFoco: () => void;
-  /** Icon rendered inside the pill, on the left. */
-  icone: ReactNode;
-  /** Right-side trailing control (password eye toggle). */
-  botaoFinal?: ReactNode;
-} & Omit<TextInputProps, 'style' | 'onFocus' | 'onBlur'>;
-
-/** Glass pill input: hairline at rest, brand hairline on focus. */
-function CampoVidro({
-  focado,
-  aoFocar,
-  aoPerderFoco,
-  icone,
-  botaoFinal,
-  ...resto
-}: CampoVidroProps) {
-  const { colors, glass, radius, typography } = useTheme();
-  return (
-    <View
-      style={[
-        glass.surface,
-        focado ? { borderColor: colors.brand, borderWidth: 1.5 } : glass.hairline,
-        {
-          alignItems: 'center',
-          borderRadius: radius.full,
-          flexDirection: 'row',
-          minHeight: 52,
-          paddingHorizontal: 18,
-          paddingVertical: 14,
-        },
-      ]}
-    >
-      <View pointerEvents="none">
-        {icone}
-      </View>
-      <TextInput
-        {...resto}
-        onBlur={aoPerderFoco}
-        onFocus={aoFocar}
-        style={{
-          color: colors.foreground,
-          flex: 1,
-          fontSize: typography.base.fontSize,
-          marginStart: 12,
-        }}
-      />
-      {botaoFinal ?? null}
-    </View>
-  );
-}
 
 export default function Login() {
   const { colors, glass, radius, spacing, typography, scheme } = useTheme();
@@ -174,8 +118,8 @@ export default function Login() {
             style={{
               alignSelf: 'center',
               color: colors.foreground,
+              fontFamily: fonts.displayBold,
               fontSize: typography.xl.fontSize,
-              fontWeight: '700',
               letterSpacing: 0.5,
               marginTop: spacing.xl,
               textAlign: 'center',
@@ -231,6 +175,7 @@ export default function Login() {
                 role="alert"
                 style={{
                   color: colors.danger,
+                  fontFamily: fonts.body,
                   fontSize: typography.sm.fontSize,
                   textAlign: 'center',
                 }}
@@ -263,8 +208,8 @@ export default function Login() {
               <Text
                 style={{
                   color: colors.brandForeground,
+                  fontFamily: fonts.body,
                   fontSize: typography.base.fontSize,
-                  fontWeight: '500',
                 }}
               >
                 Entrar
@@ -281,8 +226,8 @@ export default function Login() {
             <Text
               style={{
                 color: colors.brand,
+                fontFamily: fonts.body,
                 fontSize: typography.sm.fontSize,
-                fontWeight: '500',
               }}
             >
               Esqueceu a senha?
@@ -309,6 +254,7 @@ export default function Login() {
             <Text
               style={{
                 color: colors.mutedForeground,
+                fontFamily: fonts.body,
                 fontSize: typography.sm.fontSize,
                 letterSpacing: 1,
               }}
@@ -350,8 +296,8 @@ export default function Login() {
             <Text
               style={{
                 color: colors.foreground,
+                fontFamily: fonts.body,
                 fontSize: typography.sm.fontSize,
-                fontWeight: '500',
               }}
             >
               Continuar com o Google
@@ -363,12 +309,14 @@ export default function Login() {
             style={{
               alignItems: 'center',
               flexDirection: 'row',
+              justifyContent: 'center',
               marginTop: spacing['3xl'],
             }}
           >
             <Text
               style={{
                 color: colors.mutedForeground,
+                fontFamily: fonts.body,
                 fontSize: typography.sm.fontSize,
               }}
             >
@@ -378,8 +326,8 @@ export default function Login() {
               <Text
                 style={{
                   color: colors.brand,
+                  fontFamily: fonts.body,
                   fontSize: typography.sm.fontSize,
-                  fontWeight: '500',
                 }}
               >
                 Cadastre-se
