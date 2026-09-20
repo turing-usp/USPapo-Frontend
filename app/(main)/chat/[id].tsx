@@ -29,13 +29,13 @@ import {
   FlatList,
   NativeSyntheticEvent,
   Pressable,
-  StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import Backdrop from '../../../components/Backdrop';
 import { BolhaAssistente, BolhaUsuario, LinhaErro, LinhaFerramenta, LinhaNota } from '../../../components/chat/bolhas';
 import { FeedbackResposta } from '../../../components/chat/feedback';
 import { haptics } from '../../../lib/haptics';
@@ -164,7 +164,10 @@ export default function Chat() {
 
   if (!id) {
     return (
-      <Vazio title="Conversa" message="Não encontrei esta conversa" colors={colors} />
+      <View style={{ flex: 1 }}>
+        <Backdrop />
+        <Vazio title="Conversa" message="Não encontrei esta conversa" colors={colors} />
+      </View>
     );
   }
 
@@ -172,19 +175,23 @@ export default function Chat() {
     carregou && turns.length === 0 && status === 'idle';
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
+    <View style={{ flex: 1 }}>
+      {/* Screen-level canvas fill moved to the backdrop (old page backdrop). */}
+      <Backdrop />
       {/* Header: title from the first user turn, truncated. */}
       <View
-        style={{
-          backgroundColor: colors.canvas,
-          borderBottomColor: colors.line,
-          borderBottomWidth: StyleSheet.hairlineWidth + 1,
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: spacing.sm,
-          padding: spacing.md,
-          paddingTop: insets.top + spacing.sm,
-        }}
+        style={[
+          glass.raised,
+          {
+            borderBottomColor: glass.hairline.borderColor,
+            borderBottomWidth: glass.hairline.borderWidth ?? 1,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: spacing.sm,
+            padding: spacing.md,
+            paddingTop: insets.top + spacing.sm,
+          },
+        ]}
       >
         <Pressable
           onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
@@ -316,9 +323,10 @@ export default function Chat() {
               (aborting the stream keeps the pending row pending — P9). */}
           <View
             style={{
-              backgroundColor: colors.canvas,
-              borderTopColor: colors.line,
-              borderTopWidth: StyleSheet.hairlineWidth + 1,
+              // Canvas fill goes to the backdrop; the old solid line border
+              // softens to the glass hairline token.
+              borderTopColor: glass.hairline.borderColor,
+              borderTopWidth: glass.hairline.borderWidth ?? 1,
               padding: spacing.md,
               paddingBottom: Math.max(insets.bottom, spacing.md),
               gap: spacing.sm,
@@ -436,7 +444,6 @@ function Vazio({
         alignItems: 'center',
         justifyContent: 'center',
         gap: spacing.sm,
-        backgroundColor: c.canvas,
         padding: spacing.xl,
       }}
     >

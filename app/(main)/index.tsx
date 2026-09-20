@@ -14,7 +14,6 @@
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -22,8 +21,10 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Path, Svg } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { TuringMark } from '../../components/BrandMarks';
 import { ultimasConversasOffline } from '../../lib/cache';
 import { haptics } from '../../lib/haptics';
 import * as net from '../../lib/net';
@@ -98,6 +99,24 @@ function novoId(): string {
     const v = letra === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
+}
+
+/**
+ * The USPapo mark — port of the old site's public/uspapo.svg (viewBox and
+ * path data verbatim, original #ff914c stroke). Rendered at 40x40 like the
+ * old hero image.
+ */
+function LogoUSPapo() {
+  return (
+    <Svg width={40} height={40} viewBox="131.297 24.502 249.939 453.875">
+      <Path
+        fill="none"
+        stroke="#ff914c"
+        strokeWidth={25}
+        d="m 228.1516,306.48441 h -39.14196 m 39.1358,-77.8353 h -39.1358 m 39.12939,-77.92258 H 189.00964 M 227.99942,94.767333 143.79671,46.152882 V 374.86912 l 141.78215,81.85796 V 404.10032 M 228.13173,55.371627 368.70639,137.28661 367.44383,451.80426 228.15668,370.63953 Z"
+      />
+    </Svg>
+  );
 }
 
 export default function Inicio() {
@@ -195,21 +214,28 @@ export default function Inicio() {
         paddingBottom: insets.bottom + spacing.xl,
       }}
     >
-      <View style={{ alignItems: 'center', gap: spacing.md }}>
-        <Image
-          source={require('../../assets/images/logo-glow.png')}
-          style={{ width: 64, height: 64 }}
-          accessibilityLabel="USPapo"
-        />
+      {/* Old hero: USPapo mark + wordmark + tagline. */}
+      <View style={{ alignItems: 'center', gap: spacing.sm }}>
+        <LogoUSPapo />
+        <Text
+          style={{
+            color: colors.brand,
+            fontSize: 36,
+            fontWeight: '700',
+          }}
+        >
+          USPapo
+        </Text>
         <Text
           style={{
             color: colors.foreground,
-            fontSize: typography['2xl'].fontSize,
-            fontWeight: '800',
+            fontSize: typography.base.fontSize,
             textAlign: 'center',
           }}
         >
-          Pergunte qualquer coisa sobre a USP
+          Seu{' '}
+          <Text style={{ color: colors.brand }}>assistente inteligente</Text>{' '}
+          para navegar pela USP
         </Text>
       </View>
 
@@ -321,7 +347,9 @@ export default function Inicio() {
                 glass.surface,
                 glass.hairline,
                 {
-                  borderRadius: radius.full,
+                  // Old pills: rounded-[2rem] glass, ~56px tall.
+                  borderRadius: 32,
+                  minHeight: 56,
                   opacity: pressed ? 0.8 : 1,
                   paddingVertical: spacing.md,
                   paddingHorizontal: spacing.lg,
@@ -437,6 +465,40 @@ export default function Inicio() {
             ))}
           </View>
         )}
+      </View>
+
+      {/* Old site footer: "Desenvolvido por" + Turing mark + turing.usp. */}
+      <View
+        style={{
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          flexDirection: 'row',
+          gap: spacing.sm,
+          justifyContent: 'center',
+          marginTop: spacing['3xl'],
+        }}
+      >
+        <Text
+          style={{
+            color: colors.mutedForeground,
+            fontSize: typography.base.fontSize,
+          }}
+        >
+          Desenvolvido por
+        </Text>
+        <View style={{ alignItems: 'center', flexDirection: 'row', gap: spacing.xs }}>
+          {/* Brand orange by default — matches the old site's footer. */}
+          <TuringMark size={30} />
+          <Text
+            style={{
+              color: colors.brand,
+              fontSize: typography.base.fontSize,
+              fontWeight: '700',
+            }}
+          >
+            turing.usp
+          </Text>
+        </View>
       </View>
     </ScrollView>
   );

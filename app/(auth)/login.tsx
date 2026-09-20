@@ -1,9 +1,17 @@
 /**
  * Login (email + password, show/hide, Google placeholder for P7).
+ *
+ * Presentation ported from the old site login screen
+ * (uspapo/site/app/(auth)/login/page.tsx): Turing wordmark above the title,
+ * glass pill fields with the envelope/lock icons inside, brand pill button
+ * with the glass shadow, centered "Esqueceu a senha?", "OU" divider, white
+ * Google button and the centered footer link. The screen is transparent so
+ * it reads on top of the <Backdrop /> rendered by the parent layout.
+ *
  * Errors go through `mapAuthError` (lib/auth) — uniform pt-BR surface.
  */
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -14,17 +22,83 @@ import {
   Text,
   TextInput,
   View,
-  type TextStyle,
+  type TextInputProps,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import {
+  EnvelopeIcon,
+  EyeIcon,
+  EyeOffIcon,
+  GoogleG,
+  LockIcon,
+  TuringMark,
+} from '../../components/BrandMarks';
 import { haptics } from '../../lib/haptics';
 import { mapAuthError } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { useTheme } from '../../theme';
 
+/** Old site column width (max-w-md); keeps the layout centered on tablets. */
+const LARGURA_COLUNA = 448;
+
+type CampoVidroProps = {
+  /** Brand-colored focus ring (old `.glass-field:has(:focus-visible)`). */
+  focado: boolean;
+  aoFocar: () => void;
+  aoPerderFoco: () => void;
+  /** Icon rendered inside the pill, on the left. */
+  icone: ReactNode;
+  /** Right-side trailing control (password eye toggle). */
+  botaoFinal?: ReactNode;
+} & Omit<TextInputProps, 'style' | 'onFocus' | 'onBlur'>;
+
+/** Glass pill input: hairline at rest, brand hairline on focus. */
+function CampoVidro({
+  focado,
+  aoFocar,
+  aoPerderFoco,
+  icone,
+  botaoFinal,
+  ...resto
+}: CampoVidroProps) {
+  const { colors, glass, radius, typography } = useTheme();
+  return (
+    <View
+      style={[
+        glass.surface,
+        focado ? { borderColor: colors.brand, borderWidth: 1.5 } : glass.hairline,
+        {
+          alignItems: 'center',
+          borderRadius: radius.full,
+          flexDirection: 'row',
+          minHeight: 52,
+          paddingHorizontal: 18,
+          paddingVertical: 14,
+        },
+      ]}
+    >
+      <View pointerEvents="none">
+        {icone}
+      </View>
+      <TextInput
+        {...resto}
+        onBlur={aoPerderFoco}
+        onFocus={aoFocar}
+        style={{
+          color: colors.foreground,
+          flex: 1,
+          fontSize: typography.base.fontSize,
+          marginStart: 12,
+        }}
+      />
+      {botaoFinal ?? null}
+    </View>
+  );
+}
+
 export default function Login() {
-  const { colors, glass, radius, spacing, typography } = useTheme();
+  const { colors, glass, radius, spacing, typography, scheme } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -33,18 +107,9 @@ export default function Login() {
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-
-  const estiloCampo: TextStyle = {
-    backgroundColor: glass.surface.backgroundColor,
-    borderColor: colors.line,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    color: colors.foreground,
-    fontSize: typography.base.fontSize,
-    minHeight: 52,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-  };
+  const [campoFocado, setCampoFocado] = useState<'email' | 'senha' | null>(
+    null,
+  );
 
   async function entrar() {
     if (carregando) return;
@@ -89,110 +154,105 @@ export default function Login() {
         contentContainerStyle={{
           flexGrow: 1,
           justifyContent: 'center',
-          padding: spacing.xl,
+          paddingHorizontal: spacing.xl,
+          paddingTop: spacing.xl,
           paddingBottom: insets.bottom + spacing.xl,
         }}
       >
-        <View style={{ gap: spacing.md }}>
+        <View
+          style={{
+            alignItems: 'stretch',
+            maxWidth: LARGURA_COLUNA,
+            width: '100%',
+          }}
+        >
+          {/* Wordmark + title (old: logo above "Entre com sua conta"). */}
+          <View style={{ alignItems: 'center' }}>
+            <TuringMark size={144} />
+          </View>
           <Text
             style={{
+              alignSelf: 'center',
               color: colors.foreground,
               fontSize: typography.xl.fontSize,
               fontWeight: '700',
+              letterSpacing: 0.5,
+              marginTop: spacing.xl,
+              textAlign: 'center',
             }}
           >
-            Entrar
+            Entre com sua conta
           </Text>
-          <Text
-            style={{
-              color: colors.mutedForeground,
-              fontSize: typography.sm.fontSize,
-            }}
-          >
-            Use a sua conta da USP.
-          </Text>
-        </View>
 
-        <View style={{ gap: spacing.sm, marginTop: spacing.xl }}>
-          <TextInput
-            value={email}
-            onChangeText={setEmail}
-            placeholder="Email"
-            placeholderTextColor={colors.faintForeground}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="email-address"
-            style={estiloCampo}
-          />
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              backgroundColor: glass.surface.backgroundColor,
-              borderColor: colors.line,
-              borderRadius: radius.full,
-              borderWidth: 1,
-              paddingVertical: 14,
-              paddingHorizontal: 20,
-              minHeight: 52,
-            }}
-          >
-            <TextInput
+          {/* Glass pill fields, icons inside, eye toggle on the right. */}
+          <View style={{ gap: spacing.lg, marginTop: spacing['3xl'] }}>
+            <CampoVidro
+              focado={campoFocado === 'email'}
+              aoFocar={() => setCampoFocado('email')}
+              aoPerderFoco={() => setCampoFocado(null)}
+              icone={<EnvelopeIcon size={20} color={colors.mutedForeground} />}
+              value={email}
+              onChangeText={setEmail}
+              placeholder="Email"
+              placeholderTextColor={colors.faintForeground}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+            />
+            <CampoVidro
+              focado={campoFocado === 'senha'}
+              aoFocar={() => setCampoFocado('senha')}
+              aoPerderFoco={() => setCampoFocado(null)}
+              icone={<LockIcon size={20} color={colors.mutedForeground} />}
               value={senha}
               onChangeText={setSenha}
               placeholder="Senha"
               placeholderTextColor={colors.faintForeground}
               secureTextEntry={!mostrarSenha}
-              style={{
-                flex: 1,
-                color: colors.foreground,
-                fontSize: typography.base.fontSize,
-              }}
-            />
-            <Pressable
-              onPress={() => setMostrarSenha((v) => !v)}
-              hitSlop={8}
-              accessibilityLabel={
-                mostrarSenha ? 'Ocultar senha' : 'Mostrar senha'
+              botaoFinal={
+                <Pressable
+                  onPress={() => setMostrarSenha((v) => !v)}
+                  hitSlop={8}
+                  accessibilityLabel={
+                    mostrarSenha ? 'Ocultar senha' : 'Mostrar senha'
+                  }
+                  style={{ marginStart: 8 }}
+                >
+                  {mostrarSenha ? (
+                    <EyeOffIcon size={20} color={colors.mutedForeground} />
+                  ) : (
+                    <EyeIcon size={20} color={colors.mutedForeground} />
+                  )}
+                </Pressable>
               }
-            >
+            />
+            {erro ? (
               <Text
+                role="alert"
                 style={{
-                  color: colors.brand,
+                  color: colors.danger,
                   fontSize: typography.sm.fontSize,
-                  fontWeight: '600',
+                  textAlign: 'center',
                 }}
               >
-                {mostrarSenha ? 'Ocultar' : 'Mostrar'}
+                {erro}
               </Text>
-            </Pressable>
+            ) : null}
           </View>
 
-          {erro ? (
-            <Text
-              style={{
-                color: colors.danger,
-                fontSize: typography.sm.fontSize,
-                textAlign: 'center',
-              }}
-            >
-              {erro}
-            </Text>
-          ) : null}
-        </View>
-
-        <View style={{ gap: spacing.sm, marginTop: spacing.xl }}>
+          {/* Primary button (old: brand pill with shadow-md). */}
           <Pressable
             onPress={entrar}
             disabled={carregando}
             style={({ pressed }) => [
+              glass.shadow,
               {
                 alignItems: 'center',
                 backgroundColor: colors.brand,
                 borderRadius: radius.full,
                 justifyContent: 'center',
                 minHeight: 52,
+                marginTop: spacing.xl,
                 opacity: carregando ? 0.7 : pressed ? 0.85 : 1,
               },
             ]}
@@ -204,7 +264,7 @@ export default function Login() {
                 style={{
                   color: colors.brandForeground,
                   fontSize: typography.base.fontSize,
-                  fontWeight: '700',
+                  fontWeight: '500',
                 }}
               >
                 Entrar
@@ -212,77 +272,99 @@ export default function Login() {
             )}
           </Pressable>
 
+          {/* Password reset (old: centered brand link). */}
+          <Pressable
+            onPress={() => router.push('/(auth)/reset')}
+            hitSlop={8}
+            style={{ alignSelf: 'center', marginTop: spacing.lg }}
+          >
+            <Text
+              style={{
+                color: colors.brand,
+                fontSize: typography.sm.fontSize,
+                fontWeight: '500',
+              }}
+            >
+              Esqueceu a senha?
+            </Text>
+          </Pressable>
+
+          {/* "OU" divider (old: thin line / 15 + "OU"). */}
           <View
             style={{
-              flexDirection: 'row',
               alignItems: 'center',
-              gap: spacing.sm,
-              marginTop: spacing.xs,
+              flexDirection: 'row',
+              gap: spacing.md,
+              marginTop: spacing['2xl'],
             }}
           >
             <View
               style={{
                 backgroundColor: colors.line,
                 flex: 1,
+                height: StyleSheet.hairlineWidth,
                 opacity: 0.15,
-                height: StyleSheet.hairlineWidth + 1,
               }}
             />
             <Text
               style={{
-                color: colors.faintForeground,
-                fontSize: typography.xs.fontSize,
+                color: colors.mutedForeground,
+                fontSize: typography.sm.fontSize,
+                letterSpacing: 1,
               }}
             >
-              ou
+              OU
             </Text>
             <View
               style={{
                 backgroundColor: colors.line,
                 flex: 1,
+                height: StyleSheet.hairlineWidth,
                 opacity: 0.15,
-                height: StyleSheet.hairlineWidth + 1,
               }}
             />
           </View>
 
+          {/* Google button (old: white pill, hairline border). */}
           <Pressable
             onPress={entrarComGoogle}
+            disabled={carregando}
             style={({ pressed }) => [
               {
                 alignItems: 'center',
-                backgroundColor: glass.raised.backgroundColor,
-                borderColor: colors.line,
-                borderRadius: radius.full,
+                backgroundColor: colors.surfaceRaised,
+                // old site used border-line/15 (navy 15% light / white 15% dark)
+                borderColor: scheme === 'light' ? 'rgba(11,16,48,0.15)' : 'rgba(255,255,255,0.15)',
                 borderWidth: 1,
+                borderRadius: radius.full,
+                flexDirection: 'row',
+                gap: 12,
                 justifyContent: 'center',
                 minHeight: 52,
-                opacity: pressed ? 0.85 : 1,
+                marginTop: spacing['2xl'],
+                opacity: carregando ? 0.7 : pressed ? 0.85 : 1,
               },
             ]}
           >
+            <GoogleG size={20} />
             <Text
               style={{
                 color: colors.foreground,
-                fontSize: typography.base.fontSize,
-                fontWeight: '600',
+                fontSize: typography.sm.fontSize,
+                fontWeight: '500',
               }}
             >
-              Entrar com Google
+              Continuar com o Google
             </Text>
           </Pressable>
-        </View>
 
-        <View
-          style={{
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            marginTop: spacing['2xl'],
-          }}
-        >
-          <Pressable
-            onPress={() => router.push('/(auth)/reset')}
-            hitSlop={8}
+          {/* Footer (old: centered "Não tem uma conta? Cadastre-se"). */}
+          <View
+            style={{
+              alignItems: 'center',
+              flexDirection: 'row',
+              marginTop: spacing['3xl'],
+            }}
           >
             <Text
               style={{
@@ -290,23 +372,20 @@ export default function Login() {
                 fontSize: typography.sm.fontSize,
               }}
             >
-              Esqueci minha senha
+              Não tem uma conta?{' '}
             </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => router.push('/(auth)/register')}
-            hitSlop={8}
-          >
-            <Text
-              style={{
-                color: colors.brand,
-                fontSize: typography.sm.fontSize,
-                fontWeight: '700',
-              }}
-            >
-              Criar conta
-            </Text>
-          </Pressable>
+            <Pressable onPress={() => router.push('/(auth)/register')} hitSlop={8}>
+              <Text
+                style={{
+                  color: colors.brand,
+                  fontSize: typography.sm.fontSize,
+                  fontWeight: '500',
+                }}
+              >
+                Cadastre-se
+              </Text>
+            </Pressable>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

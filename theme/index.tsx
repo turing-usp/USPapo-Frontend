@@ -99,6 +99,39 @@ export const colors: { light: SchemeColors; dark: SchemeColors } = {
   },
 };
 
+/**
+ * Per-scheme scene tokens, ported from the old site's `--page-backdrop`
+ * (globals.css): a 135deg linear base (backdropFrom → backdropTo) with two
+ * soft radial glows. Positions (consumed by components/Backdrop):
+ * glowA — top-right, ~0.9 / 0.1; glowB — bottom-left, ~0.1 / 0.9.
+ * Orange in light (the brand orange, and only it), blue in dark.
+ */
+export type SceneColors = {
+  /** Base gradient start (top-left end of the 135deg line). */
+  backdropFrom: string;
+  /** Base gradient end (bottom-right end of the 135deg line). */
+  backdropTo: string;
+  /** Soft glow at the top-right (~0.9 / 0.1). */
+  glowA: string;
+  /** Soft glow at the bottom-left (~0.1 / 0.9). */
+  glowB: string;
+};
+
+export const scene: Record<Scheme, SceneColors> = {
+  light: {
+    backdropFrom: '#d3dcf2',
+    backdropTo: '#eaeefb',
+    glowA: 'rgba(241,134,61,0.20)',
+    glowB: 'rgba(241,134,61,0.15)',
+  },
+  dark: {
+    backdropFrom: '#050833',
+    backdropTo: '#010214',
+    glowA: 'rgba(29,44,135,0.85)',
+    glowB: 'rgba(20,31,98,0.70)',
+  },
+};
+
 /** Spacing scale (pt). */
 export const spacing = {
   xs: 4,
@@ -169,20 +202,23 @@ export type GlassStyles = {
 };
 
 export const glass: Record<Scheme, GlassStyles> = {
+  // Flat "opaco" tints calibrated against the scene in the old site
+  // (--glass-opaco #e6e1ec, --glass-opaco-panel #e2dbeb, 13x13 grid over
+  // the backdrop); the alpha keeps them translucent without a blur.
   light: {
     surface: {
-      backgroundColor: 'rgba(255,255,255,0.55)',
+      backgroundColor: 'rgba(230,225,236,0.80)',
     },
     raised: {
-      backgroundColor: 'rgba(255,255,255,0.72)',
+      backgroundColor: 'rgba(226,219,235,0.92)',
     },
     brand: {
-      backgroundColor: 'rgba(255,255,255,0.40)',
+      backgroundColor: 'rgba(238,239,255,0.65)',
       borderColor: 'rgba(241,134,61,0.65)',
       borderWidth: 1.5,
     },
     hairline: {
-      borderColor: 'rgba(255,255,255,0.65)',
+      borderColor: 'rgba(255,255,255,0.90)',
       borderWidth: 1,
     },
     // Old value: 0 6px 20px -3px rgb(11 16 48 / 0.20). RN has no negative
@@ -195,20 +231,21 @@ export const glass: Record<Scheme, GlassStyles> = {
       elevation: 6,
     },
   },
+  // Same method as light: --glass-opaco #0d1983, --glass-opaco-panel #081165.
   dark: {
     surface: {
-      backgroundColor: 'rgba(9,11,44,0.6)',
+      backgroundColor: 'rgba(13,25,131,0.66)',
     },
     raised: {
-      backgroundColor: 'rgba(10,13,60,0.8)',
+      backgroundColor: 'rgba(8,17,101,0.85)',
     },
     brand: {
-      backgroundColor: 'rgba(9,11,44,0.45)',
+      backgroundColor: 'rgba(13,25,131,0.50)',
       borderColor: 'rgba(241,134,61,0.8)',
       borderWidth: 1.5,
     },
     hairline: {
-      borderColor: 'rgba(255,255,255,0.12)',
+      borderColor: 'rgba(255,255,255,0.38)',
       borderWidth: 1,
     },
     // Old value: 0 6px 20px -3px rgb(0 0 0 / 0.58).
@@ -226,6 +263,7 @@ export const glass: Record<Scheme, GlassStyles> = {
 export type Theme = {
   scheme: Scheme;
   colors: SchemeColors;
+  scene: SceneColors;
   spacing: typeof spacing;
   radius: typeof radius;
   typography: typeof typography;
@@ -273,6 +311,7 @@ function buildTheme(scheme: Scheme): Theme {
   return {
     scheme,
     colors: colors[scheme],
+    scene: scene[scheme],
     spacing,
     radius,
     typography,

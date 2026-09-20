@@ -9,8 +9,9 @@
  */
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { StyleSheet } from 'react-native';
+import { View } from 'react-native';
 
+import Backdrop from '../../components/Backdrop';
 import { useTheme } from '../../theme';
 
 type Aba = {
@@ -26,23 +27,29 @@ const ABAS: Aba[] = [
 ];
 
 export default function LayoutPrincipal() {
-  const { colors } = useTheme();
+  const { colors, glass } = useTheme();
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: colors.brand,
-        tabBarInactiveTintColor: colors.faintForeground,
-        tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopColor: colors.line,
-          borderTopWidth: StyleSheet.hairlineWidth + 1,
-        },
-      }}
-    >
-      {ABAS.map((aba) => (
-        <Tabs.Screen key={aba.name} name={aba.name} options={{ title: aba.rotulo }} />
-      ))}
-    </Tabs>
+    <View style={{ flex: 1 }}>
+      {/* Old site's page backdrop (AppShell's .page-backdrop), behind the tabs. */}
+      <Backdrop />
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          tabBarActiveTintColor: colors.brand,
+          tabBarInactiveTintColor: colors.faintForeground,
+          tabBarStyle: {
+            // Glass chrome (old site): raised glass fill + hairline top edge
+            // instead of the flat surface + solid line border.
+            backgroundColor: glass.raised.backgroundColor,
+            borderTopColor: glass.hairline.borderColor,
+            borderTopWidth: glass.hairline.borderWidth ?? 1,
+          },
+        }}
+      >
+        {ABAS.map((aba) => (
+          <Tabs.Screen key={aba.name} name={aba.name} options={{ title: aba.rotulo }} />
+        ))}
+      </Tabs>
+    </View>
   );
 }
