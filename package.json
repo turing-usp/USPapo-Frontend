@@ -9,7 +9,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "export:web": "expo export --platform web",
+    "export:web": "expo export --platform web && node scripts/web-head.mjs dist",
     "update:preview": "eas update --branch preview",
     "update:production": "eas update --branch production",
     "lint": "expo lint",

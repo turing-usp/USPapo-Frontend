@@ -71,6 +71,12 @@ export default function CampoVidro({
           fontFamily: fonts.body,
           fontSize: typography.base.fontSize,
           marginStart: icone ? 12 : 0,
+          // Load-bearing on web, inert on native (relative is the RN
+          // default): a react-native-web TextInput is a bare DOM input with
+          // no `position`, so it is a STATIC box and paints under the
+          // glass pane's absolutely positioned layers — the typed text
+          // simply did not show. See components/Glass.
+          position: 'relative',
           // RN Web draws its own focus ring on the DOM input; the glass edge
           // is the old site's focus affordance instead.
           outlineStyle: 'none',

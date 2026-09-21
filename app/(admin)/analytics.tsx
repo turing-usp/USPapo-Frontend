@@ -75,6 +75,9 @@ function CartaoKpi({
   const { colors, glass, radius, spacing, typography } = useTheme();
   return (
     <Glass
+      // The prop was destructured and then dropped, so no KPI tile carried
+      // its id: nothing could select one — not a test, not a screen reader.
+      testID={testID}
       radius={radius.md}
       style={{ gap: spacing.xs, padding: spacing.lg, width: '47%' }}
     >

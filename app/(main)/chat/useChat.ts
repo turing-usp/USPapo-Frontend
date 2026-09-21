@@ -875,6 +875,11 @@ export function useChat(
   useEffect(() => {
     if (!id || !enabled) return;
     const controller = new AbortController();
+    // The Stop button aborts `controllerRef.current`, and this controller —
+    // the one the auto-started FIRST answer runs on — was never put there.
+    // Coming from the home screen that is the only stream there is, so Stop
+    // did nothing at all on the answer people most want to stop.
+    controllerRef.current = controller;
     let ativo = true;
     (async () => {
       const { userId: uid } = await sessaoAtual();
@@ -1000,6 +1005,7 @@ export function useChat(
     return () => {
       ativo = false;
       controller.abort();
+      if (controllerRef.current === controller) controllerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, enabled, disparar]);
@@ -1059,8 +1065,19 @@ export function useChat(
 
   // ── stop: abort the in-flight stream ──
   const stop = useCallback(() => {
-    controllerRef.current?.abort();
+    const controlador = controllerRef.current;
     controllerRef.current = null;
+    if (!controlador || controlador.signal.aborted) return;
+    controlador.abort();
+    // The abort lands inside `disparar`, which keeps the partial answer and
+    // the interruption note; the status is moved here as well so the Stop
+    // button stops looking pressed even if the stream was already between
+    // events and no further state arrives.
+    setEstado((atual) =>
+      atual.status === 'respondendo'
+        ? { ...atual, status: 'idle', escrevendo: false, ferramentas: {} }
+        : atual,
+    );
   }, []);
 
   return {

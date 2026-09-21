@@ -15,6 +15,7 @@ import {
   conversaPorIdOffline,
   fundirHistorico,
   limpar,
+  removerConversa,
   salvarConversa,
   salvarConversas,
   tamanho,
@@ -64,6 +65,10 @@ function fakeBanco(): { banco: BancoOffline; store: Store } {
     },
     async ultimas(userId, n) {
       return (await banco.historico(userId)).slice(0, n);
+    },
+    async removerConversa(userId, id) {
+      store.chamadas.push('removerConversa');
+      store.conversas.delete(chave(userId, id));
     },
     async conversaPorId(userId, id) {
       const c = store.conversas.get(chave(userId, id));
@@ -356,5 +361,51 @@ describe('fila (seam level)', () => {
 
     await banco.filaLimpar();
     expect(await banco.filaListar()).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────
+// removerConversa — the delete that has to stick
+// ─────────────────────────────────────────────
+
+describe('removerConversa', () => {
+  it('forgets one row without touching the rest', async () => {
+    await salvarConversa(conversa('c-1'));
+    await salvarConversa(conversa('c-2'));
+    await removerConversa('u-1', 'c-1');
+
+    const restantes = await carregarHistoricoOffline('u-1');
+    expect(restantes.map((c) => c.id)).toEqual(['c-2']);
+    expect(await conversaPorIdOffline('u-1', 'c-1')).toBeNull();
+  });
+
+  it('is scoped to the owner (another user keeps their row)', async () => {
+    await salvarConversa(conversa('c-1', { user_id: 'u-1' }));
+    await salvarConversa(conversa('c-1', { user_id: 'u-2' }));
+    await removerConversa('u-1', 'c-1');
+
+    expect(await conversaPorIdOffline('u-1', 'c-1')).toBeNull();
+    expect(await conversaPorIdOffline('u-2', 'c-1')).not.toBeNull();
+  });
+
+  it('a deleted row does NOT come back through fundirHistorico', async () => {
+    // The bug this exists for: the merge is a UNION, so a conversation the
+    // student deleted on the server was handed back by the cache on the
+    // very next load — "apagar" looked like it did nothing.
+    await salvarConversa(conversa('c-1'));
+    await salvarConversa(conversa('c-2'));
+
+    const semRemover = fundirHistorico(
+      [await conversaPorIdOffline('u-1', 'c-2') as Conversa],
+      await carregarHistoricoOffline('u-1'),
+    );
+    expect(semRemover.map((c) => c.id).sort()).toEqual(['c-1', 'c-2']);
+
+    await removerConversa('u-1', 'c-1');
+    const depois = fundirHistorico(
+      [await conversaPorIdOffline('u-1', 'c-2') as Conversa],
+      await carregarHistoricoOffline('u-1'),
+    );
+    expect(depois.map((c) => c.id)).toEqual(['c-2']);
   });
 });

@@ -38,7 +38,14 @@ import { StarIcon } from '../../components/BrandMarks';
 import Container from '../../components/Container';
 import Glass from '../../components/Glass';
 
-import { carregarHistoricoOffline, fundirHistorico, salvarConversas } from '../../lib/cache';
+import {
+  carregarHistoricoOffline,
+  conversaPorIdOffline,
+  fundirHistorico,
+  removerConversa,
+  salvarConversa,
+  salvarConversas,
+} from '../../lib/cache';
 import {
   excluir,
   favoritar,
@@ -128,6 +135,56 @@ export default function Historico() {
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [novoTitulo, setNovoTitulo] = useState('');
   const temporizador = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** The id inside the undo window, readable from the unmount cleanup. */
+  const pendenteRef = useRef<string | null>(null);
+
+  /**
+   * Write-through for an edit the student just made.
+   *
+   * The cache is the other half of what the history renders
+   * (`fundirHistorico` merges it with the server), so a rename or a
+   * favourite that only lands on the server leaves a stale row here — and
+   * the merge hands the stale one back whenever its timestamp is not older.
+   * Failing to mirror is not worth an error: the next successful load
+   * rewrites the row anyway.
+   */
+  const espelharNoCache = useCallback(
+    async (uid: string, id: string, aplicar: (c: Conversa) => Conversa) => {
+      try {
+        const atual = await conversaPorIdOffline(uid, id);
+        if (!atual) return;
+        await salvarConversa({
+          ...aplicar(atual),
+          atualizada_em: new Date().toISOString(),
+          user_id: uid,
+        });
+      } catch (err) {
+        console.warn('[history] espelho no cache ignorado:', err);
+      }
+    },
+    [],
+  );
+
+  /**
+   * Commits one delete: the server row AND the local cache.
+   *
+   * Both halves matter. `fundirHistorico` is a union of server rows and
+   * cached rows, so a conversation deleted only on the server is put back by
+   * the cache on the very next load.
+   */
+  const confirmarExclusao = useCallback(async (id: string) => {
+    try {
+      const { data } = await supabase.auth.getSession();
+      const uid = data.session?.user?.id ?? '';
+      if (!uid) return;
+      await excluir(uid, id);
+      await removerConversa(uid, id).catch((err) => {
+        console.warn('[history] remoção do cache ignorada:', err);
+      });
+    } catch (err) {
+      console.warn('[history] exclusão falhou:', err);
+    }
+  }, []);
 
   /**
    * The load (mount + pull-to-refresh): Supabase first; when it fails the
@@ -192,47 +249,52 @@ export default function Historico() {
       if (temporizador.current) {
         clearTimeout(temporizador.current);
         const anterior = pendente;
-        if (anterior) {
-          void (async () => {
-            const { data } = await supabase.auth.getSession();
-            const uid = data.session?.user?.id ?? '';
-            if (uid) await excluir(uid, anterior.id).catch(() => undefined);
-          })();
-        }
+        if (anterior) void confirmarExclusao(anterior.id);
       }
       void haptics.press();
       setPendente(conversa);
       setConversas((atuais) => (atuais ?? []).filter((c) => c.id !== conversa.id));
+      pendenteRef.current = conversa.id;
       temporizador.current = setTimeout(() => {
         temporizador.current = null;
         setPendente(null);
-        void (async () => {
-          try {
-            const { data } = await supabase.auth.getSession();
-            const uid = data.session?.user?.id ?? '';
-            if (uid) await excluir(uid, conversa.id);
-          } catch (err) {
-            console.warn('[history] exclusão falhou:', err);
-          }
-        })();
+        pendenteRef.current = null;
+        void confirmarExclusao(conversa.id);
       }, 6000);
     },
-    [pendente],
+    [pendente, confirmarExclusao],
   );
 
   const desfazer = useCallback(() => {
     if (temporizador.current) clearTimeout(temporizador.current);
     temporizador.current = null;
+    pendenteRef.current = null;
     const volta = pendente;
     setPendente(null);
     if (volta) setConversas((atuais) => [volta, ...(atuais ?? [])]);
   }, [pendente]);
 
-  /** Commit a still-pending delete when the screen goes away. */
+  /**
+   * Commit a still-pending delete when the screen goes away.
+   *
+   * The cleanup used to only clear the timer, which CANCELLED the delete
+   * instead of committing it: leaving the history within the 6s undo window
+   * meant the conversation was never deleted, and it was back on the next
+   * visit. The student had already dismissed it; navigating away is not
+   * "undo", the undo button is.
+   */
   useEffect(
     () => () => {
-      if (temporizador.current) clearTimeout(temporizador.current);
+      if (!temporizador.current) return;
+      clearTimeout(temporizador.current);
+      temporizador.current = null;
+      const alvo = pendenteRef.current;
+      pendenteRef.current = null;
+      if (alvo) void confirmarExclusao(alvo);
     },
+    // Deliberately empty: this cleanup must run on unmount only, and
+    // `confirmarExclusao` has no changing dependency of its own.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
@@ -256,12 +318,14 @@ export default function Historico() {
     try {
       const { data } = await supabase.auth.getSession();
       const uid = data.session?.user?.id ?? '';
-      if (uid) await renomear(uid, alvo, titulo);
+      if (!uid) return;
+      await renomear(uid, alvo, titulo);
+      await espelharNoCache(uid, alvo, (c) => ({ ...c, titulo }));
     } catch (err) {
       console.warn('[history] renomear falhou:', err);
       setAviso('Não foi possível renomear a conversa.');
     }
-  }, [editandoId, novoTitulo]);
+  }, [editandoId, novoTitulo, espelharNoCache]);
 
   /** Optimistic favourite toggle; the DB trigger caps it at 5. */
   const alternarFavorita = useCallback(async (conversa: Conversa) => {
@@ -274,6 +338,7 @@ export default function Historico() {
       const uid = data.session?.user?.id ?? '';
       if (!uid) throw new Error('sem sessão');
       await favoritar(uid, conversa.id, alvo);
+      await espelharNoCache(uid, conversa.id, (c) => ({ ...c, favorita: alvo }));
       void haptics.favorite();
     } catch (err) {
       // The trigger rejected it (5 favourites) or the write failed: put the
@@ -284,7 +349,7 @@ export default function Historico() {
       setAviso(err instanceof Error ? err.message : 'Não foi possível favoritar.');
       void haptics.error();
     }
-  }, []);
+  }, [espelharNoCache]);
 
   /** Search over the loaded window (local substring, case-insensitive). */
   const filtradas = useMemo(() => {

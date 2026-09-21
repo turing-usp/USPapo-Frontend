@@ -143,6 +143,10 @@ function fakeBanco(): { banco: BancoOffline; store: Store } {
     async ultimas(userId, n) {
       return (await banco.historico(userId)).slice(0, n);
     },
+    async removerConversa(userId, id) {
+      store.chamadas.push('removerConversa');
+      store.conversas.delete(chave(userId, id));
+    },
     async conversaPorId(userId, id) {
       const c = store.conversas.get(chave(userId, id));
       return c ? semUser(c) : null;

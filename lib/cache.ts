@@ -47,6 +47,8 @@ export interface BancoOffline {
   historico(userId: string): Promise<Conversa[]>;
   ultimas(userId: string, quantidade: number): Promise<Conversa[]>;
   conversaPorId(userId: string, id: string): Promise<Conversa | null>;
+  /** Forgets ONE cached conversation (the history screen's delete). */
+  removerConversa(userId: string, id: string): Promise<void>;
   /** Row count (all users, or just `userId` when given). */
   tamanho(userId?: string): Promise<number>;
   /** Drops the whole conversation cache (the queue has its own clear). */
@@ -110,6 +112,19 @@ export async function conversaPorIdOffline(
   id: string,
 ): Promise<Conversa | null> {
   return bancoAtivo().conversaPorId(userId, id);
+}
+
+/**
+ * Forgets one conversation locally.
+ *
+ * The history screen has to call this whenever the row leaves the server,
+ * because `fundirHistorico` is a UNION: an id present only in the cache
+ * passes straight through. A conversation deleted on the server but left in
+ * the cache therefore came BACK on the next load, which is exactly what
+ * "apagar não funciona" looked like from the outside.
+ */
+export async function removerConversa(userId: string, id: string): Promise<void> {
+  await bancoAtivo().removerConversa(userId, id);
 }
 
 /** Drops the whole conversation cache (all users). */
@@ -366,6 +381,13 @@ const bancoSqlite: BancoOffline = {
       [userId, id],
     );
     return l ? linhaParaConversa(l) : null;
+  },
+
+  async removerConversa(userId, id) {
+    sqlite().runSync('DELETE FROM conversas_cache WHERE user_id = ? AND id = ?', [
+      userId,
+      id,
+    ]);
   },
 
   async tamanho(userId) {

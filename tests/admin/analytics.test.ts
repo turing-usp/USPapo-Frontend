@@ -61,6 +61,18 @@ const mockTEMA = {
 
 jest.mock('../../theme/index', () => ({
   useTheme: () => mockTEMA,
+  // The screens also import the `fonts` map by name. A mock that only
+  // exports `useTheme` leaves it undefined, and the screen crashes on
+  // `fonts.displayBold` before it renders a single line — which is what
+  // this suite was failing on, not anything about the panel.
+  fonts: {
+    body: 'Roboto',
+    bodyBold: 'Roboto-Bold',
+    display: 'Geom',
+    displayBold: 'Geom-Bold',
+    accent: 'Orbitron',
+    accentBold: 'Orbitron-Bold',
+  },
 }));
 
 // ─────────────────────────────────────────────

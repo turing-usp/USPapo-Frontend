@@ -272,6 +272,19 @@ export default function Glass({
         />
       )}
 
+      {/* The children stay DIRECT children on purpose: many callers make the
+          pane itself the flex container (the composer pill is a row of
+          button / input / button), and an extra wrapper here would collapse
+          that into a single column.
+
+          On web they also have to paint ABOVE the two layers above, which
+          are absolutely positioned. react-native-web gives View and Text
+          `position: relative`, so those already do. A bare TextInput does
+          NOT — it is a plain DOM input with no `position`, so it is a
+          static box and lands UNDER the pane. Any TextInput placed directly
+          inside a Glass therefore carries `position: 'relative'` of its own
+          (components/Composer, components/CampoVidro); on native that is
+          the default and the line is inert. */}
       {children}
     </>
   );

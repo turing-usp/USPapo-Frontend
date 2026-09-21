@@ -300,10 +300,12 @@ export default function Chat() {
               repainted over the list, solid under the chrome and behind the
               composer, fading out into the message area. */}
           <BackdropDesvanecido lado="topo" solido={insets.top + ALTURA_CHROME} />
-          <BackdropDesvanecido
-            lado="base"
-            solido={alturaComposer + alturaTeclado}
-          />
+          {/* `alturaComposer` is the MEASURED height of the composer block,
+              and that block already pads itself by the keyboard height — so
+              adding the keyboard again put the dissolve a whole keyboard
+              above the input, with a band of solid backdrop floating over
+              the conversation. */}
+          <BackdropDesvanecido lado="base" solido={alturaComposer} />
 
           {/* Composer — the shared one, in its Stop state while streaming
               (aborting keeps the pending turn pending — P9). */}

@@ -231,6 +231,12 @@ const styles = StyleSheet.create({
   entrada: {
     flex: 1,
     minWidth: 0,
+    // Load-bearing on web, inert on native (relative is the RN
+    // default): a react-native-web TextInput is a bare DOM input with
+    // no `position`, so it is a STATIC box and paints under the
+    // glass pane's absolutely positioned layers — the typed text
+    // simply did not show. See components/Glass.
+    position: 'relative',
     paddingVertical: 10,
     textAlignVertical: 'center',
     paddingHorizontal: 4,
