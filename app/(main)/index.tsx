@@ -31,6 +31,7 @@ import { haptics } from '../../lib/haptics';
 import * as net from '../../lib/net';
 import { quandoConectar } from '../../lib/offline';
 import { supabase } from '../../lib/supabase';
+import { useAlturaDoTeclado } from '../../lib/teclado';
 import type { Conversa } from '../../lib/conversations';
 import { useTheme } from '../../theme';
 import { guardarPendente } from './pendente';
@@ -104,6 +105,7 @@ export default function Inicio() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width: largura } = useWindowDimensions();
+  const alturaTeclado = useAlturaDoTeclado();
 
   const [pergunta, setPergunta] = useState('');
   const [perguntas, setPerguntas] = useState<PerguntaFrequente[]>([]);
@@ -194,7 +196,10 @@ export default function Inicio() {
         // credit line is pushed to the bottom. It is not top-aligned.
         flexGrow: 1,
         paddingTop: insets.top + ALTURA_CHROME,
-        paddingBottom: insets.bottom + spacing.lg,
+        // The keyboard covers the app under edge-to-edge instead of
+        // resizing the window (see lib/teclado): without this the composer
+        // ends up underneath it.
+        paddingBottom: insets.bottom + spacing.lg + alturaTeclado,
       }}
       keyboardShouldPersistTaps="handled"
     >

@@ -20,7 +20,7 @@ import {
 
 import { fonts, useTheme } from '../../theme';
 import type { Turno } from '../../app/(main)/chat/useChat';
-import { Matematica } from './Matematica';
+import { Resposta } from './Resposta';
 import Glass from '../Glass';
 
 // ─────────────────────────────────────────────
@@ -297,8 +297,9 @@ export function BolhaAssistente({
       <View>
         {/* The answer has no bubble on the old site: it is body copy set on
             the page, full measure, which is what makes a long reply readable.
-            Math only on the completed text; raw (incremental) while streaming. */}
-        <Matematica texto={turno.texto} pronto={turno.completo} />
+            components/chat/Resposta renders it as MARKDOWN and paces the
+            reveal while the stream runs. */}
+        <Resposta texto={turno.texto} streaming={!turno.completo} />
       </View>
       <Fontes urls={turno.fontes} />
       {children}

@@ -31,6 +31,13 @@ export type QueueItem = {
   question: string;
   /** Enqueue timestamp (ms since epoch). */
   enqueuedAt: number;
+  /**
+   * Position of the turn inside the conversation (`mensagens.ordem`). A
+   * conversation is a list of turns now, so the replay has to complete the
+   * turn that was pending, not always the first one. Absent (older queued
+   * items, the home screen's first question) means turn 0.
+   */
+  turno?: number;
 };
 
 // Module-level state: latest known connectivity, shared by every hook

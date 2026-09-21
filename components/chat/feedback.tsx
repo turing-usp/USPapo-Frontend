@@ -50,11 +50,23 @@ const FALHA = 'Não foi possível salvar a avaliação.';
 export type FeedbackRespostaProps = {
   userId: string;
   conversaId: string;
+  /**
+   * Which ANSWER of the conversation this rating is about
+   * (`mensagens.ordem`). A conversation has many turns, and the row is keyed
+   * by (conversa_id, mensagem_ordem, user_id): without it every 👍 in a
+   * conversation would overwrite the previous one.
+   */
+  mensagemOrdem?: number;
   /** The rating already stored for this answer, when it was loaded. */
   inicial?: { tipo: TipoFeedback; motivo: string | null; comentario: string | null } | null;
 };
 
-export function FeedbackResposta({ userId, conversaId, inicial }: FeedbackRespostaProps) {
+export function FeedbackResposta({
+  userId,
+  conversaId,
+  mensagemOrdem = 0,
+  inicial,
+}: FeedbackRespostaProps) {
   const { colors, radius, spacing, typography } = useTheme();
 
   const [avaliacao, setAvaliacao] = useState<'none' | TipoFeedback>(inicial?.tipo ?? 'none');
@@ -91,8 +103,8 @@ export function FeedbackResposta({ userId, conversaId, inicial }: FeedbackRespos
     setSalvando(true);
     const ok =
       novo === 'like'
-        ? await salvarFeedback({ userId, conversaId, tipo: 'like' })
-        : await removerFeedback({ userId, conversaId });
+        ? await salvarFeedback({ userId, conversaId, mensagemOrdem, tipo: 'like' })
+        : await removerFeedback({ userId, conversaId, mensagemOrdem });
     setSalvando(false);
     if (!ok) {
       setAvaliacao(novo === 'like' ? 'none' : 'like'); // roll the toggle back
@@ -117,11 +129,12 @@ export function FeedbackResposta({ userId, conversaId, inicial }: FeedbackRespos
         ? await salvarFeedback({
             userId,
             conversaId,
+            mensagemOrdem,
             tipo: 'dislike',
             motivo: motivo || undefined,
             comentario: comentario || undefined,
           })
-        : await removerFeedback({ userId, conversaId });
+        : await removerFeedback({ userId, conversaId, mensagemOrdem });
     setSalvando(false);
     if (!ok) {
       setAvaliacao(novo === 'dislike' ? 'none' : 'dislike');
@@ -140,6 +153,7 @@ export function FeedbackResposta({ userId, conversaId, inicial }: FeedbackRespos
     const ok = await salvarFeedback({
       userId,
       conversaId,
+      mensagemOrdem,
       tipo: 'dislike',
       motivo: motivo || undefined,
       comentario: comentario.trim() || undefined,

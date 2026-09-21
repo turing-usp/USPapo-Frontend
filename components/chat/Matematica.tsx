@@ -156,6 +156,18 @@ function webviewDisponivel(): WebViewCtor | null {
   return webviewMemo;
 }
 
+/**
+ * True when the KaTeX path can actually run: a native platform with the
+ * optional `react-native-webview` package installed. components/chat/Resposta
+ * asks BEFORE choosing a renderer, so that when the answer is markdown with a
+ * formula in it the markdown renderer wins instead of this component's plain
+ * raw-text fallback.
+ */
+export function suportaKaTeX(): boolean {
+  if (Platform.OS === 'web') return false;
+  return webviewDisponivel() !== null;
+}
+
 export type MatematicaProps = {
   texto: string;
   /** The turn is complete (math renders only on the final text). */

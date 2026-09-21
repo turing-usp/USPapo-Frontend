@@ -197,3 +197,37 @@ const styles = StyleSheet.create({
   // follows it in the tree always covers it.
   base: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0 },
 });
+
+/**
+ * The scene as a CSS `background-image`, for the web glass panes.
+ *
+ * Same three layers as the SVG above, in the same order, written as CSS
+ * gradients so a pane can paint a COPY of the scene instead of sampling
+ * whatever happens to be behind it. The radial layers are sized `65% 65%` /
+ * `55% 55%` because the SVG stretches its unit circles with
+ * `preserveAspectRatio="none"` — an ellipse of those radii, not a circle —
+ * and the base uses `to bottom right`, which is the box diagonal for any
+ * window shape (the SVG's 0,0 → 1,1 line).
+ *
+ * `transparent` is avoided on purpose: browsers interpolate it as
+ * transparent BLACK, which greys the middle of the ramp. The same colour at
+ * zero alpha keeps the ramp clean.
+ */
+export function cenaComoCss(cores: {
+  backdropFrom: string;
+  backdropTo: string;
+  glowA: string;
+  glowB: string;
+}): string {
+  const a = separar(cores.glowA);
+  const b = separar(cores.glowB);
+  const aZero = `${a.cor.replace(/^rgb\(/, 'rgba(').replace(/\)$/, ',0)')}`;
+  const bZero = `${b.cor.replace(/^rgb\(/, 'rgba(').replace(/\)$/, ',0)')}`;
+  const aCheio = `${a.cor.replace(/^rgb\(/, 'rgba(').replace(/\)$/, `,${a.opacidade})`)}`;
+  const bCheio = `${b.cor.replace(/^rgb\(/, 'rgba(').replace(/\)$/, `,${b.opacidade})`)}`;
+  return [
+    `radial-gradient(65% 65% at 90% 10%, ${aCheio} 0%, ${aZero} 100%)`,
+    `radial-gradient(55% 55% at 10% 90%, ${bCheio} 0%, ${bZero} 100%)`,
+    `linear-gradient(to bottom right, ${cores.backdropFrom} 0%, ${cores.backdropTo} 100%)`,
+  ].join(', ');
+}

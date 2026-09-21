@@ -2,18 +2,32 @@
  * The glass surface, with real blur.
  *
  * This is the old site's `.glass` blade: a blurred, tinted pane with a bright
- * top filament and a soft lift. Until now the port used a flat opaque fill,
- * because React Native has no `backdrop-filter`. `expo-blur` is the native
- * answer — `UIVisualEffectView` on iOS, `RenderEffect` on Android 12+, and
- * `backdrop-filter` on web — so it is the cheapest real blur available on
- * each platform rather than a JS approximation.
+ * top filament and a soft lift. React Native has no `backdrop-filter`, so the
+ * pane is built per platform — and, importantly, both platforms blur THE SAME
+ * THING: the scene, and only the scene.
+ *
+ *   native  `expo-blur` over the <BlurTargetView> that components/Cena wraps
+ *           around the backdrop. Android's BlurView samples that target and
+ *           paints it as its own background, so app content behind the pane
+ *           is covered, never blurred.
+ *
+ *   web     a COPY of the scene, painted with `background-attachment: fixed`
+ *           so it lines up with the real backdrop pixel for pixel, clipped to
+ *           the pane. `backdrop-filter` used to do this job, and it sampled
+ *           *everything* underneath — the answer text scrolling behind the
+ *           composer and the chrome came through blurred, which native never
+ *           did. A fixed-attachment background needs no measurement, survives
+ *           scrolling and resizing for free, and blurring a smooth two-glow
+ *           gradient is visually a no-op anyway (the old site's globals.css
+ *           says as much: "borrar um gradiente liso com 44px quase não o
+ *           muda").
  *
  * Structure matters for correctness:
  *
  *   outer  — carries the shadow, which must NOT be clipped
  *   clip   — `overflow: hidden` + the radius, so the blur and tint are
  *            rounded with the card, and the hairline edge sits on top
- *   blur   — the pane itself
+ *   blur   — the pane itself (BlurView on native, scene copy on web)
  *   tint   — the calibrated colour over the blur (`--glass-tint`)
  *
  * A shadow and `overflow: hidden` cannot live on the same view: the shadow
@@ -21,6 +35,7 @@
  */
 import React, { type ReactNode } from 'react';
 import {
+  PixelRatio,
   Platform,
   Pressable,
   StyleSheet,
@@ -29,8 +44,9 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 
+import { cenaComoCss } from './Backdrop';
 import { useAlvoDeVidro } from './Cena';
-import { useTheme, type Scheme } from '../theme';
+import { useTheme, type Scheme, type SceneColors } from '../theme';
 
 export type VarianteVidro = 'surface' | 'panel' | 'raised' | 'brand';
 
@@ -39,6 +55,10 @@ export type VarianteVidro = 'surface' | 'panel' | 'raised' | 'brand';
  * CSS: `--glass-blur: 44px` for normal glass, `80px` for the drawer panel.
  * Android blurs on the render thread, so the values stay moderate — beyond
  * roughly 60 the cost climbs with no visible gain at these tints.
+ *
+ * The number also drives the TINT on both platforms (expo-blur derives its
+ * overlay alpha from the intensity), so it is kept identical everywhere and
+ * only the radius is corrected per platform — see `reducaoAndroid`.
  */
 const INTENSIDADE: Record<VarianteVidro, number> = {
   surface: 32,
@@ -46,6 +66,22 @@ const INTENSIDADE: Record<VarianteVidro, number> = {
   raised: 40,
   brand: 28,
 };
+
+/**
+ * Android divides the blur radius by this before handing it to RenderEffect,
+ * and the radius it ends up with is in DEVICE pixels — while expo-blur's web
+ * build asks for `intensity * 0.2` CSS pixels, which are density independent.
+ * With the library default (4) the two never agreed on any screen; a fixed 2
+ * only happened to agree at one density.
+ *
+ * Solving `intensity / reducao = intensity * 0.2 * density` for the reduction
+ * gives `5 / density`, which lands the Android pane on the same blur the web
+ * build gets, on every screen.
+ */
+function reducaoAndroid(): number {
+  const densidade = PixelRatio.get() || 1;
+  return 5 / densidade;
+}
 
 /**
  * Tint painted over the blur. These are the translucent `--glass-tint`
@@ -66,6 +102,47 @@ const TINTA: Record<Scheme, Record<VarianteVidro, string>> = {
     brand: 'rgba(13,25,131,0.22)',
   },
 };
+
+/**
+ * expo-blur's own veil, reproduced so the web pane keeps the exact tone it
+ * had while it was a BlurView: `getBackgroundColor(intensity, tint)` on web
+ * and `TintStyle.toBlurEffect` on Android are the same two formulas.
+ */
+function veuDoVidro(scheme: Scheme, intensidade: number): string {
+  const opacidade = Math.min(intensidade, 100) / 100;
+  return scheme === 'dark'
+    ? `rgba(25,25,25,${(opacidade * 0.78).toFixed(3)})`
+    : `rgba(249,249,249,${(opacidade * 0.78).toFixed(3)})`;
+}
+
+/**
+ * The web pane: a fixed-attachment copy of the scene under expo-blur's veil.
+ *
+ * Written as a raw `div` on purpose — `backgroundImage` /
+ * `backgroundAttachment` are not part of the React Native style vocabulary,
+ * and react-native-web drops what it does not know. The element is inside a
+ * `overflow: hidden` clip layer, which is what turns the window-sized
+ * background into the pane's own piece of the scene.
+ */
+function CenaFixa({ scene, veu }: { scene: SceneColors; veu: string }) {
+  return React.createElement(
+    'div',
+    {
+      style: {
+        position: 'absolute',
+        inset: 0,
+        backgroundImage: cenaComoCss(scene),
+        backgroundAttachment: 'fixed, fixed, fixed',
+        backgroundRepeat: 'no-repeat',
+        backgroundSize: '100vw 100vh',
+        backgroundPosition: '0 0',
+      },
+    },
+    React.createElement('div', {
+      style: { position: 'absolute', inset: 0, backgroundColor: veu },
+    }),
+  );
+}
 
 export type GlassProps = {
   children?: ReactNode;
@@ -109,7 +186,7 @@ export default function Glass({
   accessibilityLabel,
   testID,
 }: GlassProps) {
-  const { scheme, glass } = useTheme();
+  const { scheme, glass, scene } = useTheme();
   // Android blurs only when handed a target to sample (see components/Cena).
   const alvo = useAlvoDeVidro();
 
@@ -152,31 +229,27 @@ export default function Glass({
           { borderRadius: raio, overflow: 'hidden' },
         ]}
       >
-        <BlurView
-          blurTarget={alvo ?? undefined}
-          intensity={INTENSIDADE[variante]}
-          tint={scheme === 'dark' ? 'dark' : 'light'}
-          // Android does not blur at all by default. `dimezisBlurViewSdk31Plus`
-          // is the hardware path (RenderEffect, API 31+), which is both the
-          // cheapest real blur on modern devices and free of the software
-          // method's banding artefacts. (`experimentalBlurMethod` is the old
-          // name for this prop and now logs a deprecation warning per pane.)
-          blurMethod={
-            Platform.OS === 'android' ? 'dimezisBlurViewSdk31Plus' : undefined
-          }
-          /**
-           * Android divides the blur radius by this before handing it to
-           * RenderEffect, and the default 4 left the pane barely blurred: at
-           * intensity 32 that is an 8px radius on the captured backdrop, about
-           * 3dp on a 2.8x screen. The tint on top is at full strength either
-           * way, so the surface read as a flat opaque wash instead of glass.
-           * Halving the divisor puts the blur within a pixel of what the web
-           * build gets from `backdrop-filter` (intensity * 0.2 CSS px) without
-           * touching the tint, which is already calibrated.
-           */
-          blurReductionFactor={Platform.OS === 'android' ? 2 : undefined}
-          style={StyleSheet.absoluteFill}
-        />
+        {Platform.OS === 'web' ? (
+          <CenaFixa scene={scene} veu={veuDoVidro(scheme, INTENSIDADE[variante])} />
+        ) : (
+          <BlurView
+            blurTarget={alvo ?? undefined}
+            intensity={INTENSIDADE[variante]}
+            tint={scheme === 'dark' ? 'dark' : 'light'}
+            // Android does not blur at all by default. `dimezisBlurViewSdk31Plus`
+            // is the hardware path (RenderEffect, API 31+), which is both the
+            // cheapest real blur on modern devices and free of the software
+            // method's banding artefacts. (`experimentalBlurMethod` is the old
+            // name for this prop and now logs a deprecation warning per pane.)
+            blurMethod={
+              Platform.OS === 'android' ? 'dimezisBlurViewSdk31Plus' : undefined
+            }
+            blurReductionFactor={
+              Platform.OS === 'android' ? reducaoAndroid() : undefined
+            }
+            style={StyleSheet.absoluteFill}
+          />
+        )}
         <View
           style={[
             StyleSheet.absoluteFill,

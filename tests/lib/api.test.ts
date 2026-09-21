@@ -14,6 +14,7 @@ import {
   streamChat,
   type ChatEvent,
 } from '../../lib/api';
+import { configurarFetch } from '../../lib/fetchStream';
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -92,8 +93,13 @@ function instalarFetch(): jest.Mock<Promise<Response>, [string, RequestInit]> {
   const fetchMock = jest.fn<Promise<Response>, [string, RequestInit]>();
   (globalThis as unknown as { fetch: typeof fetch }).fetch =
     fetchMock as unknown as typeof fetch;
+  // streamChat goes through the lib/fetchStream seam (expo/fetch on native,
+  // the platform fetch on web), so the fake has to be installed there too.
+  configurarFetch(fetchMock as unknown as typeof fetch);
   return fetchMock;
 }
+
+afterEach(() => configurarFetch(null));
 
 // ─────────────────────────────────────────────
 // parseSSEBlocks
@@ -218,20 +224,26 @@ describe('isChatEvent', () => {
 });
 
 describe('TOOL_LABELS', () => {
-  it('carries the 5 pt-BR labels verbatim', () => {
+  it('carries one pt-BR label per registered tool, the old site\'s wording', () => {
+    // The nine names are the backend's registry (app/tools/real.py
+    // EXPECTED_TOOLS); the strings are site/components/StatusBlock.tsx.
     expect(TOOL_LABELS).toEqual({
-      buscar_documentos: 'Consultando documentos da USP',
-      jupiter: 'Consultando o Jupiter',
-      consultar_circulares: 'Checando os horários',
-      consultar_bandejao: 'Checando o cardápio',
-      consultar_sala: 'Localizando a sala',
+      buscar_documentos: 'Pesquisando nos documentos',
+      consultar_bandejao: 'Consultando cardápio',
+      consultar_grade_curricular: 'Consultando grade curricular',
+      consultar_turmas: 'Consultando turmas',
+      buscar_disciplina: 'Buscando disciplina',
+      consultar_avaliacoes_professor: 'Buscando avaliações do professor',
+      consultar_sala: 'Procurando a sala',
+      consultar_circulares: 'Consultando a SPTrans',
+      consultar_wikipedia: 'Consultando a Wikipédia',
     });
-    expect(Object.keys(TOOL_LABELS)).toHaveLength(5);
+    expect(Object.keys(TOOL_LABELS)).toHaveLength(9);
   });
 
-  it('labelDaFerramenta falls back to the tool name', () => {
-    expect(labelDaFerramenta('jupiter')).toBe('Consultando o Jupiter');
-    expect(labelDaFerramenta('ferramenta_nova')).toBe('ferramenta_nova');
+  it('an unknown tool gets the generic label, never its function name', () => {
+    expect(labelDaFerramenta('consultar_circulares')).toBe('Consultando a SPTrans');
+    expect(labelDaFerramenta('ferramenta_nova')).toBe('Usando ferramenta');
   });
 });
 

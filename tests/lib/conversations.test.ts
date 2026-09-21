@@ -524,6 +524,11 @@ describe('buscar', () => {
     expect(c).toEqual({
       id: 'c-p',
       titulo: 'pendente?',
+      // A conversation is a LIST of turns; `pergunta` / `resposta` /
+      // `fontes` are the derived first-question / last-answer view.
+      mensagens: [
+        { ordem: 0, pergunta: 'pendente?', resposta: null, fontes: [] },
+      ],
       fontes: [],
       pergunta: 'pendente?',
       resposta: null,

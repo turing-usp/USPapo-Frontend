@@ -6,20 +6,26 @@
  * read-once, read inside the hook's useState initializers) seeds the first
  * user bubble and the "respondendo…" indicator on the FIRST frame — the
  * bubble paints before any network or persistence work. Unknown id (no
- * pendente, no loaded row) → "Não encontrei esta conversa".
+ * pendente, no saved conversation) → "Não encontrei esta conversa".
  *
- * Streaming (P8, useChat): incremental assistant text, the compact
+ * Streaming (useChat): incremental assistant text rendered as MARKDOWN and
+ * revealed at a steady pace (components/chat/Resposta), the compact
  * tool-status lines (label + pulse while start..end, ✓ + results count on
  * end), the "Fontes consultadas" row with tappable URLs, the like/dislike
- * row under completed answers, and the 429 / 401 handling (401 fast-fails
- * to login via aoSessaoExpirada). The composer send button becomes Stop
- * while 'respondendo'; Stop aborts the stream and the pending row stays
- * pending (P9).
+ * row under each completed answer, and the 429 / 401 handling (401
+ * fast-fails to login via aoSessaoExpirada). The composer send button
+ * becomes Stop while 'respondendo'; Stop aborts the stream and the pending
+ * turn stays pending (P9).
  *
- * A question asked AFTER the answer completed starts a NEW conversation
- * (the row model is one-per-conversation): the screen stores it in the
- * pendente Map and navigates, exactly like the home screen — the previous
- * turns travel with the next request in the `historico` wire field.
+ * MULTI-TURN: a follow-up asked after the answer completed is a NEW TURN OF
+ * THIS CONVERSATION — `send` appends it, the earlier turns stay on screen
+ * and travel with the request in the `historico` wire field. (It used to
+ * navigate to a brand-new conversation, which is why the previous turns
+ * vanished from the screen the moment a second question was asked.)
+ *
+ * Keyboard: the composer is padded by the keyboard's height (lib/teclado),
+ * because edge-to-edge Android no longer resizes the window for the IME and
+ * the input was ending up underneath it.
  */
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
@@ -41,11 +47,10 @@ import Glass from '../../../components/Glass';
 import Container from '../../../components/Container';
 import { BolhaAssistente, BolhaUsuario, LinhaErro, LinhaFerramenta, LinhaNota } from '../../../components/chat/bolhas';
 import { FeedbackResposta } from '../../../components/chat/feedback';
-import { lerFeedback, type Feedback } from '../../../lib/feedback';
-import { haptics } from '../../../lib/haptics';
+import { lerFeedbacksDaConversa, type Feedback } from '../../../lib/feedback';
+import { useAlturaDoTeclado } from '../../../lib/teclado';
 import { fonts, useTheme } from '../../../theme';
-import { guardarPendente } from '../pendente';
-import { useChat } from './useChat';
+import { turnoAtual, useChat } from './useChat';
 
 /**
  * The AI disclaimer under the composer (the old site prints the same line
@@ -56,28 +61,13 @@ import { useChat } from './useChat';
 const AVISO_IA =
   'O USPapo é uma IA e pode cometer erros. Sempre verifique as respostas.';
 
-/** Once per screen; the home screen has the same generator (the module
- *  scope there is not importable without coupling the routes). */
-function novoId(): string {
-  const crypto = (
-    globalThis as { crypto?: { randomUUID?: () => string } }
-  ).crypto;
-  if (crypto && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (letra) => {
-    const r = (Math.random() * 16) | 0;
-    const v = letra === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
-
 export default function Chat() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { colors, layout, radius, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
   const { width: largura } = useWindowDimensions();
+  const alturaTeclado = useAlturaDoTeclado();
 
   const listaRef = useRef<FlatList>(null);
   /** Near the bottom? (drives the auto-scroll and the finished haptic). */
@@ -92,23 +82,28 @@ export default function Chat() {
     });
 
   const [texto, setTexto] = useState('');
-  /** The rating already stored for this answer (null = none yet). */
-  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  /** The ratings already stored in this conversation, by `mensagem_ordem`. */
+  const [feedbacks, setFeedbacks] = useState<Record<number, Feedback>>({});
   /** Composer height, so the bottom dissolve starts right above it. */
   const [alturaComposer, setAlturaComposer] = useState(0);
 
   useEffect(() => {
     if (!userId || !id) return;
     let ativo = true;
-    void lerFeedback({ userId, conversaId: id }).then((f) => {
-      if (ativo) setFeedback(f);
+    // All of them in one query: a conversation has many answers, and one
+    // read per answer would be one round trip per turn.
+    void lerFeedbacksDaConversa({ userId, conversaId: id }).then((f) => {
+      if (ativo) setFeedbacks(f);
     });
     return () => {
       ativo = false;
     };
-  }, [userId, id]);
+  }, [userId, id, concluido]);
 
-  const pulso = useRef(new Animated.Value(0.3)).current;
+  // `useState(fn)[0]` rather than a ref: the value is read during render (it
+  // is handed to the tool lines and the thinking pill), which is exactly what
+  // a ref is not for.
+  const [pulso] = useState(() => new Animated.Value(0.3));
   useEffect(() => {
     const animacao = Animated.loop(
       Animated.sequence([
@@ -131,23 +126,41 @@ export default function Chat() {
   }, [pulso]);
 
   // Auto-scroll: follow the stream only while the user is near the bottom
-  // (the old site's scrollIntoView, adapted to FlatList).
+  // (the old site's scrollIntoView, adapted to FlatList). The keyboard is a
+  // dependency too: opening it shortens the list, and the last turn has to
+  // stay in view instead of sliding under the composer.
   useEffect(() => {
     if (pertoDoFimRef.current) {
       listaRef.current?.scrollToEnd({ animated: status !== 'respondendo' });
     }
-  }, [turns, status]);
+  }, [turns, status, alturaTeclado]);
 
-  // The thinking indicator shows only in the pure thinking phase (no text
-  // and no tool line yet); after that the tool lines / growing text are the
-  // feedback (ported from the old site's statusVisivel rule).
+  // The thinking indicator shows only in the pure thinking phase of the
+  // CURRENT turn (no text and no tool line yet); after that the tool lines /
+  // growing text are the feedback (ported from the old site's statusVisivel
+  // rule). Scoping it to the current turn matters now that earlier answers
+  // stay on screen — otherwise the previous answer would count as progress.
   const fasePensando =
     status === 'respondendo' &&
-    !turns.some(
+    !turnoAtual(turns).some(
       (t) => (t.autor === 'assistant' && t.texto !== '') || t.autor === 'ferramenta',
     );
 
   const respondendo = status === 'respondendo';
+
+  /**
+   * Which answer each assistant line is, counting from the top. It is the
+   * `mensagens.ordem` of that turn, and the key the feedback rows are stored
+   * under — so the 👍 on the third answer is the third answer's.
+   */
+  const ordemDoTurno = new Map<string, number>();
+  let contagem = 0;
+  for (const t of turns) {
+    if (t.autor === 'assistant') {
+      ordemDoTurno.set(t.id, contagem);
+      contagem += 1;
+    }
+  }
 
   const aoRolar = (e: NativeSyntheticEvent<{ contentOffset: { x: number; y: number }; contentSize: { width: number; height: number }; layoutMeasurement: { width: number; height: number } }>) => {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
@@ -156,24 +169,15 @@ export default function Chat() {
   };
 
   const enviar = () => {
-    const limpo = texto.trim();
-    if (!limpo || !id) return;
     if (respondendo) {
       stop();
       return;
     }
-    if (concluido || (pergunta != null && limpo !== pergunta)) {
-      // A new question → a new conversation (one row per conversation);
-      // the context of the previous turns travels via the historico wire.
-      const novoIdConversa = novoId();
-      guardarPendente({ id: novoIdConversa, question: limpo, enqueuedAt: Date.now() });
-      setTexto('');
-      void haptics.send();
-      router.push(`/(main)/chat/${novoIdConversa}`);
-      return;
-    }
-    // The same pending question: the first send (composer path) or the
-    // retry after an error — the pending row already exists, no re-insert.
+    const limpo = texto.trim();
+    if (!limpo || !id) return;
+    // Every question — the first one, a retry, a follow-up — goes through
+    // the same call: the hook decides whether it completes the pending turn
+    // or appends the next one.
     setTexto('');
     send(limpo);
   };
@@ -209,6 +213,8 @@ export default function Chat() {
             keyExtractor={(item) => item.id}
             onScroll={aoRolar}
             scrollEventThrottle={16}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
             contentContainerStyle={{
               // .app-container-chat: 48rem measure, centred, with the old
               // `pt-8` clearing the floating chrome.
@@ -226,18 +232,21 @@ export default function Chat() {
                 case 'user':
                   return <BolhaUsuario texto={item.texto} />;
 
-                case 'assistant':
+                case 'assistant': {
+                  const ordem = ordemDoTurno.get(item.id) ?? 0;
                   return (
                     <BolhaAssistente turno={item}>
-                      {item.completo && status !== 'respondendo' && userId ? (
+                      {item.completo && userId ? (
                         <FeedbackResposta
                           userId={userId}
                           conversaId={id}
-                          inicial={feedback}
+                          mensagemOrdem={ordem}
+                          inicial={feedbacks[ordem] ?? null}
                         />
                       ) : null}
                     </BolhaAssistente>
                   );
+                }
 
                 case 'ferramenta':
                   return <LinhaFerramenta turno={item} pulso={pulso} />;
@@ -291,14 +300,20 @@ export default function Chat() {
               repainted over the list, solid under the chrome and behind the
               composer, fading out into the message area. */}
           <BackdropDesvanecido lado="topo" solido={insets.top + ALTURA_CHROME} />
-          <BackdropDesvanecido lado="base" solido={alturaComposer} />
+          <BackdropDesvanecido
+            lado="base"
+            solido={alturaComposer + alturaTeclado}
+          />
 
           {/* Composer — the shared one, in its Stop state while streaming
-              (aborting keeps the pending row pending — P9). */}
+              (aborting keeps the pending turn pending — P9). */}
           <View
             onLayout={(e) => setAlturaComposer(e.nativeEvent.layout.height)}
             style={{
-              paddingBottom: Math.max(insets.bottom, spacing.md),
+              // The keyboard's height rides on top of the safe-area inset:
+              // under edge-to-edge the window does not shrink for the IME,
+              // so without this the composer stays underneath it.
+              paddingBottom: Math.max(insets.bottom, spacing.md) + alturaTeclado,
               paddingTop: spacing.md,
               gap: spacing.sm,
               // Above the dissolve overlays: they are absolutely positioned,

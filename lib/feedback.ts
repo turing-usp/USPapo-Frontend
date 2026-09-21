@@ -34,7 +34,7 @@ export type Feedback = {
 };
 
 const TABELA = 'mensagem_feedbacks';
-/** The app writes one turn per conversation (see lib/conversations). */
+/** The first turn of a conversation (see lib/conversations). */
 export const ORDEM_PADRAO = 0;
 
 /** Logs the PostgREST cause and reports failure; never throws at the UI. */
@@ -119,4 +119,40 @@ export async function lerFeedback(params: {
     motivo: linha.motivo == null ? null : String(linha.motivo),
     comentario: linha.comentario == null ? null : String(linha.comentario),
   };
+}
+
+/**
+ * Every rating the student left in one conversation, keyed by
+ * `mensagem_ordem` — the port of the old site's
+ * `obterFeedbacksDaConversa`.
+ *
+ * A conversation is a list of turns, so the chat screen needs all of them at
+ * once: one query per answer would be one round trip per turn, and reading
+ * only turn 0 (which is what the single-rating read amounts to) put the
+ * first answer's thumb under every later one.
+ */
+export async function lerFeedbacksDaConversa(params: {
+  userId: string;
+  conversaId: string;
+}): Promise<Record<number, Feedback>> {
+  const { data, error } = await supabase
+    .from(TABELA)
+    .select('conversa_id,mensagem_ordem,tipo,motivo,comentario')
+    .eq('conversa_id', params.conversaId)
+    .eq('user_id', params.userId);
+  if (falhou('lerFeedbacksDaConversa', error)) return {};
+  const mapa: Record<number, Feedback> = {};
+  for (const bruta of (data ?? []) as Record<string, unknown>[]) {
+    const tipo = bruta.tipo === 'like' || bruta.tipo === 'dislike' ? bruta.tipo : null;
+    if (tipo === null) continue;
+    const ordem = Number(bruta.mensagem_ordem ?? ORDEM_PADRAO);
+    mapa[ordem] = {
+      conversa_id: String(bruta.conversa_id ?? ''),
+      mensagem_ordem: ordem,
+      tipo,
+      motivo: bruta.motivo == null ? null : String(bruta.motivo),
+      comentario: bruta.comentario == null ? null : String(bruta.comentario),
+    };
+  }
+  return mapa;
 }

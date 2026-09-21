@@ -1,26 +1,26 @@
 /**
  * useChat — the streaming chat seam (P8).
  *
- * One conversation = one `conversas` row (row id = the conversation uuid =
- * the backend `session_id`). The P9 pending rule, applied per send:
+ * One conversation = one `conversas` row with a LIST of turns (`mensagens`,
+ * ordered by `ordem`). A follow-up question is a new turn of the SAME
+ * conversation: the earlier turns stay on screen and travel with the request
+ * in the `historico` wire field. (An earlier version started a brand-new
+ * conversation per question, which is why a multi-turn chat showed only the
+ * last question and answer — the previous turns were in another row, on
+ * another screen.)
  *
- * - SEND: `anexarTurno(userId, id, pergunta)` inserts the row with
- *   `resposta = null` (pending) BEFORE the stream starts;
- * - COMPLETION: `anexarTurno(userId, id, pergunta, texto)` runs ONLY on a
- *   successful stream end, and the store's `resposta IS NULL` filter makes a
+ * The P9 pending rule, applied per TURN:
+ *
+ * - SEND: the turn is inserted with `resposta = null` (pending) BEFORE the
+ *   stream starts (`anexarMensagem` with no resposta);
+ * - COMPLETION: the resposta is written ONLY on a successful stream end, and
+ *   the store's `resposta IS NULL` filter — scoped to that `ordem` — makes a
  *   duplicate/late completion a no-op (a saved resposta is never
- *   overwritten);
+ *   overwritten, and completing turn 3 cannot touch turn 1);
  * - A stream that dies mid-way (provider error, 429, Stop pressed) never
- *   reaches the completion call: the row stays pending, and the next open of
- *   the conversation re-streams the question (ported from the old site's
+ *   reaches the completion call: the turn stays pending, and the next open of
+ *   the conversation re-streams that question (ported from the old site's
  *   "complete the pending answer on open" effect).
- *
- * A question asked AFTER the answer completed starts a NEW conversation (the
- * screen routes it through the pendente Map + navigation, exactly like the
- * home screen): the row model is one-per-conversation by construction, and
- * the context of the previous turns travels with the request in the
- * `historico` wire field (last pairs of the user's turns), so the follow-up
- * still reads as a conversation.
  *
  * Error model (see lib/api):
  * - 401 (thrown ChatApiError or the 'Sua sessão expirou' fast-fail) →
@@ -30,13 +30,14 @@
  * - in-stream `error` events carry the backend's pt-BR message verbatim
  *   (MSG_BUSY / MSG_INTERRUPTED);
  * - aborted (Stop) → the partial answer stays on screen with a note, the
- *   row stays pending, no error is surfaced;
+ *   turn stays pending, no error is surfaced;
  * - anything else → the lib/auth.mapAuthError message (network failures get
  *   the connection wording).
  *
- * Math: assistant text with LaTeX ($…$ / $$…$$) renders as a KaTeX WebView
- * only when the turn is COMPLETE (components/chat/Matematica); while
- * streaming the raw text is shown — no re-parse per delta.
+ * Rendering: components/chat/Resposta renders the answer as markdown and
+ * paces the reveal while the stream runs; LaTeX still goes through the KaTeX
+ * WebView (components/chat/Matematica) when the turn is complete and the
+ * optional package is installed.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -47,8 +48,13 @@ import {
   type ChatEvent,
 } from '../../../lib/api';
 import { mapAuthError } from '../../../lib/auth';
-import { conversaPorIdOffline, salvarConversa, salvarConversas } from '../../../lib/cache';
-import { anexarTurno, lerHistorico, type Conversa } from '../../../lib/conversations';
+import { conversaPorIdOffline, salvarConversa } from '../../../lib/cache';
+import {
+  anexarMensagem,
+  lerConversa,
+  type Conversa,
+  type Mensagem,
+} from '../../../lib/conversations';
 import { haptics } from '../../../lib/haptics';
 import { filaPendente, queue } from '../../../lib/net';
 import {
@@ -118,11 +124,19 @@ export type EstadoChat = {
   ferramentas: Record<number, string>;
 };
 
-/** The initial state of a question about to be sent (user bubble already
- *  on screen, stream not started). */
-export function estadoInicial(pergunta: string): EstadoChat {
+/**
+ * The initial state of a question about to be sent: the turns already on
+ * screen, plus the new user bubble. `anteriores` is what makes a follow-up
+ * read as a conversation instead of replacing it — the earlier turns stay
+ * exactly where they were, and everything the reducer does from here lands
+ * AFTER them.
+ */
+export function estadoInicial(pergunta: string, anteriores: Turno[] = []): EstadoChat {
   return {
-    turnos: [{ id: 'user:0', autor: 'user', texto: pergunta }],
+    turnos: [
+      ...anteriores,
+      { id: `user:${anteriores.length}`, autor: 'user', texto: pergunta },
+    ],
     status: 'respondendo',
     erro: null,
     pergunta,
@@ -130,6 +144,61 @@ export function estadoInicial(pergunta: string): EstadoChat {
     escrevendo: false,
     ferramentas: {},
   };
+}
+
+/**
+ * The lines of the turn being answered right now: everything after the last
+ * user bubble.
+ *
+ * The screen's "thinking" indicator and the interruption note both ask
+ * "has anything arrived yet?", and with earlier turns on screen the answer
+ * would always be yes — the previous answer is right there. Scoping the
+ * question to the current turn is what keeps them honest.
+ */
+export function turnoAtual(turnos: Turno[]): Turno[] {
+  for (let i = turnos.length - 1; i >= 0; i--) {
+    if (turnos[i].autor === 'user') return turnos.slice(i + 1);
+  }
+  return turnos;
+}
+
+/** The UI lines for one saved turn: the question, then its answer. */
+function turnosDaMensagem(m: Mensagem): Turno[] {
+  const linhas: Turno[] = [
+    { id: `user:${m.ordem}`, autor: 'user', texto: m.pergunta },
+  ];
+  if (m.resposta !== null) {
+    linhas.push({
+      id: `assistant:${m.ordem}`,
+      autor: 'assistant',
+      texto: m.resposta,
+      fontes: m.fontes,
+      completo: true,
+    });
+  }
+  return linhas;
+}
+
+/**
+ * The saved conversation as chat lines. A trailing PENDING turn (resposta
+ * null) is left out on purpose: it is the question about to be re-streamed,
+ * and `estadoInicial` puts its bubble back at the head of the new attempt.
+ */
+export function turnosSalvos(mensagens: Mensagem[]): Turno[] {
+  return mensagens
+    .filter((m) => m.resposta !== null)
+    .flatMap(turnosDaMensagem);
+}
+
+/** The wire context pairs of a conversation: its completed turns, in order. */
+export function paresDaConversa(
+  mensagens: Mensagem[],
+  quantos: number,
+): { pergunta: string; resposta: string }[] {
+  return mensagens
+    .filter((m) => m.resposta !== null)
+    .slice(-quantos)
+    .map((m) => ({ pergunta: m.pergunta, resposta: m.resposta as string }));
 }
 
 /** An idle, empty conversation (the "Não encontrei esta conversa" screen). */
@@ -220,8 +289,12 @@ export function reduzirEvento(estado: EstadoChat, evento: ChatEvent): EstadoChat
         fontes: [],
         completo: false,
       };
+      // `!ultimo.completo` is what keeps a follow-up out of the PREVIOUS
+      // answer: with earlier turns on screen the last line is a finished
+      // assistant turn, and appending to it would grow the old answer
+      // instead of starting the new one.
       const comTexto =
-        ultimo && ultimo.autor === 'assistant'
+        ultimo && ultimo.autor === 'assistant' && !ultimo.completo
           ? [...turnos.slice(0, -1), { ...ultimo, texto: ultimo.texto + evento.delta }]
           : [...turnos, novo];
       return { ...estado, status: 'respondendo', escrevendo: true, turnos: comTexto };
@@ -230,7 +303,7 @@ export function reduzirEvento(estado: EstadoChat, evento: ChatEvent): EstadoChat
     case 'sources': {
       const turnos = estado.turnos;
       const ultimo = turnos[turnos.length - 1];
-      if (!ultimo || ultimo.autor !== 'assistant') return estado;
+      if (!ultimo || ultimo.autor !== 'assistant' || ultimo.completo) return estado;
       return {
         ...estado,
         turnos: [...turnos.slice(0, -1), { ...ultimo, fontes: evento.urls }],
@@ -263,7 +336,7 @@ export function reduzirEvento(estado: EstadoChat, evento: ChatEvent): EstadoChat
       const turnos = estado.turnos;
       const ultimo = turnos[turnos.length - 1];
       const comFim =
-        ultimo && ultimo.autor === 'assistant'
+        ultimo && ultimo.autor === 'assistant' && !ultimo.completo
           ? [...turnos.slice(0, -1), { ...ultimo, completo: true }]
           : turnos;
       return {
@@ -366,12 +439,16 @@ export type OpcoesResposta = {
   pergunta: string;
   /**
    * Previous turns as context, oldest first — the wire pairs
-   * `{pergunta, resposta}` (pending rows with resposta null are skipped
+   * `{pergunta, resposta}` (pending turns with resposta null are skipped
    * before this call; the backend keeps its own MAX_HISTORY_TURNS).
    */
   historico: { pergunta: string; resposta: string }[];
   /** Conversation uuid — the backend `session_id` and the row id. */
   sessionId: string;
+  /** Position of THIS turn in the conversation (`mensagens.ordem`). */
+  ordem?: number;
+  /** The turns already on screen, so the new one lands after them. */
+  anteriores?: Turno[];
   /** Supabase access token (Authorization: Bearer). */
   token: string;
   /** Aborts the in-flight stream (the Stop button). */
@@ -392,7 +469,7 @@ export type OpcoesResposta = {
  * lib/conversations; the hook is a thin React wrapper around it.
  */
 export async function executarResposta(o: OpcoesResposta): Promise<ResultadoResposta> {
-  let estado = estadoInicial(o.pergunta);
+  let estado = estadoInicial(o.pergunta, o.anteriores ?? []);
   let texto = '';
   let fontes: string[] = [];
 
@@ -450,28 +527,46 @@ export async function executarResposta(o: OpcoesResposta): Promise<ResultadoResp
 
   const textoFinal = texto.trim() !== '' ? texto : ultimoTexto(estado);
   if (textoFinal !== '') {
-    // P9 completion: sets resposta only on the still-pending row; a saved
-    // resposta is never overwritten (the store filters on resposta IS NULL).
-    await anexarTurno(o.userId, o.sessionId, o.pergunta, textoFinal, fontes);
+    // P9 completion: sets resposta only on the still-pending turn AT THIS
+    // ORDEM; a saved resposta is never overwritten (the store filters on
+    // resposta IS NULL) and an earlier turn is never touched.
+    await anexarMensagem(o.userId, o.sessionId, {
+      ordem: o.ordem ?? 0,
+      pergunta: o.pergunta,
+      resposta: textoFinal,
+      fontes,
+    });
   }
   return { ok: true, estado, texto: textoFinal, fontes };
 }
 
-/** The assistant turn's accumulated text ('' when none was emitted). */
+/** The CURRENT turn's accumulated text ('' when none was emitted). */
 function ultimoTexto(estado: EstadoChat): string {
-  for (let i = estado.turnos.length - 1; i >= 0; i--) {
-    const t = estado.turnos[i];
+  const atual = turnoAtual(estado.turnos);
+  for (let i = atual.length - 1; i >= 0; i--) {
+    const t = atual[i];
     if (t.autor === 'assistant' && t.texto !== '') return t.texto;
   }
   return '';
 }
 
-/** Appends (once) the "interruption" note under a partial answer. */
+/**
+ * Appends (once) the "interruption" note under a partial answer.
+ *
+ * Only the CURRENT turn counts: a finished answer higher up the conversation
+ * is not the thing that was interrupted.
+ */
 export function comNotaInterrompida(turnos: Turno[]): Turno[] {
-  const parcial = turnos.some((t) => t.autor === 'assistant' && t.texto !== '');
+  const atual = turnoAtual(turnos);
+  const parcial = atual.some(
+    (t) => t.autor === 'assistant' && !t.completo && t.texto !== '',
+  );
   if (!parcial) return turnos;
-  if (turnos.some((t) => t.autor === 'nota' && t.texto === NOTA_INTERROMPIDA)) return turnos;
-  return [...turnos, { id: 'nota:interrompida', autor: 'nota', texto: NOTA_INTERROMPIDA }];
+  if (atual.some((t) => t.autor === 'nota' && t.texto === NOTA_INTERROMPIDA)) return turnos;
+  return [
+    ...turnos,
+    { id: `nota:interrompida:${turnos.length}`, autor: 'nota', texto: NOTA_INTERROMPIDA },
+  ];
 }
 
 const NOTA_INTERROMPIDA = 'A resposta foi interrompida.';
@@ -484,13 +579,15 @@ const MENSAGEM_SEM_CONEXAO = 'Sem conexão — enviaremos quando a internet volt
  * The offline failure handler (the queue seam, kept OUTSIDE the React hook
  * so the tests drive it): marks the last operation as a network failure,
  * parks the question in the lib/net queue (persisted — survives a restart)
- * and keeps the pending row in the offline cache (resposta null = pending)
- * so the history screen renders it with no network.
+ * and keeps the conversation in the offline cache with its pending turn
+ * (resposta null) so the history screen renders it with no network.
  */
 export async function tratarFalhaDeRede(
   userId: string,
   sessionId: string,
   pergunta: string,
+  turno = 0,
+  anteriores: Mensagem[] = [],
 ): Promise<void> {
   marcarFalhaRede();
   await queue.enqueue({
@@ -498,15 +595,21 @@ export async function tratarFalhaDeRede(
     conversationId: sessionId,
     question: pergunta,
     enqueuedAt: Date.now(),
+    turno,
   });
   try {
     const agora = new Date().toISOString();
+    const mensagens: Mensagem[] = [
+      ...anteriores.filter((m) => m.ordem !== turno),
+      { ordem: turno, pergunta, resposta: null, fontes: [] },
+    ].sort((a, b) => a.ordem - b.ordem);
     await salvarConversa({
       id: sessionId,
       user_id: userId,
-      titulo: pergunta,
+      titulo: mensagens[0]?.pergunta ?? pergunta,
+      mensagens,
       fontes: [],
-      pergunta,
+      pergunta: mensagens[0]?.pergunta ?? pergunta,
       resposta: null,
       criada_em: agora,
       atualizada_em: agora,
@@ -515,6 +618,29 @@ export async function tratarFalhaDeRede(
   } catch (err) {
     console.warn('[useChat] cache offline do turno pendente ignorado:', err);
   }
+}
+
+/** Mirrors a conversation into the offline cache (write-through). */
+async function cachearConversa(
+  userId: string,
+  id: string,
+  mensagens: Mensagem[],
+  base: Conversa | null,
+): Promise<void> {
+  const agora = new Date().toISOString();
+  const ultima = mensagens[mensagens.length - 1];
+  await salvarConversa({
+    id,
+    user_id: userId,
+    titulo: base?.titulo || mensagens[0]?.pergunta || '',
+    mensagens,
+    fontes: ultima?.fontes ?? [],
+    pergunta: mensagens[0]?.pergunta ?? '',
+    resposta: ultima?.resposta ?? null,
+    criada_em: base?.criada_em ?? agora,
+    atualizada_em: agora,
+    favorita: base?.favorita ?? false,
+  });
 }
 
 // ─────────────────────────────────────────────
@@ -533,12 +659,14 @@ export type UseChat = {
   erro: ErroChat | null;
   /** True when the last answer completed and was persisted. */
   concluido: boolean;
-  /** True once the mount load (lerHistorico) resolved for this id. */
+  /** True once the mount load resolved for this id. */
   carregou: boolean;
   /** The `favorita` flag of the loaded row (the like button's initial state). */
   favorita: boolean;
   /** The Supabase user id (for the favoritar calls). */
   userId: string | null;
+  /** Position of the turn in flight / last answered (`mensagens.ordem`). */
+  ordem: number;
   /** True when the last network operation failed without a response
    *  (offline — the honest "Sem conexão" state). */
   semConexao: boolean;
@@ -592,43 +720,52 @@ export function useChat(
   });
   const [favorita, setFavorita] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
-  /** True once the mount load (lerHistorico) has resolved for this id. */
+  /** True once the mount load has resolved for this id. */
   const [carregou, setCarregou] = useState(false);
 
   const controllerRef = useRef<AbortController | null>(null);
   /** The loaded row of THIS conversation (set by the mount effect). */
-  const linhaRef = useRef<Conversa | null | undefined>(undefined);
-  /** Previous-turn context pairs for the wire (oldest first). */
-  const paresRef = useRef<{ pergunta: string; resposta: string }[] | null>(null);
+  const linhaRef = useRef<Conversa | null>(null);
+  /**
+   * Every turn of this conversation, as persisted. It is the source for
+   * three things at once: the lines already on screen, the wire context of
+   * the next question, and the `ordem` of the turn being written.
+   */
+  const mensagensRef = useRef<Mensagem[]>([]);
+  /** The ordem of the turn in flight (or of the last one answered). */
+  const ordemRef = useRef(0);
   const optsRef = useRef(opts);
   optsRef.current = opts;
 
   // ── the shared dispatcher (mount auto-start and send both use it) ──
   const disparar = useCallback(
-    async (pergunta: string, sinal: AbortSignal) => {
+    async (pergunta: string, ordem: number, sinal: AbortSignal) => {
+      const anteriores = turnosSalvos(mensagensRef.current);
       const { userId: uid, token } = await sessaoAtual();
       if (!uid || token === '') {
         const e: ErroChat = { tipo: 'sessao', mensagem: 'Sua sessão expirou' };
-        const inicial = estadoInicial(pergunta);
-        const turnos: Turno[] = [
-          ...inicial.turnos,
-          { id: 'erro:sessao', autor: 'erro', mensagem: e.mensagem, tipo: 'sessao' },
-        ];
+        const inicial = estadoInicial(pergunta, anteriores);
         setEstado({
           ...inicial,
           status: 'errou',
           erro: e,
-          turnos,
+          turnos: [
+            ...inicial.turnos,
+            { id: 'erro:sessao', autor: 'erro', mensagem: e.mensagem, tipo: 'sessao' },
+          ],
         });
         optsRef.current?.aoSessaoExpirada?.();
         return;
       }
-      setEstado(estadoInicial(pergunta));
+      ordemRef.current = ordem;
+      setEstado(estadoInicial(pergunta, anteriores));
       const resultado = await executarResposta({
         userId: uid,
         pergunta,
-        historico: paresRef.current ?? [],
+        historico: paresDaConversa(mensagensRef.current, PAIRES_CONTEXTO),
         sessionId: id ?? '',
+        ordem,
+        anteriores,
         token,
         signal: sinal,
         aoEstado: (e) => setEstado(e),
@@ -636,7 +773,7 @@ export function useChat(
       });
       if (sinal.aborted) {
         // Stop pressed: the stream died on purpose — keep the partial text,
-        // no error, the row stays pending (P9).
+        // no error, the turn stays pending (P9).
         setEstado((atual) => ({
           ...atual,
           status: 'idle',
@@ -650,22 +787,23 @@ export function useChat(
         // A successful streamChat is proof of connectivity: clear the
         // offline flag (and trigger the queue replay, if it is pending).
         marcarSucessoRede();
-        // Cache the answered conversation (the history screen renders it
-        // offline): the server row was just written; the cache is the
-        // last-known-state mirror.
-        void salvarConversa({
-          id: id ?? '',
-          user_id: uid,
-          titulo: linhaRef.current?.titulo || pergunta,
-          fontes: resultado.fontes,
-          pergunta,
-          resposta: resultado.texto,
-          criada_em: linhaRef.current?.criada_em ?? new Date().toISOString(),
-          atualizada_em: new Date().toISOString(),
-          favorita: linhaRef.current?.favorita ?? false,
-        }).catch((err) => {
-          console.warn('[useChat] cache offline da resposta ignorado:', err);
-        });
+        // The turn is answered: keep the in-memory list (and the cache)
+        // in step, so the NEXT question sends the right context and lands
+        // on the right ordem.
+        mensagensRef.current = [
+          ...mensagensRef.current.filter((m) => m.ordem !== ordem),
+          {
+            ordem,
+            pergunta,
+            resposta: resultado.texto,
+            fontes: resultado.fontes,
+          },
+        ].sort((a, b) => a.ordem - b.ordem);
+        void cachearConversa(uid, id ?? '', mensagensRef.current, linhaRef.current).catch(
+          (err) => {
+            console.warn('[useChat] cache offline da resposta ignorado:', err);
+          },
+        );
         // Finished while the user scrolled AWAY → the notification haptic.
         const perto = optsRef.current?.pertoDoFim?.() ?? true;
         if (resultado.estado.concluido && !perto) {
@@ -683,7 +821,13 @@ export function useChat(
           // connectivity. 4xx/5xx (429/401) never reach here: they
           // answered, so they are not queued.
           void haptics.error();
-          await tratarFalhaDeRede(uid, id ?? '', pergunta);
+          await tratarFalhaDeRede(
+            uid,
+            id ?? '',
+            pergunta,
+            ordem,
+            mensagensRef.current,
+          );
           setEstado((atual) => ({
             ...atual,
             status: 'errou',
@@ -743,59 +887,48 @@ export function useChat(
       setUserId(uid);
 
       let linha: Conversa | null = null;
-      let pares: { pergunta: string; resposta: string }[] = [];
       try {
-        const historico = await lerHistorico(uid);
+        linha = await lerConversa(uid, id);
         if (!ativo) return;
         setCarregou(true);
-        // P9 write-through: keep the offline cache fresh so the history
-        // screen and "Continuar de onde parou" render without network.
-        void salvarConversas(uid, historico).catch((err) => {
-          console.warn('[useChat] cache offline do histórico ignorado:', err);
-        });
-        linha = historico.find((c) => c.id === id) ?? null;
-        // Context pairs: the completed turns only (the pending rows with
-        // resposta null are skipped — the backend would drop them anyway),
-        // oldest first, last PAIRES_CONTEXTO pairs (the wire budget).
-        pares = historico
-          .filter((c) => c.resposta !== null)
-          .reverse()
-          .slice(-PAIRES_CONTEXTO)
-          .map((c) => ({ pergunta: c.pergunta, resposta: c.resposta as string }));
-        paresRef.current = pares;
       } catch (err) {
         // A read failure must not blank the conversation: continue without
-        // context (the pending seed already on screen keeps it honest).
-        console.error('[useChat] lerHistorico falhou:', err);
+        // it (the pending seed already on screen keeps it honest).
+        console.error('[useChat] lerConversa falhou:', err);
         if (!ativo) return;
         setCarregou(true);
+      }
+
+      if (linha === null) {
+        // Supabase unreachable, or the conversation was never written: the
+        // offline cache is the last-known state and is what the student
+        // saw a moment ago.
+        try {
+          linha = await conversaPorIdOffline(uid, id);
+        } catch {
+          linha = null;
+        }
+        if (!ativo) return;
       }
 
       if (linha) {
         linhaRef.current = linha;
+        mensagensRef.current = linha.mensagens;
         setFavorita(linha.favorita);
       }
 
-      if (linha && linha.resposta !== null) {
-        // Saved, complete conversation: render it (the pendente seed, if a
-        // stale entry lingered in memory, is replaced by the saved turn).
+      const salvas = linha?.mensagens ?? [];
+      const pendenteSalva = salvas.find((m) => m.resposta === null) ?? null;
+
+      if (linha && pendenteSalva === null && salvas.length > 0) {
+        // Saved, complete conversation: render every turn (the pendente
+        // seed, if a stale entry lingered in memory, is replaced by them).
         if (!ativo) return;
+        ordemRef.current = salvas[salvas.length - 1].ordem;
         setEstado({
           ...estadoVazio(),
-          turnos: [
-            { id: 'user:0', autor: 'user', texto: linha.pergunta },
-            {
-              id: 'assistant:1',
-              autor: 'assistant',
-              texto: linha.resposta,
-              // The sources were saved with the answer (mensagens.fontes);
-              // this used to hardcode [], so "Fontes consultadas" vanished
-              // the moment a conversation was reopened.
-              fontes: linha.fontes,
-              completo: true,
-            },
-          ],
-          pergunta: linha.pergunta,
+          turnos: turnosSalvos(salvas),
+          pergunta: salvas[salvas.length - 1].pergunta,
           concluido: true,
         });
         return;
@@ -822,40 +955,47 @@ export function useChat(
         // Queue read failed: fall through and start normally (the queue's
         // conversationId de-dup keeps a double-send from piling up).
       }
-      const pergunta =
-        linha && linha.resposta === null
-          ? linha.pergunta // the stream died mid-way last time: re-send it
-          : pendente
-            ? pendente.question // fresh conversation from the home screen
-            : null;
+
+      // The stream died mid-way last time → re-send that turn; otherwise
+      // this is a fresh conversation from the home screen.
+      const pergunta = pendenteSalva
+        ? pendenteSalva.pergunta
+        : pendente
+          ? pendente.question
+          : null;
+      const ordem = pendenteSalva ? pendenteSalva.ordem : salvas.length;
 
       if (!pergunta || !ativo) return;
 
-      // P9: the pending row is inserted with resposta = null BEFORE the
+      // P9: the pending turn is inserted with resposta = null BEFORE the
       // stream. A duplicate insert (StrictMode's second effect run, or a
-      // double-tap) is the unique constraint talking — treat the row as
+      // double-tap) is the unique constraint talking — treat the turn as
       // existing and go on.
-      if (!linha) {
+      if (!pendenteSalva) {
         try {
-          await anexarTurno(uid, id, pergunta);
+          await anexarMensagem(uid, id, { ordem, pergunta });
         } catch (err) {
           console.warn('[useChat] insert do turno pendente ignorado (já existe?):', err);
         }
-        linhaRef.current = {
-          id,
-          titulo: pergunta,
-          fontes: [],
-          pergunta,
-          resposta: null,
-          criada_em: new Date().toISOString(),
-          atualizada_em: new Date().toISOString(),
-          favorita: false,
-        };
+        if (!linhaRef.current) {
+          linhaRef.current = {
+            id,
+            titulo: pergunta,
+            mensagens: [],
+            fontes: [],
+            pergunta,
+            resposta: null,
+            criada_em: new Date().toISOString(),
+            atualizada_em: new Date().toISOString(),
+            favorita: false,
+          };
+        }
       }
+      // The turns before this one are the context and the lines on screen;
+      // the pending one is re-drawn by estadoInicial.
+      mensagensRef.current = salvas.filter((m) => m.ordem < ordem);
       if (!ativo) return;
-      // For a pending row the synchronous pendente seed (or nothing, when the
-      // question came from a saved pending row) is already on screen; start.
-      void disparar(pergunta, controller.signal);
+      void disparar(pergunta, ordem, controller.signal);
     })();
     return () => {
       ativo = false;
@@ -864,7 +1004,7 @@ export function useChat(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, enabled, disparar]);
 
-  // ── send: the composer / "Tentar de novo" (same conversation only) ──
+  // ── send: the composer / "Tentar de novo" ──
   const send = useCallback(
     (pergunta: string) => {
       const limpo = pergunta.trim();
@@ -882,30 +1022,39 @@ export function useChat(
           optsRef.current?.aoSessaoExpirada?.();
           return;
         }
-        // The retry rule: the pending row already exists (it was inserted on
-        // the first send and the stream died) — skip the insert, otherwise
-        // the unique constraint would reject it.
-        if (!linhaRef.current) {
+        // A RETRY answers the turn that is already pending (same ordem, row
+        // already inserted); a FOLLOW-UP is the next turn of the same
+        // conversation and has to be inserted.
+        const respondidas = mensagensRef.current.filter((m) => m.resposta !== null);
+        const retomando =
+          estado.status === 'errou' && estado.pergunta.trim() === limpo;
+        const ordem = retomando ? ordemRef.current : respondidas.length;
+        mensagensRef.current = respondidas.filter((m) => m.ordem < ordem);
+
+        if (!retomando) {
           try {
-            await anexarTurno(uid, id, limpo);
+            await anexarMensagem(uid, id, { ordem, pergunta: limpo });
           } catch (err) {
             console.warn('[useChat] insert do turno pendente ignorado (já existe?):', err);
           }
-          linhaRef.current = {
-            id,
-            titulo: limpo,
-            fontes: [],
-            pergunta: limpo,
-            resposta: null,
-            criada_em: new Date().toISOString(),
-            atualizada_em: new Date().toISOString(),
-            favorita: false,
-          };
+          if (!linhaRef.current) {
+            linhaRef.current = {
+              id,
+              titulo: limpo,
+              mensagens: [],
+              fontes: [],
+              pergunta: limpo,
+              resposta: null,
+              criada_em: new Date().toISOString(),
+              atualizada_em: new Date().toISOString(),
+              favorita: false,
+            };
+          }
         }
-        await disparar(limpo, controller.signal);
+        await disparar(limpo, ordem, controller.signal);
       })();
     },
-    [id, enabled, disparar],
+    [id, enabled, disparar, estado.status, estado.pergunta],
   );
 
   // ── stop: abort the in-flight stream ──
@@ -923,6 +1072,7 @@ export function useChat(
     carregou,
     favorita,
     userId,
+    ordem: ordemRef.current,
     semConexao: usandoCache(),
     send,
     stop,
@@ -936,39 +1086,24 @@ export function useChat(
 /** Re-entrancy guard: one replay at a time. */
 let reprocessandoFila = false;
 
-/** The context pairs for the wire (oldest first, last PAIRES_CONTEXTO). */
-async function paresDeContexto(
-  userId: string,
-): Promise<{ pergunta: string; resposta: string }[]> {
-  try {
-    const historico = await lerHistorico(userId);
-    return historico
-      .filter((c) => c.resposta !== null)
-      .reverse()
-      .slice(-PAIRES_CONTEXTO)
-      .map((c) => ({ pergunta: c.pergunta, resposta: c.resposta as string }));
-  } catch {
-    return []; // offline / unreadable: send without context
-  }
-}
-
 /**
- * True when the conversation already has a saved resposta (the server row
- * or, if the server is unreachable, the offline cache) — replay skips it.
+ * The conversation a queued item belongs to, from the server or — when the
+ * server is unreachable — from the offline cache.
  */
-async function jaFoiRespondida(userId: string, id: string): Promise<boolean> {
+async function conversaParaReplay(
+  userId: string,
+  id: string,
+): Promise<Conversa | null> {
   try {
-    const historico = await lerHistorico(userId);
-    const linha = historico.find((c) => c.id === id);
-    if (linha !== undefined) return linha.resposta !== null;
+    const doServidor = await lerConversa(userId, id);
+    if (doServidor !== null) return doServidor;
   } catch {
     // The radio said "online" but the backend is not: trust the cache.
   }
   try {
-    const emCache = await conversaPorIdOffline(userId, id);
-    return emCache !== null && emCache.resposta !== null;
+    return await conversaPorIdOffline(userId, id);
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -997,13 +1132,20 @@ export async function reprocessarFila(): Promise<void> {
         break;
       }
 
-      if (await jaFoiRespondida(userId, item.conversationId)) continue;
+      const conversa = await conversaParaReplay(userId, item.conversationId);
+      const ordem = item.turno ?? 0;
+      const salvas = conversa?.mensagens ?? [];
+      // Already answered (the turn completed on another device, or a
+      // previous replay got there first): nothing to re-send.
+      if (salvas.some((m) => m.ordem === ordem && m.resposta !== null)) continue;
+      const anteriores = salvas.filter((m) => m.ordem < ordem && m.resposta !== null);
 
       const resultado = await executarResposta({
         userId,
         pergunta: item.question,
-        historico: await paresDeContexto(userId),
+        historico: paresDaConversa(anteriores, PAIRES_CONTEXTO),
         sessionId: item.conversationId,
+        ordem,
         token,
         signal: new AbortController().signal,
         aoEstado: () => undefined,
@@ -1015,18 +1157,20 @@ export async function reprocessarFila(): Promise<void> {
         // This success is also the next item's connectivity trigger.
         marcarSucessoRede();
         try {
-          const agora = new Date().toISOString();
-          await salvarConversa({
-            id: item.conversationId,
-            user_id: userId,
-            titulo: item.question,
-            fontes: resultado.fontes,
-            pergunta: item.question,
-            resposta: resultado.texto,
-            criada_em: agora,
-            atualizada_em: agora,
-            favorita: false,
-          });
+          await cachearConversa(
+            userId,
+            item.conversationId,
+            [
+              ...anteriores,
+              {
+                ordem,
+                pergunta: item.question,
+                resposta: resultado.texto,
+                fontes: resultado.fontes,
+              },
+            ],
+            conversa,
+          );
         } catch (err) {
           console.warn('[useChat] cache offline da resposta reprocessada ignorado:', err);
         }

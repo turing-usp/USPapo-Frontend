@@ -36,6 +36,8 @@
  */
 import { Platform } from 'react-native';
 
+import { fetchStream } from './fetchStream';
+
 declare const process: { env: Record<string, string | undefined> };
 
 // ─────────────────────────────────────────────
@@ -79,17 +81,32 @@ export type ChatEvent =
 // Tool status labels (pt-BR) — ported verbatim from the old site
 // ─────────────────────────────────────────────
 
+/**
+ * One label per tool, ported from the old site's StatusBlock verbatim — and
+ * for ALL NINE tools it registers. The port had five entries, three of which
+ * were invented wording and one (`jupiter`) a tool that does not exist; the
+ * four real tools it left out showed their raw function name to the student
+ * ("consultar_avaliacoes_professor" in a status pill).
+ */
 export const TOOL_LABELS: Record<string, string> = {
-  buscar_documentos: 'Consultando documentos da USP',
-  jupiter: 'Consultando o Jupiter',
-  consultar_circulares: 'Checando os horários',
-  consultar_bandejao: 'Checando o cardápio',
-  consultar_sala: 'Localizando a sala',
+  buscar_documentos: 'Pesquisando nos documentos',
+  consultar_bandejao: 'Consultando cardápio',
+  consultar_grade_curricular: 'Consultando grade curricular',
+  consultar_turmas: 'Consultando turmas',
+  buscar_disciplina: 'Buscando disciplina',
+  consultar_avaliacoes_professor: 'Buscando avaliações do professor',
+  consultar_sala: 'Procurando a sala',
+  consultar_circulares: 'Consultando a SPTrans',
+  consultar_wikipedia: 'Consultando a Wikipédia',
 };
 
-/** Friendly pt-BR label for the status pill; unknown tools show their name. */
+/**
+ * Friendly pt-BR label for the status pill. An unknown tool gets the old
+ * site's generic wording rather than its function name — a name like
+ * `consultar_avaliacoes_professor` on screen is a leak, not a label.
+ */
 export function labelDaFerramenta(name: string): string {
-  return TOOL_LABELS[name] ?? name;
+  return TOOL_LABELS[name] ?? 'Usando ferramenta';
 }
 
 // ─────────────────────────────────────────────
@@ -351,7 +368,11 @@ export async function* streamChat(request: ChatRequest): AsyncGenerator<ChatEven
 
   let res: Response;
   try {
-    res = await fetch(`${backendUrl()}/api/chat`, {
+    // `fetchStream` is the platform fetch on web and `expo/fetch` on native
+    // (see lib/fetchStream): React Native's own fetch has no
+    // `Response.body`, so without it the deltas below never arrive
+    // incrementally on a phone.
+    res = await fetchStream(`${backendUrl()}/api/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -388,7 +409,15 @@ export async function* streamChat(request: ChatRequest): AsyncGenerator<ChatEven
 
   const body = res.body;
   if (!body) {
-    throw new Error(ERRO_PADRAO);
+    // No ReadableStream on this runtime (an old RN fetch, a proxy that
+    // buffers): read the whole payload and replay it through the same
+    // parser. The answer still arrives — in one piece instead of in deltas
+    // — which beats failing the request outright.
+    const texto = await res.text().catch(() => '');
+    const feedInteiro = createSSEFeed();
+    for (const evento of feedInteiro.push(texto)) yield evento;
+    for (const evento of feedInteiro.flush()) yield evento;
+    return;
   }
 
   const leitor = body.getReader();

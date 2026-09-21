@@ -52,7 +52,9 @@ jest.mock('../../lib/api', () => {
 });
 
 jest.mock('../../lib/conversations', () => ({
+  anexarMensagem: jest.fn(async () => undefined),
   anexarTurno: jest.fn(async () => undefined),
+  lerConversa: jest.fn(async () => null),
   lerHistorico: jest.fn(async () => []),
 }));
 
@@ -80,7 +82,7 @@ jest.mock('../../lib/haptics', () => ({
 import { ChatApiError, streamChat } from '../../lib/api';
 import type { ChatEvent, ChatRequest } from '../../lib/api';
 import { configurarBanco, conversaPorIdOffline, salvarConversa, type BancoOffline } from '../../lib/cache';
-import { anexarTurno, lerHistorico } from '../../lib/conversations';
+import { anexarMensagem, lerConversa } from '../../lib/conversations';
 import { filaPendente, queue } from '../../lib/net';
 import { marcarFalhaRede, usandoCache } from '../../lib/offline';
 import { supabase } from '../../lib/supabase';
@@ -95,7 +97,13 @@ import {
 // Fakes
 // ─────────────────────────────────────────────
 
-type QueueItem = { id: string; conversationId: string; question: string; enqueuedAt: number };
+type QueueItem = {
+  id: string;
+  conversationId: string;
+  question: string;
+  enqueuedAt: number;
+  turno?: number;
+};
 
 type Store = {
   conversas: Map<string, { user_id: string; id: string; pergunta: string; resposta: string | null; criada_em: string; atualizada_em: string; favorita: boolean }>;
@@ -109,6 +117,10 @@ function fakeBanco(): { banco: BancoOffline; store: Store } {
   const semUser = (c: { user_id: string; id: string; pergunta: string; resposta: string | null; criada_em: string; atualizada_em: string; favorita: boolean }) => ({
     id: c.id,
     titulo: '',
+    // A conversation is a list of turns; the fake keeps one.
+    mensagens: [
+      { ordem: 0, pergunta: c.pergunta, resposta: c.resposta, fontes: [] },
+    ],
     fontes: [],
     pergunta: c.pergunta,
     resposta: c.resposta,
@@ -165,11 +177,8 @@ const streamChatFake = streamChat as unknown as jest.Mock<
   AsyncGenerator<ChatEvent, void, unknown>,
   [ChatRequest]
 >;
-const anexarFake = anexarTurno as unknown as jest.Mock<void, unknown[]>;
-const lerFake = lerHistorico as unknown as jest.Mock<
-  Array<{ id: string; pergunta: string; resposta: string | null; criada_em: string; atualizada_em: string; favorita: boolean }>,
-  unknown[]
->;
+const anexarFake = anexarMensagem as unknown as jest.Mock<void, unknown[]>;
+const lerFake = lerConversa as unknown as jest.Mock<unknown, unknown[]>;
 const sessaoFake = supabase.auth.getSession as unknown as jest.Mock<
   { data: { session: { user: { id: string }; access_token: string } | null } },
   []
@@ -218,7 +227,7 @@ beforeEach(() => {
   });
   anexarFake.mock.calls.length = 0;
   lerFake.mock.calls.length = 0;
-  lerFake.mockImplementation(async () => []);
+  lerFake.mockImplementation(async () => null);
   sessaoFake.mock.calls.length = 0;
   sessaoFake.mockImplementation(async () => ({
     data: { session: { user: { id: 'u-1' }, access_token: 'tok-123' } },
@@ -349,8 +358,12 @@ describe('replay', () => {
     expect(await filaPendente()).toHaveLength(0);
 
     // Each answer was persisted via the P9 completion call, in order.
-    const completions = anexarFake.mock.calls.filter((c) => c.length >= 4);
-    expect(completions.map((c) => [c[1], c[3]])).toEqual([
+    const completions = anexarFake.mock.calls.filter(
+      (c) => (c[2] as { resposta?: string }).resposta !== undefined,
+    );
+    expect(
+      completions.map((c) => [c[1], (c[2] as { resposta?: string }).resposta]),
+    ).toEqual([
       ['c-a', 'resposta P-A'],
       ['c-b', 'resposta P-B'],
       ['c-c', 'resposta P-C'],
@@ -405,18 +418,23 @@ describe('replay', () => {
   it('replay skips a conversation that already has a saved resposta', async () => {
     await queue.enqueue(enfileirar('c-a', 'P-A'));
     await queue.enqueue(enfileirar('c-b', 'P-B'));
-    lerFake.mockImplementation(async () => [
-      {
-        id: 'c-a',
-        titulo: '',
-        fontes: [],
-        pergunta: 'P-A',
-        resposta: 'já foi respondida',
-        criada_em: '2026-09-19T12:00:00.000Z',
-        atualizada_em: '2026-09-19T12:00:00.000Z',
-        favorita: false,
-      },
-    ]);
+    lerFake.mockImplementation(async (_u: unknown, id: unknown) =>
+      id === 'c-a'
+        ? {
+            id: 'c-a',
+            titulo: '',
+            mensagens: [
+              { ordem: 0, pergunta: 'P-A', resposta: 'já foi respondida', fontes: [] },
+            ],
+            fontes: [],
+            pergunta: 'P-A',
+            resposta: 'já foi respondida',
+            criada_em: '2026-09-19T12:00:00.000Z',
+            atualizada_em: '2026-09-19T12:00:00.000Z',
+            favorita: false,
+          }
+        : null,
+    );
 
     const enviadas: string[] = [];
     streamChatFake.mockImplementation(async function* (req: ChatRequest) {
@@ -436,6 +454,9 @@ describe('replay', () => {
     await salvarConversa({
       id: 'c-a',
       titulo: '',
+      mensagens: [
+        { ordem: 0, pergunta: 'P-A', resposta: 'resposta no cache', fontes: [] },
+      ],
       fontes: [],
       user_id: 'u-1',
       pergunta: 'P-A',

@@ -10,7 +10,7 @@
  */
 import { ChatApiError, streamChat } from '../../lib/api';
 import type { ChatEvent, ChatRequest } from '../../lib/api';
-import { anexarTurno } from '../../lib/conversations';
+import { anexarMensagem } from '../../lib/conversations';
 import {
   comNotaInterrompida,
   duracaoEmPortugues,
@@ -52,7 +52,9 @@ jest.mock('../../lib/api', () => {
 });
 
 jest.mock('../../lib/conversations', () => ({
+  anexarMensagem: jest.fn(async () => undefined),
   anexarTurno: jest.fn(async () => undefined),
+  lerConversa: jest.fn(async () => null),
   lerHistorico: jest.fn(async () => []),
 }));
 
@@ -82,13 +84,15 @@ const streamChatFake = streamChat as unknown as jest.Mock<
   AsyncGenerator<ChatEvent, void, unknown>,
   [ChatRequest]
 >;
-const anexarFake = anexarTurno as unknown as jest.Mock<void, unknown[]>;
+const anexarFake = anexarMensagem as unknown as jest.Mock<void, unknown[]>;
 
-/** The completion calls (the 4-arg form; the pending insert has 3). */
+/** The completion calls: `anexarMensagem` WITH a resposta in the turn. */
 function chamadasDeConclusao(): unknown[][] {
-  // (userId, id, pergunta, resposta, fontes) — the completion call; the
-  // pending insert is the 3-argument one.
-  return anexarFake.mock.calls.filter((c) => c.length >= 4);
+  // (userId, id, {ordem, pergunta, resposta, fontes}) — the completion
+  // call; the pending insert carries no `resposta`.
+  return anexarFake.mock.calls.filter(
+    (c) => (c[2] as { resposta?: string } | undefined)?.resposta !== undefined,
+  );
 }
 
 beforeEach(() => {
@@ -221,9 +225,12 @@ describe('executarResposta — full sequence', () => {
     expect(conclusao[0]).toEqual([
       'u-1',
       'c-1',
-      PERGUNTA,
-      TEXTO_COMPLETO,
-      ['https://www.usp.br/a', 'https://www.usp.br/b'],
+      {
+        ordem: 0,
+        pergunta: PERGUNTA,
+        resposta: TEXTO_COMPLETO,
+        fontes: ['https://www.usp.br/a', 'https://www.usp.br/b'],
+      },
     ]);
   });
 });

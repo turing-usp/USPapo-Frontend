@@ -31,7 +31,7 @@
  * pre-fetched.
  */
 import { openDatabaseSync, type SQLiteDatabase } from 'expo-sqlite';
-import type { Conversa } from './conversations';
+import type { Conversa, Mensagem } from './conversations';
 import type { QueueItem } from './net';
 
 /** A cached conversation row (the Conversa shape + the RLS owner). */
@@ -179,6 +179,7 @@ CREATE TABLE IF NOT EXISTS conversas_cache (
   id TEXT NOT NULL,
   titulo TEXT NOT NULL DEFAULT '',
   fontes TEXT NOT NULL DEFAULT '[]',
+  mensagens TEXT NOT NULL DEFAULT '[]',
   pergunta TEXT NOT NULL,
   resposta TEXT,
   criada_em TEXT NOT NULL,
@@ -191,7 +192,8 @@ CREATE TABLE IF NOT EXISTS fila_offline (
   conversation_id TEXT NOT NULL,
   question TEXT NOT NULL,
   enqueued_at INTEGER NOT NULL,
-  ordem INTEGER NOT NULL
+  ordem INTEGER NOT NULL,
+  turno INTEGER NOT NULL DEFAULT 0
 );
 `;
 
@@ -207,6 +209,12 @@ let conexao: SQLiteDatabase | null = null;
 const COLUNAS_NOVAS = [
   "ALTER TABLE conversas_cache ADD COLUMN titulo TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE conversas_cache ADD COLUMN fontes TEXT NOT NULL DEFAULT '[]'",
+  // A conversation is a LIST of turns (lib/conversations): the cache keeps
+  // them whole, as JSON, so reopening one offline shows every turn instead
+  // of only the first.
+  "ALTER TABLE conversas_cache ADD COLUMN mensagens TEXT NOT NULL DEFAULT '[]'",
+  // Which turn of the conversation a queued question belongs to.
+  'ALTER TABLE fila_offline ADD COLUMN turno INTEGER NOT NULL DEFAULT 0',
 ];
 
 function sqlite(): SQLiteDatabase {
@@ -228,6 +236,7 @@ type LinhaCache = {
   id: string;
   titulo: string;
   fontes: string;
+  mensagens: string;
   pergunta: string;
   resposta: string | null;
   criada_em: string;
@@ -246,13 +255,54 @@ function lerFontes(bruto: string | null | undefined): string[] {
   }
 }
 
+/**
+ * The turns, as stored. A row written before the `mensagens` column existed
+ * (or by an older build) has none, and its single legacy question/answer
+ * pair stands in for turn 0 — the conversation still opens, with what the
+ * cache actually knows.
+ */
+function lerMensagens(bruto: string | null | undefined, l: LinhaCache): Mensagem[] {
+  if (bruto) {
+    try {
+      const v = JSON.parse(bruto);
+      if (Array.isArray(v) && v.length > 0) {
+        return v.map((m, i) => ({
+          ordem: Number((m as Mensagem).ordem ?? i),
+          pergunta: String((m as Mensagem).pergunta ?? ''),
+          resposta:
+            (m as Mensagem).resposta === null || (m as Mensagem).resposta === undefined
+              ? null
+              : String((m as Mensagem).resposta),
+          fontes: Array.isArray((m as Mensagem).fontes)
+            ? (m as Mensagem).fontes.map(String)
+            : [],
+        }));
+      }
+    } catch {
+      // Corrupt JSON: fall through to the legacy pair below.
+    }
+  }
+  if (!l.pergunta) return [];
+  return [
+    {
+      ordem: 0,
+      pergunta: l.pergunta,
+      resposta: l.resposta === null ? null : l.resposta,
+      fontes: lerFontes(l.fontes),
+    },
+  ];
+}
+
 function linhaParaConversa(l: LinhaCache): Conversa {
+  const mensagens = lerMensagens(l.mensagens, l);
+  const ultima = mensagens[mensagens.length - 1];
   return {
     id: l.id,
     titulo: l.titulo ?? '',
-    fontes: lerFontes(l.fontes),
-    pergunta: l.pergunta,
-    resposta: l.resposta === null ? null : l.resposta,
+    mensagens,
+    fontes: ultima ? ultima.fontes : lerFontes(l.fontes),
+    pergunta: mensagens[0]?.pergunta ?? l.pergunta,
+    resposta: ultima ? ultima.resposta : l.resposta === null ? null : l.resposta,
     criada_em: l.criada_em,
     atualizada_em: l.atualizada_em,
     favorita: l.favorita === 1,
@@ -260,17 +310,18 @@ function linhaParaConversa(l: LinhaCache): Conversa {
 }
 
 const SELECT_CACHE =
-  'SELECT id, titulo, fontes, pergunta, resposta, criada_em, atualizada_em, favorita FROM conversas_cache';
+  'SELECT id, titulo, fontes, mensagens, pergunta, resposta, criada_em, atualizada_em, favorita FROM conversas_cache';
 
 const bancoSqlite: BancoOffline = {
   async salvarConversa(c) {
     sqlite().runSync(
       `INSERT INTO conversas_cache
-         (user_id, id, titulo, fontes, pergunta, resposta, criada_em, atualizada_em, favorita)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         (user_id, id, titulo, fontes, mensagens, pergunta, resposta, criada_em, atualizada_em, favorita)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (user_id, id) DO UPDATE SET
          titulo = excluded.titulo,
          fontes = excluded.fontes,
+         mensagens = excluded.mensagens,
          pergunta = excluded.pergunta,
          resposta = excluded.resposta,
          criada_em = excluded.criada_em,
@@ -281,6 +332,7 @@ const bancoSqlite: BancoOffline = {
         c.id,
         c.titulo ?? '',
         JSON.stringify(c.fontes ?? []),
+        JSON.stringify(c.mensagens ?? []),
         c.pergunta,
         c.resposta,
         c.criada_em,
@@ -334,7 +386,7 @@ const bancoSqlite: BancoOffline = {
     return sqlite()
       .getAllSync<QueueItem>(
         `SELECT id, conversation_id AS conversationId, question,
-                enqueued_at AS enqueuedAt
+                enqueued_at AS enqueuedAt, turno
          FROM fila_offline ORDER BY ordem ASC`,
         [],
       );
@@ -349,8 +401,15 @@ const bancoSqlite: BancoOffline = {
       [],
     );
     db.runSync(
-      'INSERT INTO fila_offline (id, conversation_id, question, enqueued_at, ordem) VALUES (?, ?, ?, ?, ?)',
-      [item.id, item.conversationId, item.question, item.enqueuedAt, r?.m ?? 0],
+      'INSERT INTO fila_offline (id, conversation_id, question, enqueued_at, ordem, turno) VALUES (?, ?, ?, ?, ?, ?)',
+      [
+        item.id,
+        item.conversationId,
+        item.question,
+        item.enqueuedAt,
+        r?.m ?? 0,
+        item.turno ?? 0,
+      ],
     );
   },
 
