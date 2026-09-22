@@ -1,422 +1,183 @@
-/**
- * Admin analytics panel (web-only — see ./_layout.tsx guard).
- *
- * The seven KPIs of the old panel, from `GET /api/analytics/resumo`
- * (USPapo-Backend/app/analytics/metricas.py `resumo()`):
- *
- *   1. perguntas/dia      → average of serie_temporal[*].perguntas (window slice)
- *   2. tempo médio        → serie_temporal[*].latencia_media_ms (window slice,
- *                            weighted by the day's questions)
- *   3. taxa de sucesso    → 1 − Σerros/Σtotal_chamadas (desempenho_provedores)
- *   4. erros              → Σerros (desempenho_provedores)
- *   5. likes              → feedback.serie slice
- *   6. dislikes           → feedback.serie slice
- *   7. fontes mais citadas → fontes_citadas, colored with the theme's
- *                            6-slot colorblind-safe palette (stable order,
- *                            beyond six → "Outros" in a neutral color)
- *
- * States: loading (skeleton), error ("Não consegui carregar as métricas" +
- * retry), empty (zeros, never NaN). Theme-aware via the theme tokens
- * (dark scheme included). The "perguntas por dia" chart is dependency-free
- * (plain Views as bars — no chart library; victory-native is not used on
- * the web build).
- *
- * The admin header contract (worker passes headers through, so the web
- * sends X-Admin-Key from EXPO_PUBLIC_ADMIN_API_KEY) lives in ./metricas.ts.
- */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+/** Admin panel (web): KPIs, daily series, rankings, providers, top users and the feedback review. */
+import { useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 
-import { fonts, useTheme } from '../../theme';
+import { Colunas, Ranking } from '../../components/charts';
 import Glass from '../../components/Glass';
-import {
-  ROTULO_JANELA,
-  ROTULO_JANELA_SERVICO,
-  barrasDePerguntas,
-  carregarResumo,
-  coresDeFontes,
-  formataMs,
-  formataNumero,
-  formataPorcentagem,
-  kpisDaJanela,
-  type Janela,
-  type ResumoDados,
-} from './metricas';
+import { Icone } from '../../components/icons';
+import { Botao, Cartao, Estado, Texto } from '../../components/ui';
+import { JANELAS, carregarResumo, dataHora, diaCurto, duracao, numero, porcento, segundos, type ItemFeedback, type Resumo } from '../../lib/admin';
+import { ApiError, ferramenta } from '../../lib/api';
+import { useTheme } from '../../theme';
 
-const JANELAS: { valor: Janela; rotulo: string }[] = [
-  { valor: '24h', rotulo: '24h' },
-  { valor: '7d', rotulo: '7 dias' },
-  { valor: '30d', rotulo: '30 dias' },
-];
-
-/** Default window: the chart reads best with 7 bars. */
-const JANELA_PADRAO: Janela = '7d';
-
-const ALTURA_GRAFICO = 120;
-
-type Status = 'carregando' | 'falhou' | 'pronto';
-
-// ─────────────────────────────────────────────
-// Pieces
-// ─────────────────────────────────────────────
-
-/** One KPI card: label + value + the window it was computed over. */
-function CartaoKpi({
-  rotulo,
-  valor,
-  sub,
-  testID,
-}: {
-  rotulo: string;
-  valor: string;
-  sub: string;
-  testID: string;
-}) {
-  const { colors, glass, radius, spacing, typography } = useTheme();
+function Kpi({ rotulo, valor, detalhe }: { rotulo: string; valor: string; detalhe: string }) {
+  const { spacing } = useTheme();
   return (
-    <Glass
-      // The prop was destructured and then dropped, so no KPI tile carried
-      // its id: nothing could select one — not a test, not a screen reader.
-      testID={testID}
-      radius={radius.md}
-      style={{ gap: spacing.xs, padding: spacing.lg, width: '47%' }}
-    >
-      <Text style={{ color: colors.mutedForeground, fontSize: typography.sm.fontSize }}>
-        {rotulo}
-      </Text>
-      <Text
-        style={{
-          color: colors.foreground,
-          fontFamily: fonts.displayBold,
-          fontSize: typography['2xl'].fontSize,
-        }}
-      >
-        {valor}
-      </Text>
-      <Text style={{ color: colors.faintForeground, fontSize: typography.xs.fontSize }}>{sub}</Text>
+    <Glass radius={16} style={{ flexGrow: 1, flexBasis: 170, gap: spacing.xs, padding: spacing.lg }} testID="kpi">
+      <Texto v="suave">{rotulo}</Texto>
+      <Texto style={{ fontFamily: 'Roboto-Bold', fontSize: 28, lineHeight: 34 }}>{valor}</Texto>
+      <Texto v="legenda">{detalhe}</Texto>
     </Glass>
   );
 }
 
-/** The "perguntas por dia" bar chart: one plain-View bar per day. */
-function GraficoPerguntas({ barras }: { barras: { data: string; rotulo: string; valor: number }[] }) {
-  const { colors, typography } = useTheme();
-  const maximo = Math.max(1, ...barras.map((b) => b.valor));
-  const mostraRotulo = barras.length <= 14;
+function Tabela({ colunas, linhas }: { colunas: string[]; linhas: (string | number)[][] }) {
+  const { colors, spacing } = useTheme();
+  if (!linhas.length) return <Texto v="legenda">Sem dados no período.</Texto>;
   return (
-    <View testID="grafico-perguntas" style={{ alignItems: 'flex-end', gap: 4 }}>
-      <View style={{ alignItems: 'flex-end', flexDirection: 'row', height: ALTURA_GRAFICO, gap: 3 }}>
-        {barras.map((barra) => (
-          <View key={barra.data} style={{ alignItems: 'center', flex: 1 }}>
-            <View
-              testID="barra-dia"
-              style={{
-                backgroundColor: colors.brand,
-                borderRadius: 3,
-                height: barra.valor > 0 ? Math.max(3, (barra.valor / maximo) * ALTURA_GRAFICO) : 0,
-                width: '100%',
-              }}
-            />
+    <ScrollView horizontal>
+      <View style={{ minWidth: '100%' }}>
+        {[colunas, ...linhas].map((linha, i) => (
+          <View key={i} style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: colors.line + '14', paddingVertical: spacing.xs }}>
+            {linha.map((celula, j) => (
+              <Texto key={j} v={i ? 'suave' : 'secao'} cor={i && !j ? colors.foreground : undefined} numberOfLines={1}
+                style={{ width: j ? 96 : 180, textAlign: j ? 'right' : 'left', fontVariant: ['tabular-nums'] }}>{String(celula)}</Texto>
+            ))}
           </View>
         ))}
       </View>
-      <View style={{ flexDirection: 'row', gap: 3 }}>
-        {barras.map((barra) => (
-          <View key={barra.data} style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ color: colors.faintForeground, fontSize: 9 }}>
-              {mostraRotulo ? barra.rotulo : ''}
-            </Text>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-/** A fonte row: palette dot + name + count. */
-function LinhaFonte({
-  nome,
-  contagem,
-  cor,
-  testID,
-}: {
-  nome: string;
-  contagem: number;
-  cor: string;
-  testID: string;
-}) {
-  const { colors, spacing, typography } = useTheme();
-  return (
-    <View
-      testID={testID}
-      style={{ alignItems: 'center', flexDirection: 'row', gap: spacing.sm, paddingVertical: spacing.sm }}
-    >
-      <View testID="fonte-ponto" style={{ backgroundColor: cor, borderRadius: 5, height: 10, width: 10 }} />
-      <Text
-        numberOfLines={1}
-        style={{ color: colors.foreground, flex: 1, fontSize: typography.base.fontSize }}
-      >
-        {nome}
-      </Text>
-      <Text style={{ color: colors.mutedForeground, fontSize: typography.sm.fontSize }}>
-        {formataNumero(contagem)}
-      </Text>
-    </View>
-  );
-}
-
-/** The loading skeleton: the panel shape before the data arrives. */
-function Esqueleto() {
-  const { colors, glass, radius, spacing, typography } = useTheme();
-  return (
-    <View style={{ gap: spacing.xl }}>
-      <Text style={{ color: colors.mutedForeground, fontSize: typography.sm.fontSize }}>
-        Carregando métricas…
-      </Text>
-      {Array.from({ length: 6 }, (_, i) => (
-        <Glass
-          key={i}
-          testID="esqueleto"
-          radius={radius.md}
-          style={{ height: 84, width: '47%' }}
-        />
-      ))}
-    </View>
-  );
-}
-
-/** The error state: one explicit retry, no silent loops. */
-function TelaErro({ aoTentarNovamente }: { aoTentarNovamente: () => void }) {
-  const { colors, glass, radius, spacing, typography } = useTheme();
-  return (
-    <Glass
-      radius={radius.lg}
-      style={{
-          alignItems: 'center',
-          gap: spacing.md,
-          padding: spacing['2xl'],
-      }}
-    >
-      <Text
-        style={{
-          color: colors.foreground,
-          fontFamily: fonts.bodyBold,
-          fontSize: typography.lg.fontSize,
-          textAlign: 'center',
-        }}
-      >
-        Não consegui carregar as métricas
-      </Text>
-      <Text style={{ color: colors.mutedForeground, fontSize: typography.sm.fontSize }}>
-        Verifique a conexão (e a chave de administrador) e tente de novo.
-      </Text>
-      <Pressable
-        testID="botao-tentar-novamente"
-        onPress={aoTentarNovamente}
-        style={({ pressed }) => [
-          styles.botaoBase,
-          {
-            backgroundColor: colors.brand,
-            borderRadius: radius.full,
-            opacity: pressed ? 0.85 : 1,
-          },
-        ]}
-      >
-        <Text style={{ color: colors.brandForeground, fontSize: typography.base.fontSize, fontWeight: '700' }}>
-          Tentar novamente
-        </Text>
-      </Pressable>
-        </Glass>
-  );
-}
-
-// ─────────────────────────────────────────────
-// Screen
-// ─────────────────────────────────────────────
-
-export default function PainelMetricas() {
-  const { colors, glass, radius, spacing, typography } = useTheme();
-
-  const [status, setStatus] = useState<Status>('carregando');
-  const [dados, setDados] = useState<ResumoDados | null>(null);
-  const [janela, setJanela] = useState<Janela>(JANELA_PADRAO);
-  const [tentativa, setTentativa] = useState(0);
-
-  const carregar = useCallback(async () => {
-    setStatus('carregando');
-    try {
-      const resumo = await carregarResumo();
-      setDados(resumo);
-      setStatus('pronto');
-    } catch {
-      setStatus('falhou');
-    }
-  }, []);
-
-  useEffect(() => {
-    void carregar();
-  }, [carregar, tentativa]);
-
-  const kpis = useMemo(
-    () => (dados && status === 'pronto' ? kpisDaJanela(dados, janela) : null),
-    [dados, status, janela],
-  );
-  const barras = useMemo(
-    () => (dados && status === 'pronto' ? barrasDePerguntas(dados, janela) : []),
-    [dados, status, janela],
-  );
-  const fontes = useMemo(
-    () =>
-      dados && status === 'pronto'
-        ? coresDeFontes(dados.fontes_citadas ?? [], colors.chart, colors.mutedForeground)
-        : [],
-    [dados, status, colors],
-  );
-
-  const rotuloJanela = ROTULO_JANELA[janela];
-
-  return (
-    <ScrollView
-      style={{ backgroundColor: colors.canvas, flex: 1 }}
-      contentContainerStyle={{ gap: spacing.xl, padding: spacing['2xl'] }}
-    >
-      <View style={{ gap: spacing.sm }}>
-        <Text
-          style={{
-            color: colors.foreground,
-            fontFamily: fonts.displayBold,
-            fontSize: typography['2xl'].fontSize,
-          }}
-        >
-          Painel de métricas
-        </Text>
-        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-          {JANELAS.map((opcao) => {
-            const ativa = janela === opcao.valor;
-            return (
-              <Pressable
-                key={opcao.valor}
-                testID={`janela-${opcao.valor}`}
-                onPress={() => setJanela(opcao.valor)}
-                style={({ pressed }) => [
-                  {
-                    borderRadius: radius.full,
-                    opacity: pressed ? 0.85 : 1,
-                    paddingVertical: spacing.xs + 2,
-                    paddingHorizontal: spacing.lg,
-                  },
-                  ativa
-                    ? {
-                        backgroundColor: colors.brand,
-                        borderColor: colors.brand,
-                        borderWidth: 1,
-                      }
-                    : null,
-                ]}
-              >
-                <Text
-                  style={{
-                    color: ativa ? colors.brandForeground : colors.mutedForeground,
-                    fontFamily: fonts.bodyBold,
-                    fontSize: typography.sm.fontSize,
-                  }}
-                >
-                  {opcao.rotulo}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-
-      {status === 'carregando' && <Esqueleto />}
-
-      {status === 'falhou' && <TelaErro aoTentarNovamente={() => setTentativa((n) => n + 1)} />}
-
-      {status === 'pronto' && kpis && (
-        <>
-          {/* The six numeric KPIs (the 7th — fontes mais citadas — is the list below). */}
-          <View style={{ flexWrap: 'wrap', gap: spacing.md, justifyContent: 'space-between' }}>
-            <CartaoKpi
-              testID="kpi-perguntas-dia"
-              rotulo="Perguntas/dia"
-              valor={formataNumero(kpis.perguntasPorDia, 1)}
-              sub={rotuloJanela}
-            />
-            <CartaoKpi
-              testID="kpi-tempo-medio"
-              rotulo="Tempo médio"
-              valor={formataMs(kpis.tempoMedioMs)}
-              sub={rotuloJanela}
-            />
-            <CartaoKpi
-              testID="kpi-taxa-sucesso"
-              rotulo="Taxa de sucesso"
-              valor={formataPorcentagem(kpis.taxaSucesso)}
-              sub={ROTULO_JANELA_SERVICO}
-            />
-            <CartaoKpi
-              testID="kpi-erros"
-              rotulo="Erros"
-              valor={formataNumero(kpis.erros)}
-              sub={ROTULO_JANELA_SERVICO}
-            />
-            <CartaoKpi testID="kpi-likes" rotulo="Likes" valor={formataNumero(kpis.likes)} sub={rotuloJanela} />
-            <CartaoKpi
-              testID="kpi-dislikes"
-              rotulo="Dislikes"
-              valor={formataNumero(kpis.dislikes)}
-              sub={rotuloJanela}
-            />
-          </View>
-
-          {/* Perguntas por dia: N bars for N days of the selected window. */}
-          <Glass
-            radius={radius.lg}
-            style={{ gap: spacing.md, padding: spacing['2xl'] }}
-          >
-            <Text style={{ color: colors.foreground, fontSize: typography.lg.fontSize, fontWeight: '700' }}>
-              Perguntas por dia
-            </Text>
-            <GraficoPerguntas barras={barras} />
-          </Glass>
-
-          {/* Fontes mais citadas: the 7th KPI, palette per the theme rule. */}
-          <Glass
-            radius={radius.lg}
-            style={{ gap: spacing.sm, padding: spacing['2xl'] }}
-          >
-            <Text style={{ color: colors.foreground, fontSize: typography.lg.fontSize, fontWeight: '700' }}>
-              Fontes mais citadas
-            </Text>
-            {fontes.length === 0 ? (
-              <Text style={{ color: colors.mutedForeground, fontSize: typography.sm.fontSize }}>
-                Nenhuma fonte citada no período.
-              </Text>
-            ) : (
-              fontes.map((fonte) => (
-                <LinhaFonte
-                  key={fonte.nome}
-                  testID={fonte.eOutros ? 'fonte-outros' : 'fonte-linha'}
-                  nome={fonte.nome}
-                  contagem={fonte.contagem}
-                  cor={fonte.cor}
-                />
-              ))
-            )}
-          </Glass>
-        </>
-      )}
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
-  botaoBase: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 180,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-  },
-});
+const FILTROS = [['todos', 'Todos'], ['like', 'Úteis'], ['dislike', 'Não úteis'], ['comentario', 'Com comentário']] as const;
+
+function ItemAvaliacao({ item }: { item: ItemFeedback }) {
+  const { colors, radius, spacing } = useTheme();
+  const [aberto, setAberto] = useState(false);
+  return (
+    <Glass radius={radius.md} style={{ padding: spacing.md, gap: spacing.sm }}>
+      <Pressable onPress={() => setAberto((a) => !a)} accessibilityRole="button" accessibilityState={{ expanded: aberto }}
+        style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}>
+        <Icone nome={item.tipo} cor={item.tipo === 'like' ? colors.success : colors.danger} tamanho={18} />
+        <View style={{ flex: 1 }}>
+          <Texto v="suave" cor={colors.foreground} numberOfLines={aberto ? undefined : 1}>{item.pergunta ?? item.titulo ?? 'Conversa apagada'}</Texto>
+          <Texto v="legenda">{[dataHora(item.created_at), item.usuario, item.motivo].filter(Boolean).join(' · ')}</Texto>
+        </View>
+        <View style={{ transform: [{ rotate: aberto ? '90deg' : '0deg' }] }}><Icone nome="seta" cor={colors.mutedForeground} tamanho={16} /></View>
+      </Pressable>
+      {item.comentario ? <Texto v="suave" style={{ fontStyle: 'italic' }}>“{item.comentario}”</Texto> : null}
+      {aberto ? (
+        <View style={{ gap: spacing.xs, borderLeftWidth: 2, borderColor: colors.brand, paddingLeft: spacing.md }}>
+          <Texto v="suave" cor={colors.foreground} selectable>{item.resposta ?? 'Resposta indisponível (conversa apagada ou pendente).'}</Texto>
+          {item.fontes.map((f) => <Texto key={f} v="legenda" selectable>{f}</Texto>)}
+        </View>
+      ) : null}
+    </Glass>
+  );
+}
+
+export default function Analytics() {
+  const { colors, spacing } = useTheme();
+  const router = useRouter();
+  const { width } = useWindowDimensions();
+  const [dias, setDias] = useState<number>(30);
+  const [dados, setDados] = useState<Resumo | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [filtro, setFiltro] = useState<(typeof FILTROS)[number][0]>('todos');
+
+  const carregar = useCallback((janela: number, signal?: AbortSignal) => carregarResumo(janela, signal).then(
+    (resumo) => {
+      setDados(resumo);
+      setErro(null);
+      setCarregando(false);
+    },
+    (e) => {
+      if (signal?.aborted) return;
+      setErro(e instanceof ApiError && e.status === 403 ? 'Esta conta não tem acesso ao painel.' : e instanceof Error ? e.message : 'Falha ao carregar.');
+      setCarregando(false);
+    },
+  ), []);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    void carregar(dias, ctrl.signal);
+    return () => ctrl.abort();
+  }, [dias, carregar]);
+  const recarregar = (janela = dias) => {
+    setCarregando(true);
+    if (janela === dias) void carregar(janela);
+    else setDias(janela);
+  };
+
+  const k = dados?.kpis;
+  const colunasGrafico = width >= 1100 ? 3 : width >= 720 ? 2 : 1;
+  const itens = (dados?.feedback.itens ?? []).filter((i) => filtro === 'todos' || (filtro === 'comentario' ? !!i.comentario : i.tipo === filtro));
+  const serie = (campo: 'perguntas' | 'usuarios' | 'latencia_media_ms') => (dados?.serie ?? []).map((d) => ({ chave: d.data, valor: d[campo] }));
+
+  return (
+    <ScrollView contentContainerStyle={{ alignSelf: 'center', width: '100%', maxWidth: 1200, padding: spacing.xl, gap: spacing.lg }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+          <Pressable accessibilityLabel="Voltar" onPress={() => router.replace('/')} hitSlop={8}>
+            <View style={{ transform: [{ rotate: '180deg' }] }}><Icone nome="seta" cor={colors.mutedForeground} /></View>
+          </Pressable>
+          <Texto v="titulo">Painel do USPapo</Texto>
+        </View>
+        <View style={{ flexDirection: 'row', gap: spacing.xs }}>
+          {JANELAS.map((j) => (
+            <Botao key={j} compacto v={dias === j ? 'primario' : 'secundario'} rotulo={j === 1 ? '24 h' : `${j} dias`} onPress={() => recarregar(j)} />
+          ))}
+          <Botao compacto v="secundario" icone="atualizar" rotulo="Atualizar" onPress={() => recarregar()} />
+        </View>
+      </View>
+
+      {erro ? <Estado titulo="Não consegui carregar as métricas" mensagem={erro} acao="Tentar de novo" aoAgir={() => recarregar()} /> : null}
+      {carregando && !dados ? <ActivityIndicator color={colors.brand} style={{ marginTop: spacing['3xl'] }} /> : null}
+
+      {k && dados ? (
+        <View style={{ gap: spacing.lg, opacity: carregando ? 0.6 : 1 }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
+            <Kpi rotulo="Perguntas" valor={numero(k.perguntas)} detalhe={`${numero(k.respondidas)} respondidas · ${numero(k.pendentes)} pendentes`} />
+            <Kpi rotulo="Usuários ativos" valor={numero(k.usuarios)} detalhe={`${k.dau} nas últimas 24 h · ${k.wau} em 7 dias`} />
+            <Kpi rotulo="Tempo de resposta" valor={duracao(k.latencia_media_ms)} detalhe={`p95 ${duracao(k.latencia_p95_ms)}`} />
+            <Kpi rotulo="Taxa de sucesso" valor={porcento(k.taxa_sucesso)} detalhe={`${numero(k.erros)} falhas de provedor`} />
+            <Kpi rotulo="Tokens" valor={numero(k.tokens)} detalhe={`${numero(k.conversas)} conversas novas`} />
+            <Kpi rotulo="Satisfação" valor={porcento(k.satisfacao)} detalhe={`${k.likes} úteis · ${k.dislikes} não úteis · cobertura ${porcento(k.cobertura)}`} />
+          </View>
+
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
+            {([['Perguntas por dia', 'perguntas', numero], ['Usuários ativos por dia', 'usuarios', numero],
+              ['Tempo médio de resposta', 'latencia_media_ms', segundos]] as const).map(([titulo, campo, formatar]) => (
+              <Cartao key={campo} style={{ flexBasis: `${100 / colunasGrafico - 2}%`, flexGrow: 1 }}>
+                <Colunas titulo={titulo} dados={serie(campo)} formatar={formatar} rotuloX={diaCurto} />
+              </Cartao>
+            ))}
+          </View>
+
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
+            <Cartao style={{ flexBasis: 300, flexGrow: 1 }}><Ranking titulo="Ferramentas usadas" itens={dados.ferramentas.map((f) => ({ nome: ferramenta(f.nome).rotulo, valor: f.contagem }))} /></Cartao>
+            <Cartao style={{ flexBasis: 300, flexGrow: 1 }}><Ranking titulo="Fontes mais citadas" itens={dados.fontes.map((f) => ({ nome: f.fonte, valor: f.contagem }))} /></Cartao>
+            <Cartao style={{ flexBasis: 300, flexGrow: 1 }}><Ranking titulo="Temas frequentes" itens={dados.temas.map((t) => ({ nome: t.tema, valor: t.contagem }))} /></Cartao>
+          </View>
+
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
+            <Cartao titulo="Provedores de LLM" style={{ flexBasis: 480, flexGrow: 1 }}>
+              <Tabela colunas={['Provedor', 'Chamadas', 'Falhas', '% falha', 'Tempo', 'Tokens']}
+                linhas={dados.provedores.map((p) => [p.nome, numero(p.chamadas), numero(p.erros), porcento(p.taxa_erro), duracao(p.latencia_media_ms), numero(p.tokens)])} />
+            </Cartao>
+            <Cartao titulo="Quem mais pergunta" style={{ flexBasis: 480, flexGrow: 1 }}>
+              <Tabela colunas={['Usuário', 'Perguntas', 'Tokens', 'Última']}
+                linhas={dados.top_usuarios.map((u) => [u.nome ?? u.id, numero(u.perguntas), numero(u.tokens), u.ultima ? diaCurto(u.ultima.slice(0, 10)) : '—'])} />
+            </Cartao>
+          </View>
+
+          <Cartao titulo="Avaliações das respostas">
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }}>
+              {FILTROS.map(([valor, rotulo]) => (
+                <Botao key={valor} compacto v={filtro === valor ? 'primario' : 'secundario'} rotulo={rotulo} onPress={() => setFiltro(valor)} />
+              ))}
+            </View>
+            {Object.keys(dados.feedback.por_motivo).length ? (
+              <Texto v="legenda">Motivos: {Object.entries(dados.feedback.por_motivo).map(([m, n]) => `${m} (${n})`).join(' · ')}</Texto>
+            ) : null}
+            {itens.length ? itens.map((item, i) => <ItemAvaliacao key={item.id ?? i} item={item} />)
+              : <Texto v="legenda">Nenhuma avaliação neste filtro.</Texto>}
+          </Cartao>
+        </View>
+      ) : null}
+    </ScrollView>
+  );
+}

@@ -1,149 +1,49 @@
-/**
- * Per-conversation action menu — port of the old site's MenuConversa
- * (site/components/MenuConversa.tsx): a kebab button that opens a small
- * panel with "Favoritar" / "Remover dos favoritos" and "Apagar".
- *
- * The old site anchored an absolutely positioned `<div>` under the button
- * and closed it on outside-click or Escape. Here the panel lives in a
- * transparent <Modal>, for one structural reason: the rows are FlatList
- * children, and a panel drawn inside row N is painted under row N+1 (later
- * siblings draw on top), so an in-row dropdown would be half-hidden behind
- * the next conversation. The modal also gives the outside-press dismissal
- * and the hardware-back dismissal for free.
- *
- * The button's position is measured when it is pressed, so the panel opens
- * against it rather than in the middle of the screen — and it flips to
- * above the button when there is no room below.
- */
+/** Per-conversation actions (favoritar, renomear, apagar) in a small menu anchored to the kebab button. */
 import React, { useRef, useState } from 'react';
-import {
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-  useWindowDimensions,
-} from 'react-native';
+import { Modal, Pressable, View, useWindowDimensions } from 'react-native';
 
 import Glass from './Glass';
-import { KebabIcon } from './BrandMarks';
-import { fonts, useTheme } from '../theme';
+import { Icone } from './icons';
+import { Texto } from './ui';
+import { useTheme } from '../theme';
 
-/** Panel metrics (the old `w-44` dropdown). */
-const LARGURA = 190;
-const ALTURA_ESTIMADA = 136;
-const MARGEM = 8;
+const LARGURA = 200;
+const ALTURA = 140;
 
-export type MenuConversaProps = {
-  favorita: boolean;
-  aoFavoritar: () => void;
-  aoRenomear: () => void;
-  aoApagar: () => void;
-};
+export function MenuConversa({ favorita, aoFavoritar, aoRenomear, aoApagar }: {
+  favorita: boolean; aoFavoritar: () => void; aoRenomear: () => void; aoApagar: () => void;
+}) {
+  const { colors, radius, spacing } = useTheme();
+  const { width, height } = useWindowDimensions();
+  const [ancora, setAncora] = useState<{ x: number; y: number } | null>(null);
+  const botao = useRef<View>(null);
 
-export function MenuConversa({
-  favorita,
-  aoFavoritar,
-  aoRenomear,
-  aoApagar,
-}: MenuConversaProps) {
-  const { colors, radius, spacing, typography } = useTheme();
-  const { width: largura, height: altura } = useWindowDimensions();
-  const [aberto, setAberto] = useState(false);
-  const [ancora, setAncora] = useState({ x: 0, y: 0 });
-  const botaoRef = useRef<View>(null);
-
-  const abrir = () => {
-    botaoRef.current?.measureInWindow((x, y, w, h) => {
-      setAncora({ x: x + w, y: y + h });
-      setAberto(true);
-    });
-  };
-
-  const executar = (fn: () => void) => () => {
-    setAberto(false);
-    fn();
-  };
-
-  // Right-aligned to the button, flipped up when the bottom would clip it.
-  const esquerda = Math.max(MARGEM, Math.min(ancora.x - LARGURA, largura - LARGURA - MARGEM));
-  const abaixo = ancora.y + ALTURA_ESTIMADA + MARGEM < altura;
-  const topo = abaixo ? ancora.y + 4 : Math.max(MARGEM, ancora.y - ALTURA_ESTIMADA - 28);
-
-  const item = (rotulo: string, aoTocar: () => void, perigo = false) => (
-    <Pressable
-      onPress={aoTocar}
-      accessibilityRole="button"
-      style={({ pressed }) => [
-        {
-          paddingHorizontal: spacing.md,
-          paddingVertical: 11,
-          opacity: pressed ? 0.6 : 1,
-        },
-      ]}
-    >
-      <Text
-        style={{
-          color: perigo ? colors.danger : colors.foreground,
-          fontFamily: fonts.body,
-          fontSize: typography.sm.fontSize,
-        }}
-      >
-        {rotulo}
-      </Text>
+  const item = (rotulo: string, acao: () => void, perigo = false) => (
+    <Pressable accessibilityRole="button" onPress={() => { setAncora(null); acao(); }}
+      style={({ pressed }) => ({ paddingHorizontal: spacing.md, paddingVertical: 11, opacity: pressed ? 0.6 : 1 })}>
+      <Texto v={perigo ? 'erro' : 'suave'} cor={perigo ? undefined : colors.foreground}>{rotulo}</Texto>
     </Pressable>
   );
 
+  // Right-aligned to the button; flips above it when the bottom would clip.
+  const left = ancora ? Math.max(8, Math.min(ancora.x - LARGURA, width - LARGURA - 8)) : 0;
+  const top = ancora ? (ancora.y + ALTURA + 8 < height ? ancora.y + 4 : Math.max(8, ancora.y - ALTURA - 36)) : 0;
+
   return (
     <>
-      <Pressable
-        ref={botaoRef}
-        onPress={abrir}
-        hitSlop={6}
-        accessibilityRole="button"
-        accessibilityLabel="Ações da conversa"
-        style={({ pressed }) => [{ padding: 6, opacity: pressed ? 0.6 : 1 }]}
-      >
-        <KebabIcon size={18} color={colors.mutedForeground} />
+      <Pressable ref={botao} accessibilityRole="button" accessibilityLabel="Ações da conversa" hitSlop={6}
+        onPress={() => botao.current?.measureInWindow((x, y, w, h) => setAncora({ x: x + w, y: y + h }))}
+        style={({ pressed }) => ({ padding: 6, opacity: pressed ? 0.6 : 1 })}>
+        <Icone nome="kebab" cor={colors.mutedForeground} tamanho={18} />
       </Pressable>
-
-      <Modal
-        visible={aberto}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setAberto(false)}
-      >
-        {/* The outside-press catcher (the old document mousedown listener). */}
-        <Pressable style={{ flex: 1 }} onPress={() => setAberto(false)}>
-          <View
-            style={{
-              position: 'absolute',
-              left: esquerda,
-              top: topo,
-              width: LARGURA,
-            }}
-          >
-            <Glass variante="raised" radius={radius.lg} style={{ paddingVertical: 4 }}>
-              {/* A solid backing under the items. The glass alone is
-                  see-through by design, and a menu floating over a list of
-                  conversations has the row text running straight through its
-                  labels — the old site used an opaque `bg-surface-raised` for
-                  the same reason. The glass edge and lift still read around
-                  it. */}
-              <View
-                style={[
-                  StyleSheet.absoluteFill,
-                  { backgroundColor: colors.surfaceRaised, borderRadius: radius.lg, opacity: 0.94 },
-                ]}
-              />
-              {item(
-                favorita ? 'Remover dos favoritos' : 'Favoritar',
-                executar(aoFavoritar),
-              )}
-              {item('Renomear', executar(aoRenomear))}
-              {item('Apagar', executar(aoApagar), true)}
-            </Glass>
-          </View>
+      {/* A Modal: an in-row dropdown would be painted under the next rows of the list. */}
+      <Modal visible={!!ancora} transparent animationType="fade" onRequestClose={() => setAncora(null)}>
+        <Pressable style={{ flex: 1 }} onPress={() => setAncora(null)}>
+          <Glass variante="raised" radius={radius.lg} style={{ position: 'absolute', left, top, width: LARGURA, paddingVertical: 4 }}>
+            {item(favorita ? 'Remover dos favoritos' : 'Favoritar', aoFavoritar)}
+            {item('Renomear', aoRenomear)}
+            {item('Apagar', aoApagar, true)}
+          </Glass>
         </Pressable>
       </Modal>
     </>

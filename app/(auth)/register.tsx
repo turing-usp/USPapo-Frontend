@@ -1,356 +1,67 @@
-/**
- * Register (nome / email / senha / confirma) with the LIVE 5-rule password
- * checklist (exact pt-BR labels ported from the old site) and a post-signUp
- * success state ("Confira seu e-mail para confirmar a conta").
- */
+/** Sign up: name, e-mail, password (live 5-rule checklist) and confirmation; then "confira seu e-mail". */
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  Text,
-  View,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import CampoVidro from '../../components/CampoVidro';
-import ColunaAuth from '../../components/ColunaAuth';
-import {
-  EnvelopeIcon,
-  EyeIcon,
-  EyeOffIcon,
-  LockIcon,
-  TuringMark,
-  UserIcon,
-} from '../../components/BrandMarks';
-import { haptics } from '../../lib/haptics';
-import { mapAuthError } from '../../lib/auth';
+import { OlhoDaSenha, RegrasDeSenha } from '../../components/auth';
+import { Botao, Campo, ColunaCentral, Texto } from '../../components/ui';
+import { mapAuthError, senhaValida, urlDeRetorno } from '../../lib/auth';
+import { haptics } from '../../lib/device';
 import { supabase } from '../../lib/supabase';
-import { fonts, useTheme } from '../../theme';
-import Glass from '../../components/Glass';
-import {
-  REGRAS_DE_SENHA,
-  checarSenha,
-  todasAsRegrasPassam,
-} from './regrasSenha';
 
 export default function Cadastro() {
-  const { colors, radius, spacing, typography } = useTheme();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
-
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [confirma, setConfirma] = useState('');
-  const [mostrarSenha, setMostrarSenha] = useState(false);
+  const [ver, setVer] = useState(false);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const [sucesso, setSucesso] = useState(false);
-  /** Which pill owns the brand focus ring. */
-  const [foco, setFoco] = useState<string | null>(null);
-
-  const regras = checarSenha(senha);
+  const [enviado, setEnviado] = useState(false);
 
   async function cadastrar() {
-    if (carregando) return;
-    if (!nome.trim()) {
-      setErro('Informe seu nome.');
-      return;
-    }
-    if (!email.trim()) {
-      setErro('Informe seu e-mail.');
-      return;
-    }
-    if (senha !== confirma) {
-      setErro('As senhas não coincidem.');
-      return;
-    }
-    if (!todasAsRegrasPassam(senha)) {
-      setErro('A senha não atende aos requisitos.');
-      return;
-    }
-
+    const falta = !nome.trim() ? 'Informe seu nome.' : !email.trim() ? 'Informe seu e-mail.'
+      : !senhaValida(senha) ? 'A senha não atende aos requisitos.' : senha !== confirma ? 'As senhas não coincidem.' : null;
+    if (falta) return setErro(falta);
     setCarregando(true);
     setErro(null);
-    try {
-      const { error } = await supabase.auth.signUp({
-        email: email.trim(),
-        password: senha,
-        options: {
-          data: { nome: nome.trim() },
-        },
-      });
-      if (error) {
-        setErro(mapAuthError(error));
-        void haptics.error();
-        return;
-      }
-      void haptics.send();
-      setSucesso(true);
-    } catch (e) {
-      setErro(mapAuthError(e));
+    const { error } = await supabase.auth.signUp({
+      email: email.trim(), password: senha,
+      options: { data: { nome: nome.trim() }, emailRedirectTo: urlDeRetorno() },
+    }).catch((e) => ({ error: e }));
+    setCarregando(false);
+    if (error) {
+      setErro(mapAuthError(error));
       void haptics.error();
-    } finally {
-      setCarregando(false);
-    }
+    } else setEnviado(true);
   }
 
-  if (sucesso) {
+  if (enviado) {
     return (
-      <View
-        style={{
-          flex: 1,
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: spacing.lg,
-          padding: spacing.xl,
-          paddingBottom: insets.bottom + spacing.xl,
-        }}
-      >
-        <Glass
-          radius={radius.xl}
-          style={{
-              alignItems: 'center',
-              gap: spacing.md,
-              padding: spacing['2xl'],
-              width: '100%',
-          }}
-        >
-          <Text
-            style={{
-              color: colors.foreground,
-              fontFamily: fonts.displayBold,
-              fontSize: typography.xl.fontSize,
-              textAlign: 'center',
-            }}
-          >
-            Confira seu e-mail para confirmar a conta
-          </Text>
-          <Text
-            style={{
-              color: colors.mutedForeground,
-              fontFamily: fonts.body,
-              fontSize: typography.sm.fontSize,
-              textAlign: 'center',
-            }}
-          >
-            Enviamos um link de confirmação para {email.trim()}.
-          </Text>
-          <Pressable
-            onPress={() => router.push('/(auth)/login')}
-            style={({ pressed }) => [
-              {
-                alignItems: 'center',
-                backgroundColor: colors.brand,
-                borderRadius: radius.full,
-                justifyContent: 'center',
-                minHeight: 52,
-                marginTop: spacing.sm,
-                opacity: pressed ? 0.85 : 1,
-              },
-            ]}
-          >
-            <Text
-              style={{
-                color: colors.brandForeground,
-                fontFamily: fonts.bodyBold,
-                fontSize: typography.base.fontSize,
-              }}
-            >
-              Ir para o login
-            </Text>
-          </Pressable>
-                </Glass>
-      </View>
+      <ColunaCentral>
+        <Texto v="titulo" centro>Confira seu e-mail</Texto>
+        <Texto v="suave" centro>Enviamos um link de confirmação para {email.trim()}. Depois de confirmar, é só entrar.</Texto>
+        <Botao rotulo="Ir para o login" onPress={() => router.replace('/login')} />
+      </ColunaCentral>
     );
   }
 
   return (
-    <ColunaAuth>
-        {/* Same masthead as login: wordmark over a centred Geom title. */}
-        <View style={{ alignItems: 'center' }}>
-          <TuringMark size={144} />
-        </View>
-        <Text
-          style={{
-            alignSelf: 'center',
-            color: colors.foreground,
-            fontFamily: fonts.displayBold,
-            fontSize: typography.xl.fontSize,
-            letterSpacing: 0.5,
-            marginTop: spacing.xl,
-            textAlign: 'center',
-          }}
-        >
-          Criar conta
-        </Text>
-
-        <View style={{ gap: spacing.sm, marginTop: spacing.xl }}>
-          <CampoVidro
-            focado={foco === 'nome'}
-            aoFocar={() => setFoco('nome')}
-            aoPerderFoco={() => setFoco(null)}
-            icone={<UserIcon color={colors.mutedForeground} />}
-            value={nome}
-            onChangeText={setNome}
-            placeholder="Nome"
-            autoCapitalize="words"
-          />
-          <CampoVidro
-            focado={foco === 'email'}
-            aoFocar={() => setFoco('email')}
-            aoPerderFoco={() => setFoco(null)}
-            icone={<EnvelopeIcon color={colors.mutedForeground} />}
-            value={email}
-            onChangeText={setEmail}
-            placeholder="Email"
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="email-address"
-          />
-          <CampoVidro
-            focado={foco === 'senha'}
-            aoFocar={() => setFoco('senha')}
-            aoPerderFoco={() => setFoco(null)}
-            icone={<LockIcon color={colors.mutedForeground} />}
-            value={senha}
-            onChangeText={setSenha}
-            placeholder="Senha"
-            secureTextEntry={!mostrarSenha}
-            botaoFinal={
-              <Pressable
-                onPress={() => setMostrarSenha((v) => !v)}
-                hitSlop={8}
-                accessibilityLabel={mostrarSenha ? 'Ocultar senha' : 'Mostrar senha'}
-              >
-                {mostrarSenha ? (
-                  <EyeOffIcon color={colors.mutedForeground} />
-                ) : (
-                  <EyeIcon color={colors.mutedForeground} />
-                )}
-              </Pressable>
-            }
-          />
-
-          {/* Live 5-rule checklist — UX only; the server-side hook is the
-              source of truth (plan §4, finding 007). */}
-          <View style={{ gap: spacing.xs, marginTop: spacing.xs }}>
-            {REGRAS_DE_SENHA.map(({ chave, rotulo }) => {
-              const ok = regras[chave];
-              return (
-                <View
-                  key={chave}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}
-                >
-                  <Text
-                    style={{
-                      color: ok ? colors.brand : colors.faintForeground,
-                      fontFamily: fonts.bodyBold,
-                      fontSize: typography.sm.fontSize,
-                    }}
-                  >
-                    {ok ? '✓' : '•'}
-                  </Text>
-                  <Text
-                    style={{
-                      color: ok ? colors.foreground : colors.mutedForeground,
-                      fontFamily: fonts.body,
-                      fontSize: typography.sm.fontSize,
-                    }}
-                  >
-                    {rotulo}
-                  </Text>
-                </View>
-              );
-            })}
-          </View>
-
-          <CampoVidro
-            focado={foco === 'confirma'}
-            aoFocar={() => setFoco('confirma')}
-            aoPerderFoco={() => setFoco(null)}
-            icone={<LockIcon color={colors.mutedForeground} />}
-            value={confirma}
-            onChangeText={setConfirma}
-            placeholder="Confirmar senha"
-            secureTextEntry={!mostrarSenha}
-          />
-
-          {erro ? (
-            <Text
-              style={{
-                color: colors.danger,
-                fontFamily: fonts.body,
-                fontSize: typography.sm.fontSize,
-                textAlign: 'center',
-              }}
-            >
-              {erro}
-            </Text>
-          ) : null}
-        </View>
-
-        <Pressable
-          onPress={cadastrar}
-          disabled={carregando}
-          style={({ pressed }) => [
-            {
-              alignItems: 'center',
-              backgroundColor: colors.brand,
-              borderRadius: radius.full,
-              justifyContent: 'center',
-              minHeight: 52,
-              marginTop: spacing.xl,
-              opacity: carregando ? 0.7 : pressed ? 0.85 : 1,
-            },
-          ]}
-        >
-          {carregando ? (
-            <ActivityIndicator color={colors.brandForeground} />
-          ) : (
-            <Text
-              style={{
-                color: colors.brandForeground,
-                fontFamily: fonts.bodyBold,
-                fontSize: typography.base.fontSize,
-              }}
-            >
-              Cadastrar
-            </Text>
-          )}
-        </Pressable>
-
-        {/* Same footer shape as login: muted question, brand-orange action. */}
-        <View
-          style={{
-            alignItems: 'center',
-            flexDirection: 'row',
-            justifyContent: 'center',
-            marginTop: spacing['2xl'],
-          }}
-        >
-          <Text
-            style={{
-              color: colors.mutedForeground,
-              fontFamily: fonts.body,
-              fontSize: typography.sm.fontSize,
-            }}
-          >
-            Já tem conta?{' '}
-          </Text>
-          <Pressable onPress={() => router.push('/(auth)/login')} hitSlop={8}>
-            <Text
-              style={{
-                color: colors.brand,
-                fontFamily: fonts.body,
-                fontSize: typography.sm.fontSize,
-              }}
-            >
-              Entrar
-            </Text>
-          </Pressable>
-        </View>
-    </ColunaAuth>
+    <ColunaCentral>
+      <Texto v="titulo" centro>Crie sua conta</Texto>
+      <Campo icone="usuario" value={nome} onChangeText={setNome} placeholder="Nome" autoComplete="name" maxLength={80} />
+      <Campo icone="envelope" value={email} onChangeText={setEmail} placeholder="E-mail" autoCapitalize="none" autoCorrect={false}
+        keyboardType="email-address" autoComplete="email" />
+      <Campo icone="cadeado" value={senha} onChangeText={setSenha} placeholder="Senha" secureTextEntry={!ver} autoComplete="new-password"
+        final={<OlhoDaSenha visivel={ver} alternar={() => setVer((v) => !v)} />} />
+      <RegrasDeSenha senha={senha} />
+      <Campo icone="cadeado" value={confirma} onChangeText={setConfirma} placeholder="Confirme a senha" secureTextEntry={!ver}
+        autoComplete="new-password" onSubmitEditing={() => void cadastrar()} />
+      {erro ? <Texto v="erro" centro role="alert">{erro}</Texto> : null}
+      <Botao rotulo="Cadastrar" carregando={carregando} onPress={() => void cadastrar()} />
+      <Texto v="suave" centro>
+        Já tem uma conta? <Texto v="link" onPress={() => router.replace('/login')}>Entrar</Texto>
+      </Texto>
+    </ColunaCentral>
   );
 }

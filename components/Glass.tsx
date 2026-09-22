@@ -1,290 +1,112 @@
 /**
- * The glass surface, with real blur.
+ * Glass surfaces.
  *
- * This is the old site's `.glass` blade: a blurred, tinted pane with a bright
- * top filament and a soft lift. React Native has no `backdrop-filter`, so the
- * pane is built per platform — and, importantly, both platforms blur THE SAME
- * THING: the scene, and only the scene.
- *
- *   native  `expo-blur` over the <BlurTargetView> that components/Cena wraps
- *           around the backdrop. Android's BlurView samples that target and
- *           paints it as its own background, so app content behind the pane
- *           is covered, never blurred.
- *
- *   web     a COPY of the scene, painted with `background-attachment: fixed`
- *           so it lines up with the real backdrop pixel for pixel, clipped to
- *           the pane. `backdrop-filter` used to do this job, and it sampled
- *           *everything* underneath — the answer text scrolling behind the
- *           composer and the chrome came through blurred, which native never
- *           did. A fixed-attachment background needs no measurement, survives
- *           scrolling and resizing for free, and blurring a smooth two-glow
- *           gradient is visually a no-op anyway (the old site's globals.css
- *           says as much: "borrar um gradiente liso com 44px quase não o
- *           muda").
- *
- * Structure matters for correctness:
- *
- *   outer  — carries the shadow, which must NOT be clipped
- *   clip   — `overflow: hidden` + the radius, so the blur and tint are
- *            rounded with the card, and the hairline edge sits on top
- *   blur   — the pane itself (BlurView on native, scene copy on web)
- *   tint   — the calibrated colour over the blur (`--glass-tint`)
- *
- * A shadow and `overflow: hidden` cannot live on the same view: the shadow
- * would be clipped away. Hence the two wrappers.
+ * `desfoque` panes (floating chrome, composer, drawer) blur EVERYTHING behind
+ * them, content included: CSS backdrop-filter on web, the native blur on iOS
+ * and, on Android, a hardware RenderEffect blur of the nearest <CamadaDeVidro>
+ * background (a BlurView can never sample a target it lives inside, so floating
+ * panes are rendered as siblings of what they blur). Other panes (bubbles,
+ * cards, pills inside scrolling content) are a cheap translucent tint.
  */
-import React, { type ReactNode } from 'react';
-import {
-  PixelRatio,
-  Platform,
-  Pressable,
-  StyleSheet,
-  View,
-  type ViewStyle,
-} from 'react-native';
-import { BlurView } from 'expo-blur';
+import { BlurTargetView, BlurView } from 'expo-blur';
+import React, { createContext, useContext, useRef, type ReactNode, type RefObject } from 'react';
+import { PixelRatio, Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { cenaComoCss } from './Backdrop';
-import { useAlvoDeVidro } from './Cena';
-import { useTheme, type Scheme, type SceneColors } from '../theme';
+import { Backdrop } from './Cena';
+import { useTheme, type GlassVariant } from '../theme';
 
-export type VarianteVidro = 'surface' | 'panel' | 'raised' | 'brand';
+const Alvo = createContext<RefObject<View | null> | null>(null);
+const INTENSIDADE: Record<GlassVariant, number> = { surface: 36, panel: 48, raised: 40, brand: 32 };
+const ANDROID_OVERLAY = 5;
 
 /**
- * Blur strength per variant (expo-blur's 0-100 scale), mapped from the old
- * CSS: `--glass-blur: 44px` for normal glass, `80px` for the drawer panel.
- * Android blurs on the render thread, so the values stay moderate — beyond
- * roughly 60 the cost climbs with no visible gain at these tints.
- *
- * The number also drives the TINT on both platforms (expo-blur derives its
- * overlay alpha from the intensity), so it is kept identical everywhere and
- * only the radius is corrected per platform — see `reducaoAndroid`.
+ * `fundo` (over the scene backdrop) is what the floating glass in `frente` blurs.
+ * The backdrop lives inside the target so the blurred copy is opaque and fully
+ * covers the sharp content underneath.
  */
-const INTENSIDADE: Record<VarianteVidro, number> = {
-  surface: 32,
-  panel: 48,
-  raised: 40,
-  brand: 28,
-};
-
-/**
- * Android divides the blur radius by this before handing it to RenderEffect,
- * and the radius it ends up with is in DEVICE pixels — while expo-blur's web
- * build asks for `intensity * 0.2` CSS pixels, which are density independent.
- * With the library default (4) the two never agreed on any screen; a fixed 2
- * only happened to agree at one density.
- *
- * Solving `intensity / reducao = intensity * 0.2 * density` for the reduction
- * gives `5 / density`, which lands the Android pane on the same blur the web
- * build gets, on every screen.
- */
-function reducaoAndroid(): number {
-  const densidade = PixelRatio.get() || 1;
-  return 5 / densidade;
-}
-
-/**
- * Tint painted over the blur. These are the translucent `--glass-tint`
- * values, NOT the flat `--glass-opaco` fallbacks: with a real blur behind
- * them the surface has to stay see-through or the blur is wasted.
- */
-const TINTA: Record<Scheme, Record<VarianteVidro, string>> = {
-  light: {
-    surface: 'rgba(238,239,255,0.25)',
-    panel: 'rgba(255,255,255,0.35)',
-    raised: 'rgba(255,255,255,0.45)',
-    brand: 'rgba(238,239,255,0.18)',
-  },
-  dark: {
-    surface: 'rgba(13,25,131,0.30)',
-    panel: 'rgba(8,17,101,0.42)',
-    raised: 'rgba(3,29,187,0.34)',
-    brand: 'rgba(13,25,131,0.22)',
-  },
-};
-
-/**
- * expo-blur's own veil, reproduced so the web pane keeps the exact tone it
- * had while it was a BlurView: `getBackgroundColor(intensity, tint)` on web
- * and `TintStyle.toBlurEffect` on Android are the same two formulas.
- */
-function veuDoVidro(scheme: Scheme, intensidade: number): string {
-  const opacidade = Math.min(intensidade, 100) / 100;
-  return scheme === 'dark'
-    ? `rgba(25,25,25,${(opacidade * 0.78).toFixed(3)})`
-    : `rgba(249,249,249,${(opacidade * 0.78).toFixed(3)})`;
-}
-
-/**
- * The web pane: a fixed-attachment copy of the scene under expo-blur's veil.
- *
- * Written as a raw `div` on purpose — `backgroundImage` /
- * `backgroundAttachment` are not part of the React Native style vocabulary,
- * and react-native-web drops what it does not know. The element is inside a
- * `overflow: hidden` clip layer, which is what turns the window-sized
- * background into the pane's own piece of the scene.
- */
-function CenaFixa({ scene, veu }: { scene: SceneColors; veu: string }) {
-  return React.createElement(
-    'div',
-    {
-      style: {
-        position: 'absolute',
-        inset: 0,
-        backgroundImage: cenaComoCss(scene),
-        backgroundAttachment: 'fixed, fixed, fixed',
-        backgroundRepeat: 'no-repeat',
-        backgroundSize: '100vw 100vh',
-        backgroundPosition: '0 0',
-      },
-    },
-    React.createElement('div', {
-      style: { position: 'absolute', inset: 0, backgroundColor: veu },
-    }),
+export function CamadaDeVidro({ fundo, frente }: { fundo: ReactNode; frente: ReactNode }) {
+  const alvo = useRef<View | null>(null);
+  const conteudo = <><Backdrop />{fundo}</>;
+  return (
+    <View style={styles.flex}>
+      {Platform.OS === 'android' ? (
+        <BlurTargetView ref={alvo} style={styles.flex}>{conteudo}</BlurTargetView>
+      ) : (
+        <View style={styles.flex}>{conteudo}</View>
+      )}
+      <Alvo.Provider value={alvo}>{frente}</Alvo.Provider>
+    </View>
   );
+}
+
+function Desfoque({ intensidade }: { intensidade: number }) {
+  const { scheme } = useTheme();
+  const alvo = useContext(Alvo);
+  if (Platform.OS === 'web') {
+    const filtro = `blur(${Math.round(intensidade * 0.5)}px) saturate(150%)`;
+    return React.createElement('div', {
+      style: { position: 'absolute', inset: 0, backdropFilter: filtro, WebkitBackdropFilter: filtro },
+    });
+  }
+  if (Platform.OS === 'android') {
+    if (!alvo) return null;
+    // expo-blur paints a white overlay proportional to `intensity` on top of our tint, hiding the
+    // blurred content. Keep it ~2% and take the radius (intensity / reduction, in device px) from
+    // the reduction factor instead: the web's intensity * 0.5 dp, with our tint as the only tint.
+    return (
+      <BlurView
+        blurTarget={alvo}
+        blurMethod="dimezisBlurViewSdk31Plus"
+        intensity={ANDROID_OVERLAY}
+        blurReductionFactor={ANDROID_OVERLAY / (intensidade * 0.5 * (PixelRatio.get() || 1))}
+        tint="default"
+        style={StyleSheet.absoluteFill}
+      />
+    );
+  }
+  return <BlurView intensity={intensidade} tint={scheme === 'dark' ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />;
 }
 
 export type GlassProps = {
   children?: ReactNode;
-  variante?: VarianteVidro;
-  /** Corner radius; applied to the clipping layer so the blur follows it. */
+  variante?: GlassVariant;
+  desfoque?: boolean;
   radius?: number;
-  /** Drop the hairline edge (for surfaces that draw their own, e.g. focus). */
   semBorda?: boolean;
-  /** Drop the lift (nested glass should not stack shadows). */
   semSombra?: boolean;
-  /** Layout/spacing for the card; borderRadius here is honoured too. */
-  style?: ViewStyle | ViewStyle[];
-  /** Extra border styling merged over the hairline (brand/focus edges). */
+  /** Extra edge styling over the hairline (focus/brand rings). */
   borda?: ViewStyle;
-  pointerEvents?: 'auto' | 'none' | 'box-none' | 'box-only';
-  /**
-   * Makes the whole pane tappable. Many glass surfaces are buttons (pills,
-   * list rows, chips); rendering the Pressable as the outer view keeps the
-   * hit area identical to the card instead of nesting one inside it.
-   */
+  style?: StyleProp<ViewStyle>;
   onPress?: () => void;
   onLongPress?: () => void;
   disabled?: boolean;
   accessibilityLabel?: string;
-  /** Analytics tests select tiles by testID. */
   testID?: string;
+  pointerEvents?: 'auto' | 'none' | 'box-none' | 'box-only';
 };
 
 export default function Glass({
-  children,
-  variante = 'surface',
-  radius,
-  semBorda = false,
-  semSombra = false,
-  style,
-  borda,
-  pointerEvents,
-  onPress,
-  onLongPress,
-  disabled,
-  accessibilityLabel,
-  testID,
+  children, variante = 'surface', desfoque = false, radius, semBorda, semSombra, borda, style,
+  onPress, onLongPress, disabled, accessibilityLabel, testID, pointerEvents,
 }: GlassProps) {
-  const { scheme, glass, scene } = useTheme();
-  // Android blurs only when handed a target to sample (see components/Cena).
-  const alvo = useAlvoDeVidro();
-
+  const { glass } = useTheme();
   const plano = StyleSheet.flatten(style) ?? {};
   const raio = radius ?? (plano.borderRadius as number | undefined) ?? 0;
+  // Android elevation on a translucent view paints a hard box: the lift is iOS/web only.
+  const sombra = semSombra || Platform.OS === 'android' ? null : glass.shadow;
+  // zIndex 0 makes the pane its own stacking context so the layers (zIndex -1) sit behind every
+  // child on web too, including static ones like <svg> and <input>.
+  const base = [plano, sombra, { borderRadius: raio, zIndex: plano.zIndex ?? 0 }];
 
-  // The outer view keeps only what must not be clipped (the shadow) plus the
-  // box metrics; padding and content styling belong on the inner content.
-  const { ...resto } = plano;
-  /**
-   * Android's `elevation` needs an opaque background to cast a shadow; on a
-   * transparent pane it instead paints a hard rectangle behind the rounded
-   * card — the stray "box" that showed through some surfaces. The blur and
-   * the hairline already carry the depth there, so elevation is dropped and
-   * only iOS/web keep the soft lift.
-   */
-  const sombra: ViewStyle | null = semSombra
-    ? null
-    : Platform.OS === 'android'
-      ? null
-      : (glass.shadow as ViewStyle);
-
-  const base: ViewStyle[] = [
-    resto,
-    ...(sombra ? [sombra] : []),
-    { borderRadius: raio, backgroundColor: 'transparent' },
-  ];
-
-  const conteudo = (
+  const camadas = (
     <>
-      {/* `pointerEvents="none"` is load-bearing, not tidiness: this layer is
-          absolutely positioned and the children are in normal flow, and CSS
-          paints positioned boxes ABOVE static ones whatever the DOM order.
-          Without it the blur pane sits over the content on web and swallows
-          every click — inputs never took focus from the mouse. */}
-      <View
-        pointerEvents="none"
-        style={[
-          StyleSheet.absoluteFill,
-          { borderRadius: raio, overflow: 'hidden' },
-        ]}
-      >
-        {Platform.OS === 'web' ? (
-          <CenaFixa scene={scene} veu={veuDoVidro(scheme, INTENSIDADE[variante])} />
-        ) : (
-          <BlurView
-            blurTarget={alvo ?? undefined}
-            intensity={INTENSIDADE[variante]}
-            tint={scheme === 'dark' ? 'dark' : 'light'}
-            // Android does not blur at all by default. `dimezisBlurViewSdk31Plus`
-            // is the hardware path (RenderEffect, API 31+), which is both the
-            // cheapest real blur on modern devices and free of the software
-            // method's banding artefacts. (`experimentalBlurMethod` is the old
-            // name for this prop and now logs a deprecation warning per pane.)
-            blurMethod={
-              Platform.OS === 'android' ? 'dimezisBlurViewSdk31Plus' : undefined
-            }
-            blurReductionFactor={
-              Platform.OS === 'android' ? reducaoAndroid() : undefined
-            }
-            style={StyleSheet.absoluteFill}
-          />
-        )}
-        <View
-          style={[
-            StyleSheet.absoluteFill,
-            { backgroundColor: TINTA[scheme][variante] },
-          ]}
-        />
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.atras, { borderRadius: raio, overflow: 'hidden' }]}>
+        {desfoque ? <Desfoque intensidade={INTENSIDADE[variante]} /> : null}
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.tint[variante] }]} />
       </View>
-
-      {/* The edge sits above the blur, as a non-clipping overlay so it stays
-          crisp at the exact radius. */}
       {semBorda ? null : (
-        <View
-          pointerEvents="none"
-          style={[
-            StyleSheet.absoluteFill,
-            { borderRadius: raio },
-            glass.hairline,
-            borda,
-          ]}
-        />
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.atras, { borderRadius: raio }, glass.hairline, borda]} />
       )}
-
-      {/* The children stay DIRECT children on purpose: many callers make the
-          pane itself the flex container (the composer pill is a row of
-          button / input / button), and an extra wrapper here would collapse
-          that into a single column.
-
-          On web they also have to paint ABOVE the two layers above, which
-          are absolutely positioned. react-native-web gives View and Text
-          `position: relative`, so those already do. A bare TextInput does
-          NOT — it is a plain DOM input with no `position`, so it is a
-          static box and lands UNDER the pane. Any TextInput placed directly
-          inside a Glass therefore carries `position: 'relative'` of its own
-          (components/Composer, components/CampoVidro); on native that is
-          the default and the line is inert. */}
       {children}
     </>
   );
@@ -295,19 +117,20 @@ export default function Glass({
         onPress={onPress}
         onLongPress={onLongPress}
         disabled={disabled}
-        accessibilityLabel={accessibilityLabel}
         accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
         testID={testID}
-        style={({ pressed }) => [...base, pressed ? { opacity: 0.85 } : null]}
+        style={({ pressed }) => [...base, pressed && { opacity: 0.85 }]}
       >
-        {conteudo}
+        {camadas}
       </Pressable>
     );
   }
-
   return (
-    <View pointerEvents={pointerEvents} style={base} testID={testID}>
-      {conteudo}
+    <View style={base} testID={testID} pointerEvents={pointerEvents} accessibilityLabel={accessibilityLabel}>
+      {camadas}
     </View>
   );
 }
+
+const styles = StyleSheet.create({ flex: { flex: 1 }, atras: { zIndex: -1 } });

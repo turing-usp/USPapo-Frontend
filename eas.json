@@ -1,22 +1,25 @@
 {
   "cli": {
-    "version": ">= 12.0.0"
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
   },
   "build": {
-    "development": {
-      "developmentClient": true,
-      "distribution": "internal",
-      "autoIncrement": true,
-      "channel": "development"
-    },
     "preview": {
       "distribution": "internal",
-      "autoIncrement": true,
-      "channel": "preview"
+      "channel": "preview",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_UPDATES_CHANNEL": "preview"
+      }
     },
     "production": {
       "autoIncrement": true,
       "channel": "production"
     }
+  },
+  "submit": {
+    "production": {}
   }
 }

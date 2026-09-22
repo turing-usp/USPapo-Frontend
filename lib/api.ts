@@ -1,487 +1,131 @@
 /**
- * Backend chat client — `POST /api/chat` → SSE event stream.
+ * Backend client: `POST /api/chat` as a Server-Sent Events stream, plus the admin summary.
  *
- * The event union mirrors the backend verbatim (USPapo-Backend,
- * `app/engine/chat.py` + `app/engine/sse.py` — read it for the authoritative
- * contract):
- *
- *     provedor  { name, index }
- *     pensando  { delta }
- *     tool      { state: "start" | "end", index, name, args?, results? }
- *                (index = -1 marks the backend pre-consultation; the wire
- *                key is `results` — the old site's `resultados` is gone)
- *     text      { delta }
- *     sources   { urls }            (sorted; success only)
- *     error     { message }
- *     end       {}
- *
- * Wire format (stable): the first frame is the `: ok` comment ping, then one
- * `data: {json}\n\n` per event (JSON is written with `ensure_ascii=False`,
- * so accented pt-BR crosses the wire as raw UTF-8 — decode with ONE
- * streaming TextDecoder across chunks, never one decode per chunk).
- *
- * Invariants (backend): `sources` + `end` only on success; `error` + `end`
- * on failure.
- *
- * Error model:
- * - no token → throws `Error('Sua sessão expirou')` before any network call
- *   (fast-fail back to login; the message is exactly what
- *   lib/auth.mapAuthError passes through untouched);
- * - non-2xx → the JSON body `{erro, retry_after?}` is parsed (the backend
- *   key is `erro`; `error` is also accepted, and the `retry-after` header is
- *   the fallback) and a `ChatApiError { status, retryAfter }` is thrown.
- *   A 401 maps to the same 'Sua sessão expirou' message;
- * - network failure / abort propagate as-is (TypeError / AbortError) so
- *   mapAuthError can route them to the connection message.
+ * Wire: a `: ok` ping, then one `data: {json}` frame per event (see the backend's
+ * app/engine/chat.py for the contract). The production web build calls the same-origin
+ * `/api` (vercel.json rewrites it; the CSP only allows `connect-src 'self'`); native and
+ * the dev server call EXPO_PUBLIC_BACKEND_URL.
+ * `expo/fetch` is used because React Native's own fetch has no streaming body.
  */
+import { fetch } from 'expo/fetch';
 import { Platform } from 'react-native';
-
-import { fetchStream } from './fetchStream';
 
 declare const process: { env: Record<string, string | undefined> };
 
-// ─────────────────────────────────────────────
-// Event types (the ChatEvent union)
-// ─────────────────────────────────────────────
-
-export type ProvedorEvent = { type: 'provedor'; name: string; index: number };
-
-export type PensandoEvent = { type: 'pensando'; delta: string };
-
-export type ToolEvent = {
-  type: 'tool';
-  state: 'start' | 'end';
-  /** Tool-call index; -1 marks the backend pre-consultation. */
-  index: number;
-  name: string;
-  args?: Record<string, unknown>;
-  /** Number of source URLs the tool returned (wire key: `results`). */
-  results?: number;
-};
-
-export type TextEvent = { type: 'text'; delta: string };
-
-export type SourcesEvent = { type: 'sources'; urls: string[] };
-
-export type ErrorEvent = { type: 'error'; message: string };
-
-export type EndEvent = { type: 'end' };
-
-/** One event of the /api/chat SSE stream (the stable backend contract). */
 export type ChatEvent =
-  | ProvedorEvent
-  | PensandoEvent
-  | ToolEvent
-  | TextEvent
-  | SourcesEvent
-  | ErrorEvent
-  | EndEvent;
+  | { type: 'provedor'; name: string; index: number }
+  | { type: 'pensando' }
+  | { type: 'tool'; state: 'start' | 'end'; index: number; name: string; args?: Record<string, unknown>; results?: number }
+  | { type: 'text'; delta: string }
+  | { type: 'sources'; urls: string[] }
+  | { type: 'error'; message: string }
+  | { type: 'end' };
 
-// ─────────────────────────────────────────────
-// Tool status labels (pt-BR) — ported verbatim from the old site
-// ─────────────────────────────────────────────
-
-/**
- * One label per tool, ported from the old site's StatusBlock verbatim — and
- * for ALL NINE tools it registers. The port had five entries, three of which
- * were invented wording and one (`jupiter`) a tool that does not exist; the
- * four real tools it left out showed their raw function name to the student
- * ("consultar_avaliacoes_professor" in a status pill).
- */
-export const TOOL_LABELS: Record<string, string> = {
-  buscar_documentos: 'Pesquisando nos documentos',
-  consultar_bandejao: 'Consultando cardápio',
-  consultar_grade_curricular: 'Consultando grade curricular',
-  consultar_turmas: 'Consultando turmas',
-  buscar_disciplina: 'Buscando disciplina',
-  consultar_avaliacoes_professor: 'Buscando avaliações do professor',
-  consultar_sala: 'Procurando a sala',
-  consultar_circulares: 'Consultando a SPTrans',
-  consultar_wikipedia: 'Consultando a Wikipédia',
+/** pt-BR label and what the tool consults, per backend tool name. */
+export const FERRAMENTAS: Record<string, [string, string]> = {
+  buscar_documentos: ['Pesquisando nos documentos', 'Busca nos documentos oficiais da USP indexados pelo USPapo.'],
+  consultar_bandejao: ['Consultando cardápio', 'Lê o cardápio publicado pelo RUCard.'],
+  consultar_grade_curricular: ['Consultando grade curricular', 'Lê a grade curricular do curso no JupiterWeb.'],
+  consultar_turmas: ['Consultando turmas', 'Lê as turmas e os horários da disciplina no JupiterWeb.'],
+  buscar_disciplina: ['Buscando disciplina', 'Lê a ementa, os créditos e os requisitos da disciplina no JupiterWeb.'],
+  consultar_avaliacoes_professor: ['Buscando avaliações do professor', 'Lê as avaliações de professores publicadas no USP Avalia.'],
+  consultar_sala: ['Procurando a sala', 'Localiza a sala e o prédio pelo USPolis.'],
+  consultar_circulares: ['Consultando a SPTrans', 'Consulta o GTFS oficial e o Olho Vivo da SPTrans para itinerários, paradas e horários.'],
+  consultar_wikipedia: ['Consultando a Wikipédia', 'Lê o resumo do verbete na Wikipédia.'],
 };
 
-/**
- * One SENTENCE per tool: what it actually consulted, in the student's words.
- *
- * The status pill used to carry the label alone, which says what the backend
- * is doing but not what it is doing it WITH — "Procurando a sala" gives no
- * hint that the answer comes from USPolis, and a student who gets the wrong
- * room has no idea which source to double-check. Every tool the production
- * registry can emit has an entry here (the nine of
- * `USPapo-Backend/app/tools/real.py` plus the offline stub's `calculadora`),
- * so no pill is ever left without one.
- */
-export const TOOL_DESCRICOES: Record<string, string> = {
-  buscar_documentos:
-    'Busca nos documentos oficiais da USP indexados pelo USPapo.',
-  consultar_bandejao: 'Lê o cardápio publicado pelo RUCard.',
-  consultar_grade_curricular:
-    'Lê a grade curricular do curso no JupiterWeb.',
-  consultar_turmas: 'Lê as turmas e os horários da disciplina no JupiterWeb.',
-  buscar_disciplina:
-    'Lê a ementa, os créditos e os requisitos da disciplina no JupiterWeb.',
-  consultar_avaliacoes_professor:
-    'Lê as avaliações de professores publicadas no USP Avalia.',
-  consultar_sala: 'Localiza a sala e o prédio pelo USPolis.',
-  consultar_circulares:
-    'Consulta o GTFS oficial e o Olho Vivo da SPTrans para itinerários, paradas e horários.',
-  consultar_wikipedia: 'Lê o resumo do verbete na Wikipédia.',
-  calculadora: 'Faz a conta pedida (ferramenta de testes offline).',
-};
-
-/** The generic label for a tool this build does not know by name. */
-const ROTULO_DESCONHECIDO = 'Usando ferramenta';
-/** The generic description for a tool this build does not know by name. */
-const DESCRICAO_DESCONHECIDA = 'Consultando uma fonte oficial da USP.';
-
-/**
- * Friendly pt-BR label for the status pill. An unknown tool gets the old
- * site's generic wording rather than its function name — a name like
- * `consultar_avaliacoes_professor` on screen is a leak, not a label.
- */
-export function labelDaFerramenta(name: string): string {
-  return TOOL_LABELS[name] ?? ROTULO_DESCONHECIDO;
+export function ferramenta(name: string): { rotulo: string; descricao: string } {
+  const [rotulo, descricao] = FERRAMENTAS[name] ?? ['Usando ferramenta', 'Consultando uma fonte oficial da USP.'];
+  return { rotulo, descricao };
 }
 
-/**
- * What that tool consulted, as one pt-BR sentence. Never empty: a tool this
- * build has never heard of still gets an honest generic line instead of a
- * blank second row in the pill.
- */
-export function descricaoDaFerramenta(name: string): string {
-  return TOOL_DESCRICOES[name] ?? DESCRICAO_DESCONHECIDA;
-}
-
-// ─────────────────────────────────────────────
-// Backend URL
-// ─────────────────────────────────────────────
-
-/**
- * The backend base URL. Trailing slashes are stripped so
- * `backendUrl() + '/api/chat'` never double-slashes.
- *
- * Web always resolves to the empty string — a same-origin, host-relative
- * `/api/...`. That is not a preference but a requirement: the deployment
- * serves `Content-Security-Policy: connect-src 'self' <supabase>`, so any
- * absolute backend origin is blocked by the browser before the request
- * leaves, which surfaces to the user as "check your connection". vercel.json
- * rewrites `/api/*` to the Render service, so same-origin reaches the backend
- * from whatever host the app is served on — the Vercel URL today, a custom
- * domain later — with no rebuild.
- *
- * Native has no CSP and no proxy, so it uses EXPO_PUBLIC_BACKEND_URL (the
- * Render service in production, a LAN address in development).
- */
 export function backendUrl(): string {
-  if (Platform.OS === 'web') return '';
-  const configurado = process.env.EXPO_PUBLIC_BACKEND_URL;
-  const base = configurado && configurado.trim() !== '' ? configurado : 'http://127.0.0.1:8000';
-  return base.replace(/\/+$/, '');
+  if (Platform.OS === 'web' && !__DEV__) return '';
+  return (process.env.EXPO_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '');
 }
 
-// ─────────────────────────────────────────────
-// SSE parsing (incremental)
-// ─────────────────────────────────────────────
+export const SESSAO_EXPIRADA = 'Sua sessão expirou';
 
-const EVENT_TYPES: readonly string[] = [
-  'provedor',
-  'pensando',
-  'tool',
-  'text',
-  'sources',
-  'error',
-  'end',
-];
-
-/**
- * Type guard for the wire JSON: a frame is a ChatEvent only when it is an
- * object with a known `type` and the fields of that shape. Anything else
- * (a corrupt frame, a future event type) is dropped instead of poisoning
- * the stream.
- */
-export function isChatEvent(value: unknown): value is ChatEvent {
-  if (typeof value !== 'object' || value === null) return false;
-  const v = value as Record<string, unknown>;
-  const tipo = v.type;
-  if (typeof tipo !== 'string' || !EVENT_TYPES.includes(tipo)) return false;
-  switch (tipo) {
-    case 'provedor':
-      return typeof v.name === 'string' && typeof v.index === 'number';
-    case 'pensando':
-    case 'text':
-      return typeof v.delta === 'string';
-    case 'tool':
-      return (
-        (v.state === 'start' || v.state === 'end') &&
-        typeof v.index === 'number' &&
-        typeof v.name === 'string' &&
-        (v.args === undefined || (typeof v.args === 'object' && v.args !== null)) &&
-        (v.results === undefined || typeof v.results === 'number')
-      );
-    case 'sources':
-      return Array.isArray(v.urls) && v.urls.every((u) => typeof u === 'string');
-    case 'error':
-      return typeof v.message === 'string';
-    case 'end':
-      return true;
-    default:
-      return false;
-  }
-}
-
-function parseFrame(quadro: string): ChatEvent[] {
-  const eventos: ChatEvent[] = [];
-  for (const linha of quadro.split('\n')) {
-    // Comments (the `: ok` connection ping, heartbeats): ignored by design.
-    if (linha.startsWith(':')) continue;
-    // Only `data:` lines carry events in this protocol (`event:`, `id:` and
-    // `retry:` are unused by the backend).
-    if (!linha.startsWith('data:')) continue;
-    const bruto = linha.slice('data:'.length).trim();
-    if (bruto === '') continue;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(bruto);
-    } catch {
-      // Malformed frame: lose the event, keep the stream alive (same
-      // decision as the old site).
-      continue;
-    }
-    if (isChatEvent(parsed)) eventos.push(parsed);
-  }
-  return eventos;
-}
-
-/**
- * Parses every COMPLETE SSE frame in `text` (a frame ends at a blank line,
- * i.e. the text must end with `\n\n` for the last piece to count). The
- * trailing incomplete piece, if any, is ignored by design: the caller keeps
- * it and feeds it back together with the next chunk — that is exactly what
- * `createSSEFeed` automates. `data:` lines are parsed as JSON, `:` comment
- * lines are ignored, and malformed frames are dropped.
- */
-export function parseSSEBlocks(text: string): ChatEvent[] {
-  const normalizado = text.replace(/\r\n/g, '\n');
-  if (normalizado === '') return [];
-  const quadros = normalizado.split('\n\n');
-  // Without a terminating blank line the last piece is a half frame.
-  const completos = normalizado.endsWith('\n\n') ? quadros : quadros.slice(0, -1);
-  const eventos: ChatEvent[] = [];
-  for (const quadro of completos) eventos.push(...parseFrame(quadro));
-  return eventos;
-}
-
-/**
- * Incremental SSE consumer: feed it decoded chunks in arrival order; it
- * yields only the frames that have completed and re-feeds the pending tail
- * on the next `push`. `flush` parses whatever is left at end of stream (the
- * backend always terminates the last frame with a blank line, so this is a
- * safety net, not a normal path).
- */
-export type SSEFeed = {
-  push(chunk: string): ChatEvent[];
-  flush(): ChatEvent[];
-};
-
-export function createSSEFeed(): SSEFeed {
-  let resto = '';
-  return {
-    push(chunk: string): ChatEvent[] {
-      resto += chunk.replace(/\r\n/g, '\n');
-      const corte = resto.lastIndexOf('\n\n');
-      if (corte === -1) return []; // nothing complete yet
-      const prontos = resto.slice(0, corte + 2);
-      resto = resto.slice(corte + 2);
-      return parseSSEBlocks(prontos);
-    },
-    flush(): ChatEvent[] {
-      const fim = resto;
-      resto = '';
-      if (fim === '') return [];
-      return parseSSEBlocks(fim + '\n\n');
-    },
-  };
-}
-
-// ─────────────────────────────────────────────
-// Errors
-// ─────────────────────────────────────────────
-
-/** A /api/chat call that answered with a non-2xx status. */
-export class ChatApiError extends Error {
-  /** The HTTP status of the failing response (400/401/403/409/413/429/…). */
-  readonly status: number;
-  /** Seconds to wait before retrying (429); null when the server didn't say. */
-  readonly retryAfter: number | null;
-
-  constructor(message: string, status: number, retryAfter: number | null) {
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number, readonly retryAfter: number | null) {
     super(message);
-    this.name = 'ChatApiError';
-    this.status = status;
-    this.retryAfter = retryAfter;
+    this.name = 'ApiError';
   }
 }
 
-const SESSAO_EXPIRADA = 'Sua sessão expirou';
-const ERRO_PADRAO = 'Não consegui falar com o USPapo agora. Tente de novo em instantes.';
-
-function lerRetryAfter(corpo: Record<string, unknown>, res: Response): number | null {
-  const doCorpo = corpo.retry_after;
-  if (typeof doCorpo === 'number' && Number.isFinite(doCorpo)) return doCorpo;
-  if (typeof doCorpo === 'string' && /^\d+$/.test(doCorpo.trim())) {
-    return Number.parseInt(doCorpo.trim(), 10);
-  }
-  // Pentest 004/020: the wait travels in the body AND in the header.
-  const doHeader = res.headers?.get?.('retry-after');
-  if (typeof doHeader === 'string' && /^\d+$/.test(doHeader.trim())) {
-    return Number.parseInt(doHeader.trim(), 10);
-  }
-  return null;
+async function erroDaResposta(res: Response): Promise<ApiError> {
+  const corpo = (await res.json().catch(() => null)) as { erro?: unknown; retry_after?: unknown } | null;
+  const header = Number(res.headers.get('retry-after'));
+  const espera = typeof corpo?.retry_after === 'number' ? corpo.retry_after : Number.isFinite(header) && header > 0 ? header : null;
+  const mensagem = res.status === 401 ? SESSAO_EXPIRADA
+    : typeof corpo?.erro === 'string' && corpo.erro ? corpo.erro
+      : 'Não consegui falar com o USPapo agora. Tente de novo em instantes.';
+  return new ApiError(mensagem, res.status, espera);
 }
 
-async function erroDaResposta(res: Response): Promise<ChatApiError> {
-  let corpo: unknown = null;
-  try {
-    corpo = await res.json();
-  } catch {
-    corpo = null; // non-JSON body (proxy hiccup): fall back to the generic message
-  }
-  const obj = (typeof corpo === 'object' && corpo !== null ? corpo : {}) as Record<
-    string,
-    unknown
-  >;
-  const bruto =
-    typeof obj.erro === 'string' && obj.erro !== ''
-      ? obj.erro
-      : typeof obj.error === 'string' && obj.error !== ''
-        ? obj.error
-        : null;
-  // 401 gets the exact message lib/auth.mapAuthError passes through, so the
-  // session-expiry fast-fail works no matter what the backend text is.
-  const mensagem = res.status === 401 ? SESSAO_EXPIRADA : bruto ?? ERRO_PADRAO;
-  return new ChatApiError(mensagem, res.status, lerRetryAfter(obj, res));
-}
+const TIPOS = new Set(['provedor', 'pensando', 'tool', 'text', 'sources', 'error', 'end']);
 
-// ─────────────────────────────────────────────
-// streamChat
-// ─────────────────────────────────────────────
+/** The complete frames in `buffer`; returns [events, leftover]. Malformed or unknown frames are dropped. */
+export function lerFrames(buffer: string): [ChatEvent[], string] {
+  const normalizado = buffer.replace(/\r\n/g, '\n');
+  const corte = normalizado.lastIndexOf('\n\n');
+  if (corte < 0) return [[], normalizado];
+  const eventos: ChatEvent[] = [];
+  for (const linha of normalizado.slice(0, corte).split('\n')) {
+    if (!linha.startsWith('data:')) continue;
+    try {
+      const evento = JSON.parse(linha.slice(5).trim());
+      if (evento && TIPOS.has(evento.type)) eventos.push(evento as ChatEvent);
+    } catch {
+      // a corrupt frame costs one event, not the stream
+    }
+  }
+  return [eventos, normalizado.slice(corte + 2)];
+}
 
 export type ChatRequest = {
-  /** The question (pt-BR, as the student typed it). */
   question: string;
-  /**
-   * Previous turns as context, oldest first — the wire pairs
-   * `{pergunta, resposta}` (pending turns with resposta null are skipped;
-   * the backend prunes by its own token budget anyway).
-   */
   history?: { pergunta: string; resposta: string }[];
-  /** Conversation uuid; travels to the backend as `session_id`. */
   sessionId?: string;
-  /** The Supabase access token (Authorization: Bearer). Required. */
   token: string;
-  /** Aborts the in-flight stream (the chat Stop button). */
   signal?: AbortSignal;
 };
 
-/**
- * Sends the question to `POST /api/chat` and yields the SSE events as they
- * arrive: `provedor` → `pensando` → `tool` start/end → `text` deltas →
- * `sources` → `end` (success) or `error` → `end` (failure).
- *
- * - Throws `ChatApiError` (status + retryAfter) on non-2xx;
- * - Throws `Error('Sua sessão expirou')` when there is no token (no
- *   wasted rate-limit slot) or the server answers 401;
- * - Propagates network failures / aborts as-is.
- */
-export async function* streamChat(request: ChatRequest): AsyncGenerator<ChatEvent, void, unknown> {
-  if (request.token === '') {
-    throw new Error(SESSAO_EXPIRADA);
-  }
-
-  const corpo = {
-    pergunta: request.question,
-    // SSE explicitly: the legacy JSON mode exists for parity, but the app
-    // always streams.
-    stream: true,
-    ...(request.history !== undefined && request.history.length > 0
-      ? { historico: request.history }
-      : {}),
-    ...(request.sessionId ? { session_id: request.sessionId } : {}),
-  };
-
-  let res: Response;
+/** Streams the chat events. Throws ApiError on non-2xx and propagates network errors/aborts. */
+export async function* streamChat(req: ChatRequest): AsyncGenerator<ChatEvent> {
+  if (!req.token) throw new ApiError(SESSAO_EXPIRADA, 401, null);
+  const res = await fetch(`${backendUrl()}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${req.token}` },
+    body: JSON.stringify({
+      pergunta: req.question,
+      ...(req.history?.length ? { historico: req.history } : {}),
+      ...(req.sessionId ? { session_id: req.sessionId } : {}),
+    }),
+    signal: req.signal,
+  });
+  if (!res.ok) throw await erroDaResposta(res as unknown as Response);
+  const leitor = res.body?.getReader();
+  if (!leitor) throw new ApiError('A resposta chegou vazia.', 502, null);
+  const decodificador = new TextDecoder(); // one streaming decoder: accents may split across chunks
+  let resto = '';
   try {
-    // `fetchStream` is the platform fetch on web and `expo/fetch` on native
-    // (see lib/fetchStream): React Native's own fetch has no
-    // `Response.body`, so without it the deltas below never arrive
-    // incrementally on a phone.
-    res = await fetchStream(`${backendUrl()}/api/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${request.token}`,
-      },
-      body: JSON.stringify(corpo),
-      signal: request.signal,
-    });
-  } catch (err) {
-    // Network down or the user pressed Stop before the headers arrived:
-    // let the caller (useChat / mapAuthError) decide what to show.
-    throw err;
-  }
-
-  if (!res.ok) {
-    throw await erroDaResposta(res);
-  }
-
-  const tipoConteudo = res.headers?.get?.('content-type') ?? '';
-  if (!tipoConteudo.includes('text/event-stream')) {
-    // Non-stream fallback: legacy JSON {resposta, fontes}. Yields the same
-    // event sequence the UI already knows.
-    const dados = (await res.json().catch(() => null)) as {
-      resposta?: string;
-      fontes?: string[];
-    } | null;
-    if (dados && typeof dados.resposta === 'string' && dados.resposta !== '') {
-      yield { type: 'text', delta: dados.resposta };
-    }
-    yield { type: 'sources', urls: Array.isArray(dados?.fontes) ? dados.fontes : [] };
-    yield { type: 'end' };
-    return;
-  }
-
-  const body = res.body;
-  if (!body) {
-    // No ReadableStream on this runtime (an old RN fetch, a proxy that
-    // buffers): read the whole payload and replay it through the same
-    // parser. The answer still arrives — in one piece instead of in deltas
-    // — which beats failing the request outright.
-    const texto = await res.text().catch(() => '');
-    const feedInteiro = createSSEFeed();
-    for (const evento of feedInteiro.push(texto)) yield evento;
-    for (const evento of feedInteiro.flush()) yield evento;
-    return;
-  }
-
-  const leitor = body.getReader();
-  const decodificador = new TextDecoder();
-  const feed = createSSEFeed();
-  try {
-    while (true) {
+    for (;;) {
       const { done, value } = await leitor.read();
       if (done) break;
-      // ONE streaming decoder: an accented character split across two TCP
-      // chunks must NOT become U+FFFD.
-      for (const evento of feed.push(decodificador.decode(value, { stream: true }))) {
-        yield evento;
-      }
+      const [eventos, sobra] = lerFrames(resto + decodificador.decode(value, { stream: true }));
+      resto = sobra;
+      yield* eventos;
     }
-    for (const evento of feed.flush()) yield evento;
+    yield* lerFrames(resto + '\n\n')[0];
   } finally {
-    try {
-      leitor.releaseLock();
-    } catch {
-      // The reader is already released (abort) — nothing to do.
-    }
+    leitor.releaseLock?.();
   }
+}
+
+/** GET an admin JSON endpoint with the user's session token. */
+export async function getAdmin<T>(caminho: string, token: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(`${backendUrl()}${caminho}`, { headers: { Authorization: `Bearer ${token}` }, signal });
+  if (!res.ok) throw await erroDaResposta(res as unknown as Response);
+  return (await res.json()) as T;
 }
