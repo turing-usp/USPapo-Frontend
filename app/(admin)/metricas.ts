@@ -14,14 +14,21 @@
  *         temas_frequentes  // [{tema, contagem}]
  *     } }
  *
- * Admin header contract (decision, P10): the Cloudflare worker
- * (USPapo-Backend/proxy/src/index.js) does NOT inject the admin key — it
- * forwards the original headers verbatim (stripping only host/connection
- * and adding x-forwarded-for). So the WEB sends the admin credential
- * itself: `X-Admin-Key: <EXPO_PUBLIC_ADMIN_API_KEY>`, the exact header
- * the endpoint checks (`request.headers.get("x-admin-key")`). The backend
- * also accepts a JWT of an admin-role account via `Authorization: Bearer`,
- * but the web bundle has no admin account, so the key path is the one used.
+ * Admin credential (FIXED): the panel sends the SIGNED-IN USER'S Supabase
+ * access token as `Authorization: Bearer`, and the backend authorises it when
+ * that account's hardened `Perfis.uspapo_role` is `admin`
+ * (USPapo-Backend/app/main.py `analytics_resumo` → `access.is_admin`).
+ *
+ * It used to send only `X-Admin-Key: <EXPO_PUBLIC_ADMIN_API_KEY>`. That
+ * variable is not set in `.env.production` and must not be — an admin API key
+ * inlined into a public web bundle is the key published, and the Cloudflare
+ * worker forwards headers verbatim rather than injecting one. So the header
+ * went out empty, the endpoint answered 403, and the whole panel rendered its
+ * "Não consegui carregar as métricas" retry state: the metrics were never
+ * broken, they were never asked for with a credential anyone would accept.
+ *
+ * The key header is still sent when the variable IS set (a self-hosted
+ * operator build behind a private proxy), so both doors keep working.
  *
  * Windows: the endpoint reads a fixed 30-day window (JANELA_PADRAO_DIAS)
  * server-side — there is no `dias` query param. The panel's 24h / 7d
@@ -183,6 +190,9 @@ export const ROTULO_JANELA_SERVICO = 'últimos 30 dias';
 // ─────────────────────────────────────────────
 
 const ERRO_GENERICO = 'Não consegui carregar as métricas.';
+/** 403: the session is valid, the account simply is not an USPapo admin. */
+export const ERRO_SEM_PERMISSAO =
+  'Esta conta não tem acesso ao painel. Entre com uma conta de administrador.';
 
 /** A `GET /api/analytics/resumo` call that answered with a non-2xx status. */
 export class ResumoApiError extends Error {
@@ -197,15 +207,54 @@ export class ResumoApiError extends Error {
 }
 
 /**
- * The admin key, read at call time from EXPO_PUBLIC_ADMIN_API_KEY (inlined
- * at build time, like the other EXPO_PUBLIC_* values). The Cloudflare
- * worker passes headers through without injecting a key (see the module
- * header), so the web sends it itself. Empty = header omitted (the
- * endpoint then answers 403, which the screen renders as the retry state).
+ * The admin key, read at call time from EXPO_PUBLIC_ADMIN_API_KEY. Empty in
+ * every build published from this repo — see the module header: a key in a
+ * public bundle is a published key. It stays supported for an operator build
+ * that sets it behind a private proxy.
  */
 export function adminKey(): string {
   const chave = process.env.EXPO_PUBLIC_ADMIN_API_KEY;
   return chave && chave.trim() !== '' ? chave.trim() : '';
+}
+
+/**
+ * The signed-in user's Supabase access token, or '' when there is none.
+ *
+ * This is the credential the panel authenticates with: the backend verifies
+ * it against the Supabase JWKS and then checks the account's role.
+ *
+ * The Supabase client is reached with a LAZY require, and that is deliberate:
+ * this module is pure (no React, no React Native) so the KPI math can be unit
+ * tested without a runtime, and a top-level import of `lib/supabase` would
+ * drag AsyncStorage — a native module — into that graph. A plain `require`
+ * inside the function rather than `await import()`: Metro treats the former as
+ * an ordinary deferred module lookup, while the latter is an async chunk, and
+ * a chunk is a thing the single-output web build would have to emit.
+ *
+ * Any failure to obtain a token is '': the request still goes out, the
+ * endpoint answers 403, and the screen renders the honest message.
+ */
+async function tokenPadrao(): Promise<string> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { supabase } = require('../../lib/supabase') as typeof import('../../lib/supabase');
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? '';
+  } catch {
+    return '';
+  }
+}
+
+let lerToken: () => Promise<string> = tokenPadrao;
+
+/** Swaps the credential source (tests). Pass nothing to restore the default. */
+export function configurarToken(fn?: () => Promise<string>): void {
+  lerToken = fn ?? tokenPadrao;
+}
+
+/** The token this call will send ('' when there is no session). */
+export async function tokenDaSessao(): Promise<string> {
+  return lerToken();
 }
 
 /**
@@ -217,6 +266,8 @@ export async function carregarResumo(signal?: AbortSignal): Promise<ResumoDados>
   const cabecalhos: Record<string, string> = {};
   const chave = adminKey();
   if (chave !== '') cabecalhos['X-Admin-Key'] = chave;
+  const token = await tokenDaSessao();
+  if (token !== '') cabecalhos.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`${backendUrl()}/api/analytics/resumo`, {
     headers: cabecalhos,
@@ -231,7 +282,8 @@ export async function carregarResumo(signal?: AbortSignal): Promise<ResumoDados>
     } catch {
       // Non-JSON error body (proxy hiccup): the generic message below.
     }
-    throw new ResumoApiError(res.status, bruto !== '' ? bruto : ERRO_GENERICO);
+    const padrao = res.status === 403 ? ERRO_SEM_PERMISSAO : ERRO_GENERICO;
+    throw new ResumoApiError(res.status, bruto !== '' ? bruto : padrao);
   }
 
   const corpo = (await res.json().catch(() => null)) as ResumoResposta | null;

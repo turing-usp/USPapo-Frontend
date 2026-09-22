@@ -418,6 +418,88 @@ describe('reduzirEvento', () => {
     expect(Object.keys(estado.ferramentas).length).toBe(0);
   });
 
+  it('the tool line keeps the raw tool NAME, so the pill can look up a description', () => {
+    let estado = estadoInicial(PERGUNTA);
+    estado = reduzirEvento(estado, {
+      type: 'tool',
+      state: 'start',
+      index: 0,
+      name: 'consultar_circulares',
+    });
+    const linha = estado.turnos.find((t) => t.autor === 'ferramenta');
+    if (!linha || linha.autor !== 'ferramenta') throw new Error('sem linha');
+    expect(linha.nome).toBe('consultar_circulares');
+    expect(linha.rotulo).toBe('Checando os horários');
+  });
+
+  it('pensando becomes a reasoning line and consecutive deltas grow the SAME one', () => {
+    let estado = estadoInicial(PERGUNTA);
+    estado = reduzirEvento(estado, { type: 'pensando', delta: 'preciso do ' });
+    estado = reduzirEvento(estado, { type: 'pensando', delta: 'horário' });
+    const raciocinios = estado.turnos.filter((t) => t.autor === 'raciocinio');
+    expect(raciocinios).toHaveLength(1);
+    const linha = raciocinios[0];
+    if (linha.autor !== 'raciocinio') throw new Error('tipo errado');
+    expect(linha.texto).toBe('preciso do horário');
+    expect(linha.pronta).toBe(false);
+  });
+
+  it('a tool call closes the reasoning line, and reasoning AFTER it opens a new one', () => {
+    let estado = estadoInicial(PERGUNTA);
+    estado = reduzirEvento(estado, { type: 'pensando', delta: 'antes' });
+    estado = reduzirEvento(estado, {
+      type: 'tool',
+      state: 'start',
+      index: 0,
+      name: 'consultar_circulares',
+    });
+    estado = reduzirEvento(estado, {
+      type: 'tool',
+      state: 'end',
+      index: 0,
+      name: 'consultar_circulares',
+      results: 1,
+    });
+    // This is the case the old footer card could never show: the model goes
+    // back to thinking once the tool has answered.
+    estado = reduzirEvento(estado, { type: 'pensando', delta: 'depois' });
+
+    const raciocinios = estado.turnos.filter((t) => t.autor === 'raciocinio');
+    expect(raciocinios).toHaveLength(2);
+    const [primeiro, segundo] = raciocinios;
+    if (primeiro.autor !== 'raciocinio' || segundo.autor !== 'raciocinio') {
+      throw new Error('tipo errado');
+    }
+    expect(primeiro.texto).toBe('antes');
+    expect(primeiro.pronta).toBe(true);
+    expect(segundo.texto).toBe('depois');
+    expect(segundo.pronta).toBe(false);
+    // Order matters: the second reasoning line sits AFTER the tool line.
+    const posicoes = estado.turnos.map((t) => t.autor);
+    expect(posicoes).toEqual(['user', 'raciocinio', 'ferramenta', 'raciocinio']);
+  });
+
+  it('the first answer token and the end both close the reasoning line', () => {
+    let estado = estadoInicial(PERGUNTA);
+    estado = reduzirEvento(estado, { type: 'pensando', delta: 'pensando…' });
+    estado = reduzirEvento(estado, { type: 'text', delta: 'O ' });
+    const aberto = estado.turnos.some((t) => t.autor === 'raciocinio' && !t.pronta);
+    expect(aberto).toBe(false);
+    expect(estado.escrevendo).toBe(true);
+
+    // And nothing is left pulsing once the stream ends.
+    estado = reduzirEvento(estado, { type: 'pensando', delta: 'mais' });
+    estado = reduzirEvento(estado, { type: 'end' });
+    expect(estado.turnos.some((t) => t.autor === 'raciocinio' && !t.pronta)).toBe(false);
+  });
+
+  it('an error closes the reasoning line too (no pulse under a failure)', () => {
+    let estado = estadoInicial(PERGUNTA);
+    estado = reduzirEvento(estado, { type: 'pensando', delta: 'hmm' });
+    estado = reduzirEvento(estado, { type: 'error', message: 'algo deu errado' });
+    expect(estado.turnos.some((t) => t.autor === 'raciocinio' && !t.pronta)).toBe(false);
+  });
+
   it('the error + end invariant: the state stays "errou"', () => {
     let estado = estadoInicial(PERGUNTA);
     estado = reduzirEvento(estado, { type: 'error', message: 'algo deu errado' });

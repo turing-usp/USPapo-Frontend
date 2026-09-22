@@ -10,16 +10,19 @@
  * — policy `feedback_owner_all`, anon and cross-user reads return 0 rows;
  * only `service_role` bypasses RLS, i.e. the backend's own reads).
  *
- * The P11 GAP: USPapo-Backend/app/main.py currently exposes ONLY
- * `GET /api/analytics/resumo` (plus /api/chat and /api/health*) — there is
- * no `/api/feedback` route. Per the P10 scope the backend is owned by other
- * workstreams, so no endpoint was added here; `carregarFeedback` below is
- * the one-function seam the screen wires to. Note the stopgap the backend
- * ALREADY exposes: `resumo().data.feedback.itens` (30-day window, up to 50
- * rows, owner PII-free: id/tipo/motivo/comentario/created_at) — P11 may
- * either add a dedicated `/api/feedback` or point this seam at
- * `carregarResumo().feedback.itens` (see app/(admin)/metricas.ts).
+ * WHERE THE ROWS COME FROM: `GET /api/analytics/resumo` → `data.feedback.itens`
+ * (30-day window, up to 50 rows, PII-free: id/tipo/motivo/comentario/
+ * created_at). The backend has no dedicated `/api/feedback` route, and this
+ * seam used to `return []` while waiting for one — so the screen always drew
+ * its empty state and the operator read "no feedback yet" when there was
+ * feedback. The summary endpoint already carries exactly the rows this screen
+ * renders, and it is the same authenticated call the KPI panel makes
+ * (./metricas.ts owns the credential), so nothing new has to be deployed.
+ *
+ * A dedicated endpoint can replace `carregarResumo` here later without the
+ * screen noticing: the mapping below is the whole contract.
  */
+import { carregarResumo } from './metricas';
 
 /** One feedback row as the screen renders it. */
 export type ItemFeedbackWeb = {
@@ -32,18 +35,30 @@ export type ItemFeedbackWeb = {
 };
 
 /**
- * SEAM (wire point): loads the feedback list from the backend.
+ * Loads the feedback list, newest first.
  *
- * TODO(P11): point this at the backend endpoint. Expected wiring (one
- * function, no screen changes): `GET {backendUrl()}/api/feedback` with the
- * same admin header contract as the panel (X-Admin-Key, see
- * app/(admin)/metricas.ts), mapping the rows to { data: created_at,
- * nota: tipo, motivo }. Until the endpoint exists it resolves to an empty
- * list, and the screen renders its documented empty state instead of
- * pretending there is data.
+ * A row with no `created_at` keeps its place at the END rather than being
+ * dropped: the rating happened, only its timestamp is unreadable, and
+ * silently hiding it would understate the volume. The free-text comment
+ * stands in when the student typed one instead of picking a reason — that is
+ * the more informative of the two, and the screen has one slot.
+ *
+ * Throws whatever `carregarResumo` throws (ResumoApiError on 403/503, the
+ * network failure as-is): the screen turns that into its error state, which
+ * is the honest answer to "I could not read the list".
  */
-export async function carregarFeedback(): Promise<ItemFeedbackWeb[]> {
-  return [];
+export async function carregarFeedback(
+  signal?: AbortSignal,
+): Promise<ItemFeedbackWeb[]> {
+  const dados = await carregarResumo(signal);
+  const itens = dados.feedback?.itens ?? [];
+  return itens.map((item) => ({
+    data: item.created_at ?? '',
+    nota: item.tipo === 'like' ? 'like' : 'dislike',
+    ...(item.motivo || item.comentario
+      ? { motivo: item.motivo ?? item.comentario ?? undefined }
+      : {}),
+  }));
 }
 
 /** 'like' | 'dislike' → the pt-BR pill label. */

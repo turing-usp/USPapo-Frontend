@@ -31,6 +31,13 @@
  *
  * Timestamps are ISO-8601 strings; `criada_em`/`atualizada_em` are managed
  * by the server-side trigger, and the client keeps both in sync on writes.
+ *
+ * FAILURE RULE, and it is not symmetric. A failed `conversas` read or ANY
+ * write raises (`falhou`): there is nothing to show and nothing was saved, and
+ * the caller has to know. A failed `mensagens` read does NOT
+ * (`turnosIndisponiveis`): the conversations are already in hand and the turns
+ * are what hangs off them, so the list still renders — labelled by `titulo` —
+ * instead of the whole history disappearing because a second query failed.
  */
 import { LIMITES } from './limits';
 import { supabase } from './supabase';
@@ -125,6 +132,30 @@ function falhou(operacao: string, error: { message?: string } | null): void {
   throw new Error(ERRO_ESCRITA);
 }
 
+/**
+ * Logs a failed TURNS read and returns no turns.
+ *
+ * Deliberately NOT `falhou`. The turns are enrichment: the history list is
+ * built from `conversas` (title, dates, favourite), and `mensagens` only adds
+ * the question/answer text to it. Raising here threw away a `conversas` read
+ * that had ALREADY SUCCEEDED, the history screen caught it as "offline", and
+ * the student got an empty list plus "mostrando o último cache" — on web,
+ * where the cache may be unavailable, an empty list with no explanation at
+ * all. One table being unreadable (a missing grant, an RLS policy that does
+ * not cover it, a schema-cache miss) must cost the turns, not the history.
+ */
+function turnosIndisponiveis(
+  operacao: string,
+  error: { message?: string } | null,
+): boolean {
+  if (!error) return false;
+  console.error(
+    `[conversas] ${operacao} falhou; a conversa segue sem os turnos:`,
+    error,
+  );
+  return true;
+}
+
 /** One `mensagens` row → a Mensagem (defensive about the wire types). */
 function linhaParaMensagem(m: Record<string, unknown>): Mensagem {
   const resposta = m.resposta;
@@ -209,9 +240,11 @@ export async function lerHistorico(
     .select(COLUNAS_MENSAGEM)
     .in('conversa_id', ids)
     .order('ordem', { ascending: true });
-  falhou('lerHistorico (mensagens)', erroMsgs);
+  const semTurnos = turnosIndisponiveis('lerHistorico (mensagens)', erroMsgs);
 
-  const agrupadas = porConversa((msgs ?? []) as Record<string, unknown>[]);
+  const agrupadas = porConversa(
+    semTurnos ? [] : ((msgs ?? []) as Record<string, unknown>[]),
+  );
   return linhas.map((l) =>
     linhaParaConversa(l, agrupadas.get(String(l.id ?? '')) ?? []),
   );
@@ -244,9 +277,11 @@ export async function lerConversa(
     .select(COLUNAS_MENSAGEM)
     .eq('conversa_id', id)
     .order('ordem', { ascending: true });
-  falhou('lerConversa (mensagens)', erroMsgs);
+  const semTurnos = turnosIndisponiveis('lerConversa (mensagens)', erroMsgs);
 
-  const mensagens = ((msgs ?? []) as Record<string, unknown>[]).map(linhaParaMensagem);
+  const mensagens = semTurnos
+    ? []
+    : ((msgs ?? []) as Record<string, unknown>[]).map(linhaParaMensagem);
   return linhaParaConversa(linha, mensagens);
 }
 

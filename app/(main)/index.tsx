@@ -32,7 +32,7 @@ import * as net from '../../lib/net';
 import { quandoConectar } from '../../lib/offline';
 import { supabase } from '../../lib/supabase';
 import { useAlturaDoTeclado } from '../../lib/teclado';
-import type { Conversa } from '../../lib/conversations';
+import { lerHistorico, type Conversa } from '../../lib/conversations';
 import { useTheme } from '../../theme';
 import { guardarPendente } from './pendente';
 
@@ -122,21 +122,41 @@ export default function Inicio() {
     setPerguntas(sortearPerguntas());
   }, []);
 
-  // P9: the resume list comes from the OFFLINE CACHE (no network needed)
-  // and the queue badge refreshes on mount and on the connectivity return
-  // (quandoConectar — after the replay drains the queue).
+  // "Continuar de onde parou": the OFFLINE CACHE first (no network needed),
+  // and the SERVER when the cache has nothing to offer.
+  //
+  // Cache-only was the original P9 design, and it is wrong the moment the
+  // cache is not there: on web it is an expo-sqlite WASM build that a strict
+  // CSP or a private window can refuse, and on a fresh install it is simply
+  // empty — so the card was permanently missing for people who had a full
+  // history on the server. The cache still wins when it answers: it is the
+  // last state the student actually saw, and it costs no round trip.
   useEffect(() => {
     let ativo = true;
     (async () => {
+      let userId = '';
       try {
         const { data } = await supabase.auth.getSession();
-        const userId = data.session?.user?.id ?? '';
-        if (!userId) return;
-        const cache = await ultimasConversasOffline(userId, 3);
-        if (ativo) setUltimas(cache);
+        userId = data.session?.user?.id ?? '';
       } catch {
-        if (ativo) setUltimas([]);
+        userId = '';
       }
+      if (!userId || !ativo) return;
+
+      let recentes: Conversa[] = [];
+      try {
+        recentes = await ultimasConversasOffline(userId, 3);
+      } catch (err) {
+        console.warn('[inicio] cache offline indisponível:', err);
+      }
+      if (recentes.length === 0) {
+        try {
+          recentes = (await lerHistorico(userId, 3)).slice(0, 3);
+        } catch (err) {
+          console.warn('[inicio] histórico do servidor indisponível:', err);
+        }
+      }
+      if (ativo) setUltimas(recentes);
     })();
     const atualizarFila = (): void => {
       net

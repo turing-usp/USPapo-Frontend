@@ -4,18 +4,19 @@
  *
  * Fresh conversation: the pendente Map (module-level, StrictMode-safe
  * read-once, read inside the hook's useState initializers) seeds the first
- * user bubble and the "respondendo…" indicator on the FIRST frame — the
- * bubble paints before any network or persistence work. Unknown id (no
- * pendente, no saved conversation) → "Não encontrei esta conversa".
+ * user bubble and the reasoning tag on the FIRST frame — the bubble paints
+ * before any network or persistence work. Unknown id (no pendente, no saved
+ * conversation) → "Não encontrei esta conversa".
  *
  * Streaming (useChat): incremental assistant text rendered as MARKDOWN and
- * revealed at a steady pace (components/chat/Resposta), the compact
- * tool-status lines (label + pulse while start..end, ✓ + results count on
- * end), the "Fontes consultadas" row with tappable URLs, the like/dislike
- * row under each completed answer, and the 429 / 401 handling (401
- * fast-fails to login via aoSessaoExpirada). The composer send button
- * becomes Stop while 'respondendo'; Stop aborts the stream and the pending
- * turn stays pending (P9).
+ * revealed at a steady pace (components/chat/Resposta), the status tags
+ * (components/chat/bolhas.Etiqueta — ONE shape for the reasoning tag and the
+ * tool tags: pulse + label + what was consulted, ✓ + results count on end),
+ * the "Fontes consultadas" row with tappable URLs, the like/dislike row under
+ * each completed answer, and the 429 / 401 handling (401 fast-fails to login
+ * via aoSessaoExpirada). The composer send button becomes Stop while
+ * 'respondendo'; Stop aborts the stream and the pending turn stays pending
+ * (P9).
  *
  * MULTI-TURN: a follow-up asked after the answer completed is a NEW TURN OF
  * THIS CONVERSATION — `send` appends it, the earlier turns stay on screen
@@ -43,9 +44,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ALTURA_CHROME } from '../../../components/Chrome';
 import { BackdropDesvanecido } from '../../../components/Backdrop';
 import Composer from '../../../components/Composer';
-import Glass from '../../../components/Glass';
 import Container from '../../../components/Container';
-import { BolhaAssistente, BolhaUsuario, LinhaErro, LinhaFerramenta, LinhaNota } from '../../../components/chat/bolhas';
+import {
+  BolhaAssistente,
+  BolhaUsuario,
+  LinhaErro,
+  LinhaFerramenta,
+  LinhaNota,
+  LinhaRaciocinio,
+  RaciocinioImplicito,
+} from '../../../components/chat/bolhas';
 import { FeedbackResposta } from '../../../components/chat/feedback';
 import { lerFeedbacksDaConversa, type Feedback } from '../../../lib/feedback';
 import { useAlturaDoTeclado } from '../../../lib/teclado';
@@ -64,7 +72,7 @@ const AVISO_IA =
 export default function Chat() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { colors, layout, radius, spacing, typography } = useTheme();
+  const { colors, layout, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
   const { width: largura } = useWindowDimensions();
   const alturaTeclado = useAlturaDoTeclado();
@@ -73,8 +81,18 @@ export default function Chat() {
   /** Near the bottom? (drives the auto-scroll and the finished haptic). */
   const pertoDoFimRef = useRef(true);
 
-  const { turns, status, pergunta, erro, concluido, carregou, userId, send, stop } =
-    useChat(id, {
+  const {
+    turns,
+    status,
+    pergunta,
+    erro,
+    concluido,
+    escrevendo,
+    carregou,
+    userId,
+    send,
+    stop,
+  } = useChat(id, {
       enabled: Boolean(id),
       // The 401 / no-token fast-fail: straight to login.
       aoSessaoExpirada: () => router.replace('/(auth)/login'),
@@ -135,18 +153,27 @@ export default function Chat() {
     }
   }, [turns, status, alturaTeclado]);
 
-  // The thinking indicator shows only in the pure thinking phase of the
-  // CURRENT turn (no text and no tool line yet); after that the tool lines /
-  // growing text are the feedback (ported from the old site's statusVisivel
-  // rule). Scoping it to the current turn matters now that earlier answers
-  // stay on screen — otherwise the previous answer would count as progress.
-  const fasePensando =
-    status === 'respondendo' &&
-    !turnoAtual(turns).some(
-      (t) => (t.autor === 'assistant' && t.texto !== '') || t.autor === 'ferramenta',
-    );
-
   const respondendo = status === 'respondendo';
+
+  /**
+   * Is the reasoning tag the current state?
+   *
+   * It used to be a footer card ("respondendo…") that showed ONLY before the
+   * first tool line — so the moment the model called a tool it disappeared for
+   * good, and the long gap between a tool answering and the first token of the
+   * answer looked like the app had stalled. The honest rule is simply: the
+   * stream is open and the model is not writing the answer yet. That holds
+   * before the first tool AND between tools AND after the last one.
+   *
+   * When the provider actually SENDS reasoning tokens the tag is already a
+   * line of the list (`autor: 'raciocinio'`), so this footer only fills the
+   * stretches where it reports nothing — never both at once.
+   */
+  const atual = turnoAtual(turns);
+  const raciocinioAberto = atual.some(
+    (t) => t.autor === 'raciocinio' && !t.pronta,
+  );
+  const raciocinando = respondendo && !escrevendo && !raciocinioAberto;
 
   /**
    * Which answer each assistant line is, counting from the top. It is the
@@ -248,6 +275,9 @@ export default function Chat() {
                   );
                 }
 
+                case 'raciocinio':
+                  return <LinhaRaciocinio turno={item} pulso={pulso} />;
+
                 case 'ferramenta':
                   return <LinhaFerramenta turno={item} pulso={pulso} />;
 
@@ -268,29 +298,9 @@ export default function Chat() {
               }
             }}
             ListFooterComponent={
-              fasePensando ? (
-                <View
-                  style={{
-                    flex: 1,
-                    justifyContent: 'flex-start',
-                    paddingTop: spacing.md,
-                  }}
-                >
-                  <Animated.View
-                    style={{ alignSelf: 'flex-start', opacity: pulso }}
-                  >
-                    <Glass radius={radius.lg} style={{ padding: spacing.md }}>
-                    <Text
-                      style={{
-                        color: colors.mutedForeground,
-                        fontFamily: fonts.body,
-                        fontSize: typography.sm.fontSize,
-                      }}
-                    >
-                      respondendo…
-                    </Text>
-                    </Glass>
-                  </Animated.View>
+              raciocinando ? (
+                <View style={{ paddingTop: spacing.md }}>
+                  <RaciocinioImplicito pulso={pulso} />
                 </View>
               ) : null
             }

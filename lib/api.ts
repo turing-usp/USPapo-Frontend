@@ -101,12 +101,55 @@ export const TOOL_LABELS: Record<string, string> = {
 };
 
 /**
+ * One SENTENCE per tool: what it actually consulted, in the student's words.
+ *
+ * The status pill used to carry the label alone, which says what the backend
+ * is doing but not what it is doing it WITH — "Procurando a sala" gives no
+ * hint that the answer comes from USPolis, and a student who gets the wrong
+ * room has no idea which source to double-check. Every tool the production
+ * registry can emit has an entry here (the nine of
+ * `USPapo-Backend/app/tools/real.py` plus the offline stub's `calculadora`),
+ * so no pill is ever left without one.
+ */
+export const TOOL_DESCRICOES: Record<string, string> = {
+  buscar_documentos:
+    'Busca nos documentos oficiais da USP indexados pelo USPapo.',
+  consultar_bandejao: 'Lê o cardápio publicado pelo RUCard.',
+  consultar_grade_curricular:
+    'Lê a grade curricular do curso no JupiterWeb.',
+  consultar_turmas: 'Lê as turmas e os horários da disciplina no JupiterWeb.',
+  buscar_disciplina:
+    'Lê a ementa, os créditos e os requisitos da disciplina no JupiterWeb.',
+  consultar_avaliacoes_professor:
+    'Lê as avaliações de professores publicadas no USP Avalia.',
+  consultar_sala: 'Localiza a sala e o prédio pelo USPolis.',
+  consultar_circulares:
+    'Consulta o GTFS oficial e o Olho Vivo da SPTrans para itinerários, paradas e horários.',
+  consultar_wikipedia: 'Lê o resumo do verbete na Wikipédia.',
+  calculadora: 'Faz a conta pedida (ferramenta de testes offline).',
+};
+
+/** The generic label for a tool this build does not know by name. */
+const ROTULO_DESCONHECIDO = 'Usando ferramenta';
+/** The generic description for a tool this build does not know by name. */
+const DESCRICAO_DESCONHECIDA = 'Consultando uma fonte oficial da USP.';
+
+/**
  * Friendly pt-BR label for the status pill. An unknown tool gets the old
  * site's generic wording rather than its function name — a name like
  * `consultar_avaliacoes_professor` on screen is a leak, not a label.
  */
 export function labelDaFerramenta(name: string): string {
-  return TOOL_LABELS[name] ?? 'Usando ferramenta';
+  return TOOL_LABELS[name] ?? ROTULO_DESCONHECIDO;
+}
+
+/**
+ * What that tool consulted, as one pt-BR sentence. Never empty: a tool this
+ * build has never heard of still gets an honest generic line instead of a
+ * blank second row in the pill.
+ */
+export function descricaoDaFerramenta(name: string): string {
+  return TOOL_DESCRICOES[name] ?? DESCRICAO_DESCONHECIDA;
 }
 
 // ─────────────────────────────────────────────

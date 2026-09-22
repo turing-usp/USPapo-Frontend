@@ -1,13 +1,12 @@
 /**
  * Admin feedback screen (web-only — see ./_layout.tsx guard).
  *
- * Layout ready to wire: a list of {data, nota, motivo?} rows (most recent
- * first). The data seam is `carregarFeedback` in ./feedbackApi.ts — TODAY it
- * resolves to an empty list because the backend has no feedback endpoint
- * yet (P11 gap: main.py only serves /api/analytics/resumo; the table is
- * owner-only RLS, so the web cannot read Supabase directly), and the
- * screen renders its documented empty state. When P11 lands, the screen
- * does not change.
+ * A list of {data, nota, motivo?} rows, most recent first. The data seam is
+ * `carregarFeedback` in ./feedbackApi.ts, which reads the rows out of
+ * `GET /api/analytics/resumo` (`data.feedback.itens`) — the table itself is
+ * owner-only RLS, so the web can never read Supabase directly. The seam used
+ * to resolve to an empty list while a dedicated endpoint was pending, which
+ * meant this screen showed "no feedback" no matter how much there was.
  */
 import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -66,15 +65,18 @@ export default function PainelFeedback() {
 
   useEffect(() => {
     let ativo = true;
-    carregarFeedback()
+    const controlador = new AbortController();
+    carregarFeedback(controlador.signal)
       .then((lista) => {
         if (ativo) setItens(lista);
       })
       .catch(() => {
+        // An abort is this effect tearing down, not a failure to report.
         if (ativo) setFalhou(true);
       });
     return () => {
       ativo = false;
+      controlador.abort();
     };
   }, []);
 
@@ -114,7 +116,8 @@ export default function PainelFeedback() {
               padding: spacing['2xl'],
           }}
         >
-          {/* Documented empty state (the backend endpoint arrives with P11). */}
+          {/* Genuinely empty: the endpoint answered with no rows in the
+              30-day window. A failure takes the error branch above. */}
           <Text
             style={{
               color: colors.mutedForeground,
@@ -123,7 +126,7 @@ export default function PainelFeedback() {
               textAlign: 'center',
             }}
           >
-            As respostas de feedback chegam pelo serviço (P11)
+            Nenhum feedback nos últimos 30 dias
           </Text>
           <Text style={{ color: colors.faintForeground, fontSize: typography.sm.fontSize }}>
             Aqui aparecerão as notas (gostei / não gostei) e os motivos.

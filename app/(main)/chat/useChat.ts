@@ -86,9 +86,29 @@ export type Turno =
     }
   | {
       id: string;
+      autor: 'raciocinio';
+      /**
+       * The reasoning tokens as they arrive (the `pensando` deltas). May stay
+       * empty: several providers report that they are reasoning without
+       * sending the text, and the line still has to show.
+       */
+      texto: string;
+      /** start..done: false while the model is thinking, true once it moved on. */
+      pronta: boolean;
+    }
+  | {
+      id: string;
       autor: 'ferramenta';
       /** Tool-call index (the backend's `index`; -1 = pre-consultation). */
       indice: number;
+      /**
+       * The tool's own name, as the backend sent it. Kept because the pill
+       * needs BOTH the label and the description, and the description is
+       * looked up by name (lib/api.TOOL_DESCRICOES) — deriving it back from
+       * the translated label would be a reverse lookup that breaks the moment
+       * two tools share wording.
+       */
+      nome: string;
       /** pt-BR label (TOOL_LABELS) or the raw tool name. */
       rotulo: string;
       /** start..end: false while the tool is running, true when done. */
@@ -160,6 +180,26 @@ export function turnoAtual(turnos: Turno[]): Turno[] {
     if (turnos[i].autor === 'user') return turnos.slice(i + 1);
   }
   return turnos;
+}
+
+/**
+ * Marks the open reasoning line (if any) as finished.
+ *
+ * Every event that means "the model stopped thinking and did something" goes
+ * through this: a tool call, the first token of the answer, the end of the
+ * stream, an error. Without it the pulse would keep running under a finished
+ * answer.
+ */
+function fecharRaciocinio(turnos: Turno[]): Turno[] {
+  let mexeu = false;
+  const fechados = turnos.map((t): Turno => {
+    if (t.autor === 'raciocinio' && !t.pronta) {
+      mexeu = true;
+      return { ...t, pronta: true };
+    }
+    return t;
+  });
+  return mexeu ? fechados : turnos;
 }
 
 /** The UI lines for one saved turn: the question, then its answer. */
@@ -245,17 +285,44 @@ export function reduzirEvento(estado: EstadoChat, evento: ChatEvent): EstadoChat
       // Provider switch: no visible surface (the old site hid it too).
       return estado;
 
-    case 'pensando':
-      return { ...estado, status: 'respondendo', escrevendo: false };
+    case 'pensando': {
+      const turnos = estado.turnos;
+      const ultimo = turnos[turnos.length - 1];
+      // Reasoning that continues goes into the SAME line; reasoning that
+      // comes back after a tool call (or after a chunk of answer) starts a
+      // new one, so the conversation reads as the sequence it was.
+      const comRaciocinio =
+        ultimo && ultimo.autor === 'raciocinio' && !ultimo.pronta
+          ? [
+              ...turnos.slice(0, -1),
+              { ...ultimo, texto: ultimo.texto + evento.delta },
+            ]
+          : [
+              ...turnos,
+              {
+                id: `raciocinio:${turnos.length}`,
+                autor: 'raciocinio' as const,
+                texto: evento.delta,
+                pronta: false,
+              },
+            ];
+      return {
+        ...estado,
+        status: 'respondendo',
+        escrevendo: false,
+        turnos: comRaciocinio,
+      };
+    }
 
     case 'tool': {
-      const turnos = estado.turnos;
+      const turnos = fecharRaciocinio(estado.turnos);
       if (evento.state === 'start') {
         const rotulo = labelDaFerramenta(evento.name);
         const linha: Turno = {
           id: `ferramenta:${evento.index}`,
           autor: 'ferramenta',
           indice: evento.index,
+          nome: evento.name,
           rotulo,
           pronta: false,
           resultados: 0,
@@ -280,7 +347,7 @@ export function reduzirEvento(estado: EstadoChat, evento: ChatEvent): EstadoChat
     }
 
     case 'text': {
-      const turnos = estado.turnos;
+      const turnos = fecharRaciocinio(estado.turnos);
       const ultimo = turnos[turnos.length - 1];
       const novo: Turno = {
         id: `assistant:${turnos.length}`,
@@ -318,7 +385,7 @@ export function reduzirEvento(estado: EstadoChat, evento: ChatEvent): EstadoChat
         ferramentas: {},
         erro: { tipo: 'outro', mensagem: evento.message },
         turnos: [
-          ...estado.turnos,
+          ...fecharRaciocinio(estado.turnos),
           {
             id: `erro:${estado.turnos.length}`,
             autor: 'erro',
@@ -331,9 +398,15 @@ export function reduzirEvento(estado: EstadoChat, evento: ChatEvent): EstadoChat
     case 'end':
       if (estado.erro) {
         // The failure invariant (error + end): stays in the error state.
-        return { ...estado, status: 'errou', escrevendo: false, ferramentas: {} };
+        return {
+          ...estado,
+          status: 'errou',
+          escrevendo: false,
+          ferramentas: {},
+          turnos: fecharRaciocinio(estado.turnos),
+        };
       }
-      const turnos = estado.turnos;
+      const turnos = fecharRaciocinio(estado.turnos);
       const ultimo = turnos[turnos.length - 1];
       const comFim =
         ultimo && ultimo.autor === 'assistant' && !ultimo.completo
@@ -659,6 +732,13 @@ export type UseChat = {
   erro: ErroChat | null;
   /** True when the last answer completed and was persisted. */
   concluido: boolean;
+  /**
+   * The model is writing the ANSWER right now. The screen uses it to decide
+   * whether the reasoning tag is still the current state: everything that is
+   * not "writing" while the stream is open is the model thinking, including
+   * the gap right after a tool call came back.
+   */
+  escrevendo: boolean;
   /** True once the mount load resolved for this id. */
   carregou: boolean;
   /** The `favorita` flag of the loaded row (the like button's initial state). */
@@ -1086,6 +1166,7 @@ export function useChat(
     pergunta: estado.pergunta || null,
     erro: estado.erro,
     concluido: estado.concluido,
+    escrevendo: estado.escrevendo,
     carregou,
     favorita,
     userId,

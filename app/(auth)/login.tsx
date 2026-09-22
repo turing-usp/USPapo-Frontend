@@ -1,5 +1,5 @@
 /**
- * Login (email + password, show/hide, Google placeholder for P7).
+ * Login (email + password, show/hide, and "Continuar com o Google").
  *
  * Presentation ported from the old site login screen
  * (uspapo/site/app/(auth)/login/page.tsx): Turing wordmark above the title,
@@ -9,9 +9,16 @@
  * it reads on top of the <Backdrop /> rendered by the parent layout.
  *
  * Errors go through `mapAuthError` (lib/auth) — uniform pt-BR surface.
+ *
+ * Google: `lib/oauth.entrarComGoogle` (read it for the flow and for the one
+ * dashboard setting it depends on). On web the page LEAVES during the flow and
+ * comes back with the session on the URL, which Supabase consumes
+ * asynchronously — so this screen also watches the auth listener and leaves
+ * for the app the moment a session appears. Without that the student could
+ * land back here, already signed in, staring at the login form.
  */
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -32,6 +39,7 @@ import {
 } from '../../components/BrandMarks';
 import { haptics } from '../../lib/haptics';
 import { mapAuthError } from '../../lib/auth';
+import { entrarComGoogle } from '../../lib/oauth';
 import { supabase } from '../../lib/supabase';
 import { fonts, useTheme } from '../../theme';
 
@@ -76,10 +84,42 @@ export default function Login() {
     }
   }
 
-  function entrarComGoogle() {
-    // P7: wire expo-auth-session — native (Google auth with the usapo
-    // scheme) and web (redirect flow). Placeholder on purpose for now.
-    console.log('[uspapo] Entrar com Google — placeholder (P7 liga expo-auth-session)');
+  /**
+   * A session that appears while this screen is mounted means the OAuth round
+   * trip finished (web: the redirect came back and Supabase exchanged the code
+   * behind the scenes). Leaving for the app here is what closes that flow.
+   */
+  useEffect(() => {
+    let ativo = true;
+    const { data: assinatura } = supabase.auth.onAuthStateChange((_e, sessao) => {
+      if (ativo && sessao) router.replace('/');
+    });
+    return () => {
+      ativo = false;
+      assinatura.subscription.unsubscribe();
+    };
+  }, [router]);
+
+  async function comGoogle() {
+    if (carregando) return;
+    setCarregando(true);
+    setErro(null);
+    try {
+      const resultado = await entrarComGoogle();
+      if (resultado.ok) {
+        void haptics.send();
+        // Web is mid-redirect and this screen is about to be replaced by the
+        // provider's page; native already has the session.
+        router.replace('/');
+        return;
+      }
+      if (!resultado.cancelado) {
+        setErro(resultado.mensagem);
+        void haptics.error();
+      }
+    } finally {
+      setCarregando(false);
+    }
   }
 
   return (
@@ -247,7 +287,7 @@ export default function Login() {
 
           {/* Google button (old: white pill, hairline border). */}
           <Pressable
-            onPress={entrarComGoogle}
+            onPress={() => void comGoogle()}
             disabled={carregando}
             style={({ pressed }) => [
               {

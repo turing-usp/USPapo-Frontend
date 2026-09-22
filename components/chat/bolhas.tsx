@@ -18,6 +18,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 
+import { descricaoDaFerramenta } from '../../lib/api';
 import { fonts, useTheme } from '../../theme';
 import type { Turno } from '../../app/(main)/chat/useChat';
 import { Resposta } from './Resposta';
@@ -40,7 +41,7 @@ function rotular(url: string): string {
 }
 
 export function Fontes({ urls }: { urls: string[] }) {
-  const { colors, glass, radius, spacing, typography } = useTheme();
+  const { colors, radius, spacing, typography } = useTheme();
   if (urls.length === 0) return null;
   return (
     <View style={{ marginTop: spacing.sm }}>
@@ -100,9 +101,105 @@ export function Fontes({ urls }: { urls: string[] }) {
 }
 
 // ─────────────────────────────────────────────
-// Tool-status lines (the old site's StatusBlock, per tool call)
+// Status tags: the tool lines and the reasoning line
 // ─────────────────────────────────────────────
 
+/**
+ * ONE shape for every status tag the stream produces.
+ *
+ * The tool tags and the reasoning tag used to be two different things: a
+ * `radius.full` pill for the tools and, for the reasoning, a footer card that
+ * said "respondendo…" and disappeared the moment the first tool started. They
+ * are the same KIND of information — "this is what the USPapo is doing right
+ * now, and this is where the answer is coming from" — so they are the same
+ * component, with the same glass, the same pulse and the same two rows:
+ *
+ *   ● / ✓   Label            (brand while running, muted when finished)
+ *           Description      (what was consulted, always present)
+ *
+ * The second row is why the radius is `lg` and not `full`: a pill cannot hold
+ * two lines without the corners eating the text.
+ */
+export function Etiqueta({
+  rotulo,
+  descricao,
+  pronta,
+  pulso,
+  testID,
+}: {
+  rotulo: string;
+  descricao: string;
+  pronta: boolean;
+  pulso: Animated.AnimatedInterpolation<number>;
+  testID?: string;
+}) {
+  const { colors, radius, spacing, typography } = useTheme();
+  return (
+    <View style={{ alignSelf: 'flex-start', maxWidth: '92%' }}>
+      <Glass
+        testID={testID}
+        radius={radius.lg}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'flex-start',
+          gap: spacing.xs,
+          paddingHorizontal: spacing.md,
+          paddingVertical: 8,
+        }}
+      >
+        {pronta ? (
+          <Text
+            style={{
+              color: colors.brand,
+              fontSize: typography.xs.fontSize,
+              lineHeight: typography.xs.lineHeight,
+            }}
+          >
+            ✓
+          </Text>
+        ) : (
+          <Animated.Text
+            style={{
+              color: colors.brand,
+              fontFamily: fonts.body,
+              fontSize: typography.xs.fontSize,
+              lineHeight: typography.xs.lineHeight,
+              opacity: pulso,
+            }}
+          >
+            ●
+          </Animated.Text>
+        )}
+        <View style={{ flexShrink: 1, gap: 1 }}>
+          <Text
+            numberOfLines={1}
+            style={{
+              color: pronta ? colors.mutedForeground : colors.brand,
+              fontFamily: fonts.bodyBold,
+              fontSize: typography.xs.fontSize,
+              lineHeight: typography.xs.lineHeight,
+            }}
+          >
+            {rotulo}
+          </Text>
+          <Text
+            numberOfLines={2}
+            style={{
+              color: colors.faintForeground,
+              fontFamily: fonts.body,
+              fontSize: typography.xs.fontSize,
+              lineHeight: typography.xs.lineHeight,
+            }}
+          >
+            {descricao}
+          </Text>
+        </View>
+      </Glass>
+    </View>
+  );
+}
+
+/** One tool call: its pt-BR label, what it consulted, and the results count. */
 export function LinhaFerramenta({
   turno,
   pulso,
@@ -110,50 +207,80 @@ export function LinhaFerramenta({
   turno: Extract<Turno, { autor: 'ferramenta' }>;
   pulso: Animated.AnimatedInterpolation<number>;
 }) {
-  const { colors, glass, radius, spacing, typography } = useTheme();
   const rotulo =
     turno.pronta && turno.resultados > 0
       ? `${turno.rotulo} · ${turno.resultados}`
       : turno.rotulo;
   return (
-    <View style={{ alignSelf: 'flex-start', maxWidth: '92%' }}>
-      <Glass
-        radius={radius.full}
-        style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: spacing.xs,
-            paddingHorizontal: spacing.md,
-            paddingVertical: 6,
-        }}
-      >
-        {turno.pronta ? (
-          <Text style={{ color: colors.brand, fontSize: typography.xs.fontSize }}>✓</Text>
-        ) : (
-          <Animated.Text
-            style={{
-              color: colors.brand,
-              fontFamily: fonts.body,
-              fontSize: typography.xs.fontSize,
-              opacity: pulso,
-            }}
-          >
-            ●
-          </Animated.Text>
-        )}
-        <Text
-          numberOfLines={1}
-          style={{
-            color: turno.pronta ? colors.mutedForeground : colors.brand,
-            fontFamily: fonts.body,
-            fontSize: typography.xs.fontSize,
-            flexShrink: 1,
-          }}
-        >
-          {rotulo}
-        </Text>
-            </Glass>
-    </View>
+    <Etiqueta
+      testID="etiqueta-ferramenta"
+      rotulo={rotulo}
+      descricao={descricaoDaFerramenta(turno.nome)}
+      pronta={turno.pronta}
+      pulso={pulso}
+    />
+  );
+}
+
+/** The label of the reasoning tag, by state. */
+const ROTULO_RACIOCINIO_ATIVO = 'Raciocinando';
+const ROTULO_RACIOCINIO_PRONTO = 'Raciocínio';
+/** What the reasoning tag says when the provider sends no reasoning text. */
+const DESCRICAO_RACIOCINIO = 'O USPapo está pensando na resposta.';
+const DESCRICAO_RACIOCINIO_PRONTO = 'O USPapo pensou antes de responder.';
+
+/** Reasoning text → the tag's second row (one line, collapsed whitespace). */
+export function resumoDoRaciocinio(texto: string, pronta: boolean): string {
+  const limpo = texto.replace(/\s+/g, ' ').trim();
+  if (limpo === '') {
+    return pronta ? DESCRICAO_RACIOCINIO_PRONTO : DESCRICAO_RACIOCINIO;
+  }
+  return limpo;
+}
+
+/**
+ * The reasoning tag. Same component as a tool tag by design — and, unlike the
+ * footer card it replaces, it is a LINE OF THE CONVERSATION, so it stays on
+ * screen after a tool call instead of being swapped out by the first `tool`
+ * event.
+ */
+export function LinhaRaciocinio({
+  turno,
+  pulso,
+}: {
+  turno: Extract<Turno, { autor: 'raciocinio' }>;
+  pulso: Animated.AnimatedInterpolation<number>;
+}) {
+  return (
+    <Etiqueta
+      testID="etiqueta-raciocinio"
+      rotulo={turno.pronta ? ROTULO_RACIOCINIO_PRONTO : ROTULO_RACIOCINIO_ATIVO}
+      descricao={resumoDoRaciocinio(turno.texto, turno.pronta)}
+      pronta={turno.pronta}
+      pulso={pulso}
+    />
+  );
+}
+
+/**
+ * The reasoning tag for the stretch where the provider reports NOTHING: the
+ * wait before the first token, and the gap after a tool answered. It is the
+ * same tag, so the student sees one continuous "working" state instead of a
+ * card that vanishes as soon as a tool runs.
+ */
+export function RaciocinioImplicito({
+  pulso,
+}: {
+  pulso: Animated.AnimatedInterpolation<number>;
+}) {
+  return (
+    <Etiqueta
+      testID="etiqueta-raciocinio"
+      rotulo={ROTULO_RACIOCINIO_ATIVO}
+      descricao={DESCRICAO_RACIOCINIO}
+      pronta={false}
+      pulso={pulso}
+    />
   );
 }
 
@@ -257,7 +384,7 @@ export function LinhaNota({ texto }: { texto: string }) {
  * and the fully rounded `rounded-[2rem]` corner.
  */
 export function BolhaUsuario({ texto }: { texto: string }) {
-  const { colors, glass, typography } = useTheme();
+  const { colors, typography } = useTheme();
   const { width } = useWindowDimensions();
   return (
     <Glass

@@ -126,6 +126,13 @@ export default function Historico() {
   const [conversas, setConversas] = useState<Conversa[] | null>(null);
   /** True when the last load could not reach Supabase (cache only). */
   const [doCache, setDoCache] = useState(false);
+  /**
+   * The load reached neither the server NOR a usable cache. It is a separate
+   * state from "loaded and empty" on purpose: the screen used to render the
+   * "Suas conversas aparecem aqui" copy in both cases, so a student whose
+   * history simply failed to load was told they had never had a conversation.
+   */
+  const [falhouCarga, setFalhouCarga] = useState(false);
   const [atualizando, setAtualizando] = useState(false);
   /** The row removed from the UI, still inside its undo window. */
   const [pendente, setPendente] = useState<Conversa | null>(null);
@@ -195,9 +202,23 @@ export default function Historico() {
   const carregar = useCallback(async () => {
     setAtualizando(true);
     try {
-      const { data } = await supabase.auth.getSession();
-      const userId = data.session?.user?.id ?? '';
-      if (userId === '') return;
+      let userId = '';
+      try {
+        const { data } = await supabase.auth.getSession();
+        userId = data.session?.user?.id ?? '';
+      } catch (err) {
+        console.warn('[history] getSession falhou:', err);
+      }
+      if (userId === '') {
+        // No readable session. Returning here used to leave `conversas` at
+        // null forever, which renders the skeleton — a history screen that
+        // loads and never finishes. The root gate owns the redirect to login;
+        // this screen just has to stop pretending it is still working.
+        setConversas([]);
+        setDoCache(false);
+        setFalhouCarga(true);
+        return;
+      }
 
       let servidor: Conversa[] = [];
       let chegouDoServidor = false;
@@ -209,9 +230,15 @@ export default function Historico() {
       }
 
       let cache: Conversa[] = [];
+      let chegouDoCache = false;
       try {
         cache = await carregarHistoricoOffline(userId);
-      } catch {
+        chegouDoCache = true;
+      } catch (err) {
+        // The offline cache is expo-sqlite, and on web that is a WASM build
+        // that a strict CSP or a private window can refuse outright. It is a
+        // fallback, not a requirement.
+        console.warn('[history] cache offline indisponível:', err);
         cache = [];
       }
 
@@ -228,6 +255,9 @@ export default function Historico() {
 
       setConversas(fundirHistorico(servidor, cache));
       setDoCache(!chegouDoServidor);
+      // Only a load that got NOTHING from either side is a failure. A server
+      // read that succeeded and returned zero rows is an empty history.
+      setFalhouCarga(!chegouDoServidor && (!chegouDoCache || cache.length === 0));
     } finally {
       setAtualizando(false);
     }
@@ -445,18 +475,58 @@ export default function Historico() {
           </Text>
         ) : null}
         {vazio && filtradas !== null && filtradas.length === 0 ? (
-          <Text
-            style={{
-              color: colors.mutedForeground,
-              fontFamily: fonts.body,
-              fontSize: typography.sm.fontSize,
-              textAlign: 'center',
-            }}
-          >
-            {busca.trim() === ''
-              ? 'Suas conversas aparecem aqui'
-              : 'Nenhuma conversa encontrada'}
-          </Text>
+          falhouCarga && busca.trim() === '' ? (
+            // The honest version of an empty list we could not fill: say the
+            // load failed and offer the retry, instead of reporting that the
+            // student has no conversations.
+            <View style={{ alignItems: 'center', gap: spacing.sm }}>
+              <Text
+                style={{
+                  color: colors.mutedForeground,
+                  fontFamily: fonts.body,
+                  fontSize: typography.sm.fontSize,
+                  textAlign: 'center',
+                }}
+              >
+                Não consegui carregar seu histórico.
+              </Text>
+              <Pressable
+                onPress={() => void carregar()}
+                disabled={atualizando}
+                accessibilityLabel="Tentar de novo"
+                style={({ pressed }) => ({
+                  backgroundColor: colors.brand,
+                  borderRadius: radius.full,
+                  opacity: atualizando ? 0.6 : pressed ? 0.85 : 1,
+                  paddingHorizontal: spacing.md,
+                  paddingVertical: 6,
+                })}
+              >
+                <Text
+                  style={{
+                    color: colors.brandForeground,
+                    fontFamily: fonts.bodyBold,
+                    fontSize: typography.xs.fontSize,
+                  }}
+                >
+                  Tentar de novo
+                </Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Text
+              style={{
+                color: colors.mutedForeground,
+                fontFamily: fonts.body,
+                fontSize: typography.sm.fontSize,
+                textAlign: 'center',
+              }}
+            >
+              {busca.trim() === ''
+                ? 'Suas conversas aparecem aqui'
+                : 'Nenhuma conversa encontrada'}
+            </Text>
+          )
         ) : null}
       </Container>
 

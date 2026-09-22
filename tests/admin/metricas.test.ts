@@ -11,9 +11,11 @@ import {
   DIAS_POR_JANELA,
   NOME_OUTROS,
   ResumoApiError,
+  ERRO_SEM_PERMISSAO,
   adminKey,
   barrasDePerguntas,
   carregarResumo,
+  configurarToken,
   coresDeFontes,
   formataMs,
   formataNumero,
@@ -72,6 +74,7 @@ describe('carregarResumo', () => {
   afterEach(() => {
     delete process.env.EXPO_PUBLIC_ADMIN_API_KEY;
     if (chaveAnterior === undefined) delete process.env.EXPO_PUBLIC_BACKEND_URL;
+    configurarToken();
   });
 
   it('GETs {backendUrl()}/api/analytics/resumo sending X-Admin-Key from EXPO_PUBLIC_ADMIN_API_KEY', async () => {
@@ -87,13 +90,49 @@ describe('carregarResumo', () => {
     expect(init?.headers).toEqual({ 'X-Admin-Key': 'chave-admin-teste' });
   });
 
-  it('omits the admin header when EXPO_PUBLIC_ADMIN_API_KEY is unset (the endpoint answers 403)', async () => {
+  it('sends the signed-in admin JWT as Authorization: Bearer', async () => {
+    // The credential every build published from this repo actually uses: the
+    // admin key is NOT in the bundle (it would be a published secret), so
+    // without this header the endpoint answers 403 and the panel showed
+    // nothing but its retry state.
     delete process.env.EXPO_PUBLIC_ADMIN_API_KEY;
+    configurarToken(async () => 'jwt-do-admin');
+    const fetchMock = instalarFetch();
+    fetchMock.mockResolvedValue(respostaJSON(200, RESUMO_RESPOSTA));
+
+    await carregarResumo();
+    expect(fetchMock.mock.calls[0][1]?.headers).toEqual({
+      Authorization: 'Bearer jwt-do-admin',
+    });
+  });
+
+  it('sends both doors when the operator build also sets the admin key', async () => {
+    configurarToken(async () => 'jwt-do-admin');
+    const fetchMock = instalarFetch();
+    fetchMock.mockResolvedValue(respostaJSON(200, RESUMO_RESPOSTA));
+
+    await carregarResumo();
+    expect(fetchMock.mock.calls[0][1]?.headers).toEqual({
+      'X-Admin-Key': 'chave-admin-teste',
+      Authorization: 'Bearer jwt-do-admin',
+    });
+  });
+
+  it('omits both headers when there is neither a key nor a session', async () => {
+    delete process.env.EXPO_PUBLIC_ADMIN_API_KEY;
+    configurarToken(async () => '');
     const fetchMock = instalarFetch();
     fetchMock.mockResolvedValue(respostaJSON(200, RESUMO_RESPOSTA));
 
     await carregarResumo();
     expect(fetchMock.mock.calls[0][1]?.headers).toEqual({});
+  });
+
+  it('403 says the account is not an admin, not "could not load"', async () => {
+    const fetchMock = instalarFetch();
+    fetchMock.mockResolvedValue(respostaJSON(403, {}));
+
+    await expect(carregarResumo()).rejects.toThrow(ERRO_SEM_PERMISSAO);
   });
 
   it('honors EXPO_PUBLIC_BACKEND_URL (the web goes through the same-origin proxy)', async () => {
