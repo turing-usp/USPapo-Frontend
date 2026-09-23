@@ -91,10 +91,13 @@ npm run export:web && npx serve dist --single
 
 Ao mudar o domínio ou criar um novo ambiente web:
 
-1. Supabase → Authentication → URL Configuration: *Site URL* e *Redirect
-   URLs* com `https://<domínio>/**` (e `uspapofe://**` para o app). Sem
-   isso, login com Google e o link de redefinir senha voltam para o lugar
-   errado.
+1. Supabase → Authentication → URL Configuration → *Redirect URLs*:
+   `https://<domínio>` e `https://<domínio>/**` (e `uspapofe://**` para o
+   app). O app sempre informa o destino (cadastro, Google, redefinir
+   senha), e o Supabase só o aceita se estiver nessa lista; senão manda o
+   usuário para a *Site URL*. **Não mude a Site URL**: o projeto é
+   compartilhado e ela é o link padrão dos emails dos outros serviços do
+   Turing (`https://turingusp.com/`).
 2. Render → `CORS_ORIGINS` do backend com o domínio novo.
 3. Vercel → Settings → Domains.
 
