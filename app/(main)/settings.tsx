@@ -1,4 +1,4 @@
-/** Settings: theme, haptics, the offline cache and about. */
+/** Settings: theme, haptics, memory, the offline cache and about. */
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import React, { useEffect, useState } from 'react';
@@ -6,9 +6,14 @@ import { Linking, Platform, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ALTURA_CHROME } from '../../components/Chrome';
-import { Botao, Cartao, Texto } from '../../components/ui';
+import { Icone } from '../../components/icons';
+import { Botao, Cartao, Interruptor, Texto } from '../../components/ui';
+import { sessaoAtual } from '../../lib/auth';
 import { limparCache, tamanhoDoCache } from '../../lib/cache';
 import { carregarHaptics, definirHaptics, haptics } from '../../lib/device';
+import {
+  apagarMemoria, definirMemoriaAtiva, itensDaMemoria, lerMemoria, removerFato, type ItemMemoria, type Memoria,
+} from '../../lib/memoria';
 import { readScheme, setScheme, useTheme, type ThemePreference } from '../../theme';
 
 const TEMAS: [ThemePreference, string][] = [['system', 'Sistema'], ['light', 'Claro'], ['dark', 'Escuro']];
@@ -29,17 +34,24 @@ function Linha({ rotulo, valor }: { rotulo: string; valor: string }) {
 }
 
 export default function Ajustes() {
-  const { colors, layout, radius, spacing } = useTheme();
+  const { colors, layout, spacing } = useTheme();
   const insets = useSafeAreaInsets();
   const [tema, setTema] = useState<ThemePreference>('system');
   const [vibracao, setVibracao] = useState(true);
   const [cache, setCache] = useState<number | null>(null);
   const [limpando, setLimpando] = useState(false);
+  const [uid, setUid] = useState('');
+  const [memoria, setMemoria] = useState<Memoria | null>(null); // null: no session or table not migrated (card hidden)
+  const [ocupada, setOcupada] = useState<'' | 'alternar' | 'fato' | 'tudo'>('');
 
   useEffect(() => {
     void readScheme().then(setTema);
     void carregarHaptics().then(setVibracao);
     void tamanhoDoCache().then(setCache);
+    void sessaoAtual().then(async ({ userId }) => {
+      setUid(userId);
+      if (userId) setMemoria(await lerMemoria(userId));
+    });
   }, []);
 
   async function limpar() {
@@ -50,6 +62,31 @@ export default function Ajustes() {
     void haptics.selection();
   }
 
+  async function alternarMemoria() {
+    if (!memoria || ocupada) return;
+    const ativa = !memoria.ativa;
+    setMemoria({ ...memoria, ativa });
+    setOcupada('alternar');
+    void haptics.selection();
+    const ok = await definirMemoriaAtiva(uid, ativa);
+    setOcupada('');
+    if (!ok) {
+      setMemoria((m) => m && { ...m, ativa: !ativa });
+      void haptics.error();
+    }
+  }
+
+  /** One fact, or everything when no item is given. */
+  async function esquecer(item?: ItemMemoria) {
+    if (!memoria || ocupada) return;
+    setOcupada(item ? 'fato' : 'tudo');
+    const fatos = item ? await removerFato(uid, memoria.fatos, item) : (await apagarMemoria(uid)) ? {} : null;
+    setOcupada('');
+    if (fatos) setMemoria((m) => m && { ...m, fatos });
+    void (fatos ? haptics.selection() : haptics.error());
+  }
+
+  const itens = memoria ? itensDaMemoria(memoria.fatos) : [];
   const versao = `${Constants.expoConfig?.version ?? '—'}${Updates.updateId ? ` · atualização ${Updates.updateId.slice(0, 8)}` : ''}`;
 
   return (
@@ -68,14 +105,32 @@ export default function Ajustes() {
 
       {Platform.OS !== 'web' ? (
         <Cartao titulo="Vibração">
-          <Pressable accessibilityRole="switch" accessibilityState={{ checked: vibracao }} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}
-            onPress={() => { const v = !vibracao; setVibracao(v); void definirHaptics(v).then(() => v && haptics.selection()); }}>
-            <View style={{ width: 48, height: 28, padding: 3, borderRadius: radius.full, justifyContent: 'center',
-              alignItems: vibracao ? 'flex-end' : 'flex-start', backgroundColor: vibracao ? colors.brand : colors.line + '33' }}>
-              <View style={{ width: 22, height: 22, borderRadius: radius.full, backgroundColor: colors.brandForeground }} />
+          <Interruptor ligado={vibracao} rotulo="Resposta tátil ao tocar, enviar e receber"
+            onPress={() => { const v = !vibracao; setVibracao(v); void definirHaptics(v).then(() => v && haptics.selection()); }} />
+        </Cartao>
+      ) : null}
+
+      {memoria ? (
+        <Cartao titulo="Memória">
+          <Interruptor ligado={memoria.ativa} rotulo="Lembrar informações entre conversas" onPress={() => void alternarMemoria()} />
+          <Texto v="legenda">
+            O USPapo guarda só o essencial que você contar (curso, unidade, ano de ingresso…) para personalizar as respostas em novas
+            conversas. Desligada, ele não lê nem salva nada.
+          </Texto>
+          {itens.length ? itens.map((item, i) => (
+            <View key={`${item.chave}:${item.indice ?? ''}`} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+              <View style={{ flex: 1 }}>
+                {itens[i - 1]?.chave !== item.chave ? <Texto v="suave">{item.rotulo}</Texto> : null}
+                <Texto>{item.valor}</Texto>
+              </View>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Esquecer: ${item.valor}`} hitSlop={8} disabled={!!ocupada}
+                onPress={() => void esquecer(item)} style={({ pressed }) => ({ opacity: pressed || ocupada ? 0.5 : 1 })}>
+                <Icone nome="fechar" cor={colors.mutedForeground} tamanho={16} />
+              </Pressable>
             </View>
-            <Texto style={{ flex: 1 }}>Resposta tátil ao tocar, enviar e receber</Texto>
-          </Pressable>
+          )) : <Texto v="suave">Nada guardado ainda.</Texto>}
+          <Botao v="secundario" icone="lixo" rotulo="Apagar memória" carregando={ocupada === 'tudo'} desabilitado={!itens.length || !!ocupada}
+            onPress={() => void esquecer()} />
         </Cartao>
       ) : null}
 

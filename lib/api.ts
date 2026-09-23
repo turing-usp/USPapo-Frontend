@@ -32,6 +32,8 @@ export const FERRAMENTAS: Record<string, [string, string]> = {
   consultar_sala: ['Procurando a sala', 'Localiza a sala e o prédio pelo USPolis.'],
   consultar_circulares: ['Consultando a SPTrans', 'Consulta o GTFS oficial e o Olho Vivo da SPTrans para itinerários, paradas e horários.'],
   consultar_wikipedia: ['Consultando a Wikipédia', 'Lê o resumo do verbete na Wikipédia.'],
+  pesquisar_web: ['Pesquisando na web', 'Busca rápida na internet (fonte não oficial).'],
+  atualizar_memoria: ['Atualizando memória', 'Guarda o que você contou (curso, unidade, ingresso) para as próximas conversas.'],
 };
 
 export function ferramenta(name: string): { rotulo: string; descricao: string } {

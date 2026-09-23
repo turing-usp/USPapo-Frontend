@@ -118,6 +118,21 @@ export function Cartao({ titulo, children, style }: { titulo?: string; children:
   );
 }
 
+/** The on/off pill with its label (settings toggles). */
+export function Interruptor({ ligado, rotulo, onPress }: { ligado: boolean; rotulo: string; onPress: () => void }) {
+  const { colors, radius, spacing } = useTheme();
+  return (
+    <Pressable accessibilityRole="switch" accessibilityState={{ checked: ligado }} onPress={onPress}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+      <View style={{ width: 48, height: 28, padding: 3, borderRadius: radius.full, justifyContent: 'center',
+        alignItems: ligado ? 'flex-end' : 'flex-start', backgroundColor: ligado ? colors.brand : colors.line + '33' }}>
+        <View style={{ width: 22, height: 22, borderRadius: radius.full, backgroundColor: colors.brandForeground }} />
+      </View>
+      <Texto style={{ flex: 1 }}>{rotulo}</Texto>
+    </Pressable>
+  );
+}
+
 /** Centered message with an optional action (empty, error and not-found states). */
 export function Estado({ titulo, mensagem, acao, aoAgir }: { titulo?: string; mensagem: string; acao?: string; aoAgir?: () => void }) {
   const { spacing } = useTheme();
