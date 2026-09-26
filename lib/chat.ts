@@ -2,18 +2,22 @@
  * The chat state machine and the `useChat` hook.
  *
  * One conversation = one `conversas` row with ordered turns. A turn is saved
- * pending before the stream and completed only on a successful end; a stream
- * that dies leaves it pending and the next open re-sends it. `pensando` carries
- * no reasoning text: it only drives the "Pensando…" indicator.
+ * pending before the stream; the server keeps answering it when the app closes
+ * and saves the answer (so does the app on a successful end, whichever is
+ * first). Opening a conversation with a pending turn reattaches to the server's
+ * answer, and only re-sends it when there is none. "Parar" stops it on the
+ * server, which saves the partial answer. `pensando` carries no reasoning text:
+ * it only drives the "Pensando…" indicator.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 
-import { ApiError, SESSAO_EXPIRADA, streamChat, type ChatEvent } from './api';
+import { ApiError, SESSAO_EXPIRADA, pararChat, retomarChat, streamChat, type ChatEvent, type Turno } from './api';
 import { mapAuthError, sessaoAtual } from './auth';
 import { conversaEmCache, guardarConversa } from './cache';
 import { anexarMensagem, lerConversa, type Conversa, type Mensagem } from './conversations';
 import { haptics } from './device';
+import { aoPerguntar, avisarRespostaPronta } from './notificacoes';
 
 export type Linha =
   | { id: string; autor: 'user'; texto: string }
@@ -27,6 +31,8 @@ export type EstadoChat = { linhas: Linha[]; status: Status; pergunta: string; or
 
 const CONTEXTO_TURNOS = 6;
 const NOTA_INTERROMPIDA = 'A resposta foi interrompida.';
+/** How the server stores a stopped answer (USPapo-Backend/app/jobs.py). */
+const MARCA_INTERROMPIDA = '*Resposta interrompida.*';
 
 export const estadoVazio = (): EstadoChat => ({ linhas: [], status: 'idle', pergunta: '', ordem: 0, escrevendo: false });
 
@@ -141,44 +147,60 @@ export function useChat(id: string, opts: { aoSessaoExpirada: () => void; pertoD
   const [userId, setUserId] = useState<string | null>(null);
   const conversa = useRef<Conversa | null>(null);
   const controle = useRef<AbortController | null>(null);
+  const turno = useRef<Turno | null>(null);
+  const parado = useRef(false);
   const optsRef = useRef(opts);
   optsRef.current = opts;
 
-  const responder = useCallback(async (pergunta: string, ordem: number, uid: string) => {
+  /** Streams a turn: sent now, or (`retomar`) the server's answer already underway ('sem-job' if none). */
+  const responder = useCallback(async (pergunta: string, ordem: number, uid: string, retomar = false): Promise<'ok' | 'sem-job' | 'falhou'> => {
     controle.current?.abort();
     const ctrl = new AbortController();
     controle.current = ctrl;
+    turno.current = { conversaId: id, ordem };
+    parado.current = false;
     const salvas = (conversa.current?.mensagens ?? []).filter((m) => m.resposta !== null && m.ordem < ordem);
     let local = iniciar(pergunta, ordem, linhasSalvas(salvas));
     setEstado(local);
     const { token } = await sessaoAtual();
+    const eventos = retomar ? retomarChat(turno.current, token, ctrl.signal) : streamChat({
+      question: pergunta, sessionId: id, token, signal: ctrl.signal, turno: turno.current,
+      history: salvas.slice(-CONTEXTO_TURNOS).map((m) => ({ pergunta: m.pergunta, resposta: m.resposta as string })),
+    });
     try {
-      for await (const ev of streamChat({
-        question: pergunta, sessionId: id, token, signal: ctrl.signal,
-        history: salvas.slice(-CONTEXTO_TURNOS).map((m) => ({ pergunta: m.pergunta, resposta: m.resposta as string })),
-      })) {
+      for await (const ev of eventos) {
         local = reduzir(local, ev);
         setEstado(local);
       }
     } catch (err) {
       if (ctrl.signal.aborted) {
-        const parcial = local.linhas.some((l) => l.autor === 'assistant' && !l.completo);
-        setEstado({ ...local, status: 'idle', escrevendo: false,
-          linhas: parcial ? [...local.linhas, { id: `nota:${local.linhas.length}`, autor: 'nota', texto: NOTA_INTERROMPIDA }] : local.linhas });
-        return;
+        // Leaving the screen also aborts: the server goes on and saves the answer. Only "Parar"
+        // ends the turn, and the server saves the partial answer marked as interrupted.
+        const aberta = local.linhas.find((l): l is Extract<Linha, { autor: 'assistant' }> => l.autor === 'assistant' && !l.completo);
+        const encerradas = local.linhas.map((l): Linha => (l === aberta ? { ...aberta, completo: true }
+          : l.autor === 'ferramenta' && !l.pronta ? { ...l, pronta: true } : l));
+        setEstado({ ...local, status: 'idle', escrevendo: false, linhas: aberta || parado.current
+          ? [...encerradas, { id: `nota:${local.linhas.length}`, autor: 'nota', texto: NOTA_INTERROMPIDA }] : encerradas });
+        if (parado.current) {
+          const texto = aberta?.texto.trim();
+          const mensagens = [...salvas, { ordem, pergunta, resposta: texto ? `${texto}\n\n${MARCA_INTERROMPIDA}` : MARCA_INTERROMPIDA, fontes: [] }];
+          conversa.current = conversa.current && { ...conversa.current, mensagens };
+        }
+        return 'falhou';
       }
+      if (retomar && err instanceof ApiError && err.status === 404) return 'sem-job';
       const falha = traduzirFalha(err);
       void haptics.error();
       setEstado(erroLinha(local, falha.mensagem, falha.tipo));
       if (falha.tipo === 'sessao') optsRef.current.aoSessaoExpirada();
-      return;
+      return 'falhou';
     } finally {
       if (controle.current === ctrl) controle.current = null;
     }
     const resposta = local.linhas.find((l): l is Extract<Linha, { autor: 'assistant' }> => l.autor === 'assistant' && l.ordem === ordem);
     if (local.status !== 'idle' || !resposta?.texto.trim()) {
       if (local.status !== 'errou') setEstado(erroLinha(local, 'A resposta chegou vazia. Tente de novo.', 'outro'));
-      return;
+      return 'falhou';
     }
     try {
       await anexarMensagem(uid, id, { ordem, pergunta, resposta: resposta.texto, fontes: resposta.fontes });
@@ -193,6 +215,8 @@ export function useChat(id: string, opts: { aoSessaoExpirada: () => void; pertoD
     } as Conversa;
     void guardarConversa(uid, conversa.current);
     if (optsRef.current.pertoDoFim && !optsRef.current.pertoDoFim()) void haptics.finished();
+    avisarRespostaPronta(id, pergunta);
+    return 'ok';
   }, [id]);
 
   /** Saves the pending turn (idempotent; offline it is retried with the question) and streams it. */
@@ -200,6 +224,18 @@ export function useChat(id: string, opts: { aoSessaoExpirada: () => void; pertoD
     await anexarMensagem(uid, id, { ordem, pergunta }).catch((err) => console.warn('[chat] turno pendente:', err));
     await responder(pergunta, ordem, uid);
   }, [id, responder]);
+
+  /** A pending turn: reattach to the server's answer; with none, it may have just been saved; else re-send. */
+  const retomarTurno = useCallback(async (pendente: Mensagem, uid: string) => {
+    if (await responder(pendente.pergunta, pendente.ordem, uid, true) !== 'sem-job') return;
+    const atual = await lerConversa(uid, id).catch(() => null);
+    if (atual?.mensagens.some((m) => m.ordem === pendente.ordem && m.resposta !== null)) {
+      conversa.current = atual;
+      setEstado({ ...estadoVazio(), linhas: linhasSalvas(atual.mensagens), ordem: atual.mensagens.length });
+      return;
+    }
+    await enviarTurno(pendente.pergunta, pendente.ordem, uid);
+  }, [id, responder, enviarTurno]);
 
   useEffect(() => {
     let ativo = true;
@@ -219,7 +255,7 @@ export function useChat(id: string, opts: { aoSessaoExpirada: () => void; pertoD
       const pendente = salvas.find((m) => m.resposta === null);
       const nova = tomarPendente(id);
       esquecerPendente(id);
-      if (pendente) void enviarTurno(pendente.pergunta, pendente.ordem, uid);
+      if (pendente) void retomarTurno(pendente, uid);
       else if (nova && !salvas.length) void enviarTurno(nova, 0, uid);
       else setEstado({ ...estadoVazio(), linhas: linhasSalvas(salvas), ordem: salvas.length });
     })();
@@ -227,12 +263,13 @@ export function useChat(id: string, opts: { aoSessaoExpirada: () => void; pertoD
       ativo = false;
       controle.current?.abort();
     };
-  }, [id, enviarTurno]);
+  }, [id, enviarTurno, retomarTurno]);
 
   const send = useCallback((texto: string) => {
     const pergunta = texto.trim();
     if (!pergunta || !userId) return;
     void haptics.send();
+    void aoPerguntar();
     const respondidas = (conversa.current?.mensagens ?? []).filter((m) => m.resposta !== null).length;
     const repetir = estado.status === 'errou' && estado.pergunta === pergunta;
     void enviarTurno(pergunta, repetir ? estado.ordem : respondidas, userId);
@@ -240,6 +277,9 @@ export function useChat(id: string, opts: { aoSessaoExpirada: () => void; pertoD
 
   const stop = useCallback(() => {
     void haptics.press();
+    parado.current = true;
+    const atual = turno.current;
+    if (atual) void sessaoAtual().then(({ token }) => pararChat(atual, token));
     controle.current?.abort();
   }, []);
 

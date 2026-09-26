@@ -1,12 +1,13 @@
 /**
  * Design tokens (ported from the old site's globals.css) and the theme provider.
- * The scheme preference (light | dark | system) is persisted in AsyncStorage.
+ * The scheme preference (light | dark | oled | system) is persisted in AsyncStorage.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Appearance } from 'react-native';
+import { Appearance, Platform, type ViewStyle } from 'react-native';
 
-export type Scheme = 'light' | 'dark';
+/** `oled` is the true-black dark scheme: everything dark-only also applies to it (see `Theme.escuro`). */
+export type Scheme = 'light' | 'dark' | 'oled';
 export type ThemePreference = Scheme | 'system';
 export const THEME_STORAGE_KEY = 'theme:scheme';
 
@@ -44,13 +45,34 @@ const palette = {
     success: '#34d399',
     chart: ['#d95926', '#3987e5', '#199e70', '#9085e9', '#c98500', '#d55181'],
   },
+  oled: {
+    brand: '#f1863d',
+    brandForeground: '#ffffff',
+    canvas: '#000000',
+    surface: '#141414',
+    surfaceRaised: '#0d0d0d',
+    foreground: '#f0f0f0',
+    mutedForeground: '#a3a3a3',
+    faintForeground: '#7a7a7a',
+    line: '#ffffff',
+    tint: '#ffffff',
+    scrim: '#000000',
+    danger: '#f87171',
+    success: '#34d399',
+    chart: ['#d95926', '#3987e5', '#199e70', '#9085e9', '#c98500', '#d55181'],
+  },
 };
 export type SchemeColors = (typeof palette)['light'];
 
-/** Backdrop: a 135deg base gradient with two soft radial glows (orange in light, blue in dark). */
+/**
+ * Backdrop: a 135deg base gradient with two soft radial glows. Every scheme keeps the light scheme's
+ * glow contrast (WCAG ratio ~1.16 / ~1.12 against the base): orange in light, blue in dark, and an
+ * ember plus a faint indigo over true black in oled.
+ */
 export const scene = {
   light: { backdropFrom: '#d3dcf2', backdropTo: '#eaeefb', glowA: 'rgba(241,134,61,0.20)', glowB: 'rgba(241,134,61,0.15)' },
-  dark: { backdropFrom: '#050833', backdropTo: '#010214', glowA: 'rgba(29,44,135,0.85)', glowB: 'rgba(20,31,98,0.70)' },
+  dark: { backdropFrom: '#050833', backdropTo: '#010214', glowA: 'rgba(29,44,135,0.39)', glowB: 'rgba(20,31,98,0.48)' },
+  oled: { backdropFrom: '#000000', backdropTo: '#000000', glowA: 'rgba(241,134,61,0.14)', glowB: 'rgba(88,72,210,0.19)' },
 };
 export type SceneColors = (typeof scene)['light'];
 
@@ -78,8 +100,20 @@ export const glass = {
     },
     shadow: { shadowColor: 'rgb(0,0,0)', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.58, shadowRadius: 10 },
   },
+  // Graphite glass over black; the top filament glows like an ember.
+  oled: {
+    tint: { surface: 'rgba(255,255,255,0.05)', panel: 'rgba(18,18,18,0.62)', raised: 'rgba(24,24,24,0.94)', brand: 'rgba(255,255,255,0.03)' },
+    hairline: {
+      borderWidth: 1,
+      borderTopColor: 'rgba(241,134,61,0.34)',
+      borderRightColor: 'rgba(255,255,255,0.08)',
+      borderBottomColor: 'rgba(255,255,255,0.08)',
+      borderLeftColor: 'rgba(255,255,255,0.08)',
+    },
+    shadow: { shadowColor: 'rgb(0,0,0)', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.6, shadowRadius: 10 },
+  },
 };
-export type GlassTokens = (typeof glass)['light'];
+export type GlassTokens = Omit<(typeof glass)['light'], 'shadow'> & { shadow: ViewStyle };
 export type GlassVariant = keyof GlassTokens['tint'];
 
 export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, '2xl': 24, '3xl': 32 } as const;
@@ -110,6 +144,8 @@ export const layout = {
 
 export type Theme = {
   scheme: Scheme;
+  /** dark or oled. */
+  escuro: boolean;
   colors: SchemeColors;
   scene: SceneColors;
   glass: GlassTokens;
@@ -122,7 +158,18 @@ export type Theme = {
 
 const ThemeContext = createContext<Theme | null>(null);
 const listeners = new Set<(p: ThemePreference) => void>();
-const isPreference = (v: unknown): v is ThemePreference => v === 'light' || v === 'dark' || v === 'system';
+const isPreference = (v: unknown): v is ThemePreference => v === 'light' || v === 'dark' || v === 'oled' || v === 'system';
+
+/**
+ * The lift as the same CSS box-shadow the web draws from these tokens. Android has no shadow* props,
+ * and `elevation` paints a hard box under translucent glass; boxShadow is clipped out of the pane.
+ */
+function comSombra(tokens: (typeof glass)['light']): GlassTokens {
+  if (Platform.OS !== 'android') return tokens;
+  const { shadowColor, shadowOffset, shadowOpacity, shadowRadius } = tokens.shadow;
+  const cor = shadowColor.replace('rgb(', 'rgba(').replace(')', `,${shadowOpacity})`);
+  return { ...tokens, shadow: { boxShadow: `${shadowOffset.width}px ${shadowOffset.height}px ${shadowRadius}px ${cor}` } };
+}
 
 export async function readScheme(): Promise<ThemePreference> {
   try {
@@ -154,7 +201,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const theme = useMemo<Theme>(() => {
     const s = preference === 'system' ? system : preference;
-    return { scheme: s, colors: palette[s], scene: scene[s], glass: glass[s], spacing, radius, typography, fonts, layout };
+    return { scheme: s, escuro: s !== 'light', colors: palette[s], scene: scene[s], glass: comSombra(glass[s]), spacing, radius, typography, fonts, layout };
   }, [preference, system]);
 
   return <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>;

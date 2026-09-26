@@ -5,13 +5,16 @@
  * each block is a memoized renderer with a stable key: finished blocks never
  * re-parse, and every new block fades and rises in — the streaming animation.
  * A finished answer with formulas renders through KaTeX (components/chat/Matematica).
+ * Tables size each column to its content and scroll sideways when they cannot fit.
  */
-import { MarkdownStream, type MarkdownStyleMap, type RenderRules } from '@ronradtke/react-native-markdown-display';
-import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Linking, Platform, Text } from 'react-native';
+import {
+  createMarkdownIt, MarkdownStream, type ASTNode, type MarkdownStyleMap, type RenderRules,
+} from '@ronradtke/react-native-markdown-display';
+import React, { createContext, memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Animated, Easing, Linking, Platform, ScrollView, Text, View, useWindowDimensions, type ViewStyle } from 'react-native';
 
 import { Matematica } from './Matematica';
-import { blocos, selar, temMatematica } from '../../lib/markdown';
+import { blocos, distribuirColunas, medirColunas, quebras, selar, temMatematica, tintasDaTabela } from '../../lib/markdown';
 import { useTheme, type Theme } from '../../theme';
 
 /** Characters on screen now: chases the received text ~0.25 s behind, never slower than 30 chars/s. */
@@ -51,18 +54,21 @@ export function useRevelacao(texto: string, streaming: boolean): string {
 }
 
 const MONO = Platform.select({ ios: 'Courier New', default: 'monospace' });
+const analisador = createMarkdownIt({ plugins: [quebras] });
 
-function estilos({ colors, fonts, radius, spacing, typography, scheme }: Theme): MarkdownStyleMap {
+function estilos({ colors, fonts, radius, spacing, typography, escuro }: Theme): MarkdownStyleMap {
+  // Leaves take the nearest styled ancestor's text style (body, strong, heading, cell): `text` and
+  // `textgroup` stay empty, or they would override bold, headings and table cells with the body style.
   const corpo = { color: colors.foreground, fontFamily: fonts.body, ...typography.lg };
-  const tinta = scheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(11,16,48,0.06)';
-  const linha = scheme === 'dark' ? 'rgba(255,255,255,0.14)' : 'rgba(11,16,48,0.14)';
+  const { linha, cabecalho: tinta, listra } = tintasDaTabela(escuro);
+  const celula = { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, ...typography.sm, color: colors.foreground };
   const titulo = (passo: keyof typeof typography, fonte: string = fonts.displayBold, cor = colors.foreground) => ({
     flexDirection: 'row' as const, flexWrap: 'wrap' as const, color: cor, fontFamily: fonte, ...typography[passo], marginTop: spacing.md, marginBottom: spacing.xs,
   });
   const codigo = { backgroundColor: tinta, borderColor: linha, borderRadius: radius.md, borderWidth: 1, color: colors.foreground,
     fontFamily: MONO, fontSize: typography.sm.fontSize, marginBottom: spacing.md, padding: spacing.md };
   return {
-    body: corpo, text: corpo, textgroup: corpo,
+    body: corpo, text: {}, textgroup: {},
     paragraph: { marginTop: 0, marginBottom: spacing.md, flexWrap: 'wrap', flexDirection: 'row', width: '100%' },
     heading1: titulo('2xl'), heading2: titulo('xl'), heading3: titulo('lg'),
     heading4: titulo('base', fonts.bodyBold), heading5: titulo('sm', fonts.bodyBold, colors.mutedForeground), heading6: titulo('xs', fonts.bodyBold, colors.mutedForeground),
@@ -79,12 +85,57 @@ function estilos({ colors, fonts, radius, spacing, typography, scheme }: Theme):
     bullet_list_content: { flex: 1 }, ordered_list_content: { flex: 1 },
     code_inline: { backgroundColor: tinta, borderRadius: radius.sm, borderWidth: 0, color: colors.foreground, fontFamily: MONO, fontSize: typography.sm.fontSize, paddingHorizontal: 5 },
     code_block: codigo, fence: codigo,
-    table: { borderColor: linha, borderRadius: radius.md, borderWidth: 1, marginBottom: spacing.md },
+    table: { borderColor: linha, borderRadius: radius.md, borderWidth: 1, marginBottom: spacing.md, overflow: 'hidden' },
     thead: { backgroundColor: tinta },
-    tr: { borderBottomWidth: 1, borderColor: linha, flexDirection: 'row' },
-    th: { flex: 1, padding: spacing.sm, color: colors.foreground, fontFamily: fonts.bodyBold, fontSize: typography.sm.fontSize },
-    td: { flex: 1, padding: spacing.sm, color: colors.mutedForeground, fontFamily: fonts.body, fontSize: typography.sm.fontSize },
+    tr: { borderColor: linha, flexDirection: 'row' },
+    tr_divisa: { borderBottomWidth: 1 },
+    tr_listra: { backgroundColor: listra },
+    th: { ...celula, fontFamily: fonts.bodyBold },
+    td: { ...celula, fontFamily: fonts.body },
+    celula_divisa: { borderLeftWidth: 1, borderColor: linha },
   };
+}
+
+/** Column widths of the table being rendered, read by its cells. */
+const Larguras = createContext<number[]>([]);
+
+function textoDe(no: ASTNode): string {
+  if (no.type === 'hardbreak' || no.type === 'softbreak') return '\n';
+  if (no.type === 'text' || no.type === 'code_inline') return no.content;
+  return no.children.map(textoDe).join('');
+}
+
+/** Markdown sets column alignment as an inline `text-align` style on each cell. */
+const ALINHAR: Record<string, ViewStyle['alignItems']> = { center: 'center', right: 'flex-end' };
+
+function Tabela({ no, estilo, children }: { no: ASTNode; estilo: MarkdownStyleMap; children: ReactNode }) {
+  const { layout, spacing, typography } = useTheme();
+  const { width } = useWindowDimensions();
+  const [disponivel, setDisponivel] = useState(() => Math.min(width, layout.chatMaxWidth) - 2 * spacing.lg - 2);
+  const linhas = no.children.flatMap((secao) => secao.children.map((tr) => tr.children.map(textoDe)));
+  const { larguras, rola } = distribuirColunas(medirColunas(linhas), disponivel, {
+    caractere: typography.sm.fontSize * 0.56, folga: 2 * spacing.md + 1, minimo: 56, maximo: 280, conforto: 120,
+  });
+  return (
+    <View style={estilo._VIEW_SAFE_table} onLayout={(e) => setDisponivel(Math.floor(e.nativeEvent.layout.width) - 2)}>
+      <ScrollView horizontal scrollEnabled={rola} showsHorizontalScrollIndicator={rola} nestedScrollEnabled bounces={false}>
+        <Larguras.Provider value={larguras}>
+          <View style={{ width: larguras.reduce((a, b) => a + b, 0) }}>{children}</View>
+        </Larguras.Provider>
+      </ScrollView>
+    </View>
+  );
+}
+
+function Celula({ no, estilo, children }: { no: ASTNode; estilo: MarkdownStyleMap; children: ReactNode }) {
+  const larguras = useContext(Larguras);
+  const alinhamento = /text-align:\s*(center|right)/.exec(no.attributes.style ?? '')?.[1];
+  return (
+    <View style={[estilo[`_VIEW_SAFE_${no.type}`], { width: larguras[no.index] }, no.index > 0 && estilo.celula_divisa,
+      alinhamento ? { alignItems: ALINHAR[alinhamento] } : null]}>
+      {children}
+    </View>
+  );
 }
 
 // Plain code blocks (the default fence pulls in a highlighter and an icon font); no remote images.
@@ -92,6 +143,18 @@ const regras: RenderRules = {
   image: () => null,
   fence: (node, _c, _p, styles) => <Text key={node.key} style={styles.fence}>{node.content.replace(/\n$/, '')}</Text>,
   code_block: (node, _c, _p, styles) => <Text key={node.key} style={styles.code_block}>{node.content.replace(/\n$/, '')}</Text>,
+  table: (node, children, _p, styles) => <Tabela key={node.key} no={node} estilo={styles}>{children}</Tabela>,
+  tr: (node, children, pais, styles) => {
+    const secao = pais[0];
+    const ultima = secao?.type === 'tbody' && node.index === secao.children.length - 1;
+    return (
+      <View key={node.key} style={[styles._VIEW_SAFE_tr, !ultima && styles.tr_divisa, secao?.type === 'tbody' && node.index % 2 === 1 && styles.tr_listra]}>
+        {children}
+      </View>
+    );
+  },
+  th: (node, children, _p, styles) => <Celula key={node.key} no={node} estilo={styles}>{children}</Celula>,
+  td: (node, children, _p, styles) => <Celula key={node.key} no={node} estilo={styles}>{children}</Celula>,
 };
 
 /** Only web and mail links open: a model-written `javascript:` link must never run. */
@@ -110,8 +173,8 @@ const Bloco = memo(function Bloco({ texto, streaming, animar, tema, estilo }: {
   const translateY = entrada.interpolate({ inputRange: [0, 1], outputRange: [6, 0] });
   return (
     <Animated.View style={{ opacity: entrada, transform: [{ translateY }] }}>
-      <MarkdownStream colorScheme={tema.scheme} cursorColor={tema.colors.brand} cursorStyle={{ height: 18, width: 2, borderRadius: 1 }}
-        mergeStyle={false} onLinkPress={abrirLink} rules={regras} streaming={streaming} style={estilo}>
+      <MarkdownStream colorScheme={tema.escuro ? 'dark' : 'light'} cursorColor={tema.colors.brand} cursorStyle={{ height: 18, width: 2, borderRadius: 1 }}
+        markdownit={analisador} mergeStyle={false} onLinkPress={abrirLink} rules={regras} streaming={streaming} style={estilo}>
         {streaming ? selar(texto) : texto}
       </MarkdownStream>
     </Animated.View>

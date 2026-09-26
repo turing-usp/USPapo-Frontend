@@ -39,7 +39,10 @@ export const haptics = {
   finished: () => sentir('notification', 400, () => Haptics.notificationAsync(N.Success)),
 };
 
-/** Keyboard overlap over the bottom inset (edge-to-edge Android no longer resizes the window). */
+/**
+ * Keyboard overlap over the bottom inset (edge-to-edge Android no longer resizes the window).
+ * iOS reports the whole keyboard; Android reports it without the system bars already.
+ */
 export function useAlturaDoTeclado(): number {
   const { bottom } = useSafeAreaInsets();
   const [altura, setAltura] = useState(0);
@@ -47,7 +50,8 @@ export function useAlturaDoTeclado(): number {
     if (Platform.OS === 'web') return;
     const [abrir, fechar] = Platform.OS === 'ios' ? ['keyboardWillShow', 'keyboardWillHide'] as const
       : ['keyboardDidShow', 'keyboardDidHide'] as const;
-    const a = Keyboard.addListener(abrir, (e) => setAltura(Math.max(0, (e?.endCoordinates?.height ?? 0) - bottom)));
+    const desconto = Platform.OS === 'ios' ? bottom : 0;
+    const a = Keyboard.addListener(abrir, (e) => setAltura(Math.max(0, (e?.endCoordinates?.height ?? 0) - desconto)));
     const f = Keyboard.addListener(fechar, () => setAltura(0));
     return () => {
       a.remove();

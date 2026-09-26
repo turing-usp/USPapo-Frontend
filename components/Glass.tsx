@@ -17,7 +17,17 @@ import { useTheme, type GlassVariant } from '../theme';
 
 const Alvo = createContext<RefObject<View | null> | null>(null);
 const INTENSIDADE: Record<GlassVariant, number> = { surface: 36, panel: 48, raised: 40, brand: 32 };
-const ANDROID_OVERLAY = 5;
+/**
+ * Android: the blur clamps the target's edge pixels outward, so text crossing the screen edge would
+ * pulse through the status bar and bottom panes while scrolling. The target overhangs the screen by
+ * more than 3 sigma of the widest blur, and the overhang is still backdrop.
+ */
+const MARGEM_ANDROID = 80;
+/**
+ * The Android BlurView multiplies its radius by 4. It also has no `saturate(150%)` like the web: a
+ * color filter over it (a hardware layer) re-rasterized every frame and dropped scrolling to ~12 fps.
+ */
+const ESCALA_ANDROID = 4;
 
 /**
  * `fundo` (over the scene backdrop) is what the floating glass in `frente` blurs.
@@ -26,13 +36,15 @@ const ANDROID_OVERLAY = 5;
  */
 export function CamadaDeVidro({ fundo, frente }: { fundo: ReactNode; frente: ReactNode }) {
   const alvo = useRef<View | null>(null);
-  const conteudo = <><Backdrop />{fundo}</>;
   return (
     <View style={styles.flex}>
       {Platform.OS === 'android' ? (
-        <BlurTargetView ref={alvo} style={styles.flex}>{conteudo}</BlurTargetView>
+        <BlurTargetView ref={alvo} style={styles.alvo}>
+          <Backdrop margem={MARGEM_ANDROID} />
+          <View style={styles.tela}>{fundo}</View>
+        </BlurTargetView>
       ) : (
-        <View style={styles.flex}>{conteudo}</View>
+        <View style={styles.flex}><Backdrop />{fundo}</View>
       )}
       <Alvo.Provider value={alvo}>{frente}</Alvo.Provider>
     </View>
@@ -40,7 +52,7 @@ export function CamadaDeVidro({ fundo, frente }: { fundo: ReactNode; frente: Rea
 }
 
 function Desfoque({ intensidade }: { intensidade: number }) {
-  const { scheme } = useTheme();
+  const { escuro } = useTheme();
   const alvo = useContext(Alvo);
   if (Platform.OS === 'web') {
     const filtro = `blur(${Math.round(intensidade * 0.5)}px) saturate(150%)`;
@@ -50,21 +62,18 @@ function Desfoque({ intensidade }: { intensidade: number }) {
   }
   if (Platform.OS === 'android') {
     if (!alvo) return null;
-    // expo-blur paints a white overlay proportional to `intensity` on top of our tint, hiding the
-    // blurred content. Keep it ~2% and take the radius (intensity / reduction, in device px) from
-    // the reduction factor instead: the web's intensity * 0.5 dp, with our tint as the only tint.
+    // The web's blur(intensidade * 0.5 dp) is a Gaussian sigma; RenderEffect takes a radius with
+    // sigma = 0.57735 * radius + 0.5, in device px. The effect radius is intensity / reduction * 4,
+    // and expo-blur paints a white overlay proportional to intensity, so intensity stays at 1
+    // (~0.4% overlay) and the reduction factor carries the radius.
+    const sigma = intensidade * 0.5 * (PixelRatio.get() || 1);
+    const raio = Math.max(1, (sigma - 0.5) / 0.57735);
     return (
-      <BlurView
-        blurTarget={alvo}
-        blurMethod="dimezisBlurViewSdk31Plus"
-        intensity={ANDROID_OVERLAY}
-        blurReductionFactor={ANDROID_OVERLAY / (intensidade * 0.5 * (PixelRatio.get() || 1))}
-        tint="default"
-        style={StyleSheet.absoluteFill}
-      />
+      <BlurView blurTarget={alvo} blurMethod="dimezisBlurViewSdk31Plus" intensity={1} blurReductionFactor={ESCALA_ANDROID / raio}
+        tint="default" style={StyleSheet.absoluteFill} />
     );
   }
-  return <BlurView intensity={intensidade} tint={scheme === 'dark' ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />;
+  return <BlurView intensity={intensidade} tint={escuro ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />;
 }
 
 export type GlassProps = {
@@ -92,8 +101,7 @@ export default function Glass({
   const { glass } = useTheme();
   const plano = StyleSheet.flatten(style) ?? {};
   const raio = radius ?? (plano.borderRadius as number | undefined) ?? 0;
-  // Android elevation on a translucent view paints a hard box: the lift is iOS/web only.
-  const sombra = semSombra || Platform.OS === 'android' ? null : glass.shadow;
+  const sombra = semSombra ? null : glass.shadow;
   // zIndex 0 makes the pane its own stacking context so the layers (zIndex -1) sit behind every
   // child on web too, including static ones like <svg> and <input>.
   const base = [plano, sombra, { borderRadius: raio, zIndex: plano.zIndex ?? 0 }];
@@ -133,4 +141,9 @@ export default function Glass({
   );
 }
 
-const styles = StyleSheet.create({ flex: { flex: 1 }, atras: { zIndex: -1 } });
+const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  atras: { zIndex: -1 },
+  alvo: { position: 'absolute', top: -MARGEM_ANDROID, right: -MARGEM_ANDROID, bottom: -MARGEM_ANDROID, left: -MARGEM_ANDROID },
+  tela: { position: 'absolute', top: MARGEM_ANDROID, right: MARGEM_ANDROID, bottom: MARGEM_ANDROID, left: MARGEM_ANDROID },
+});

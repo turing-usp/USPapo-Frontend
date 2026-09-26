@@ -57,6 +57,14 @@
       ],
       "expo-updates",
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notificacao.png",
+          "color": "#f1863d",
+          "defaultChannel": "respostas"
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {

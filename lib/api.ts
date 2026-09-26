@@ -1,5 +1,7 @@
 /**
- * Backend client: `POST /api/chat` as a Server-Sent Events stream, plus the admin summary.
+ * Backend client: `POST /api/chat` as a Server-Sent Events stream (a turn sent with its conversation
+ * keeps being answered on the server when the app closes; `retomarChat` reattaches to it and
+ * `pararChat` stops it), plus the admin summary.
  *
  * Wire: a `: ok` ping, then one `data: {json}` frame per event (see the backend's
  * app/engine/chat.py for the contract). The production web build calls the same-origin
@@ -85,10 +87,14 @@ export function lerFrames(buffer: string): [ChatEvent[], string] {
   return [eventos, normalizado.slice(corte + 2)];
 }
 
+/** The turn a request names: the server saves its answer and can be reattached to or stopped. */
+export type Turno = { conversaId: string; ordem: number };
+
 export type ChatRequest = {
   question: string;
   history?: { pergunta: string; resposta: string }[];
   sessionId?: string;
+  turno?: Turno;
   token: string;
   signal?: AbortSignal;
 };
@@ -96,16 +102,40 @@ export type ChatRequest = {
 /** Streams the chat events. Throws ApiError on non-2xx and propagates network errors/aborts. */
 export async function* streamChat(req: ChatRequest): AsyncGenerator<ChatEvent> {
   if (!req.token) throw new ApiError(SESSAO_EXPIRADA, 401, null);
-  const res = await fetch(`${backendUrl()}/api/chat`, {
+  yield* lerEventos(await fetch(`${backendUrl()}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${req.token}` },
     body: JSON.stringify({
       pergunta: req.question,
       ...(req.history?.length ? { historico: req.history } : {}),
       ...(req.sessionId ? { session_id: req.sessionId } : {}),
+      ...(req.turno ? { conversa_id: req.turno.conversaId, ordem: req.turno.ordem } : {}),
     }),
     signal: req.signal,
-  });
+  }));
+}
+
+/** Replays a turn the server is still answering (or just answered). ApiError 404 when there is none. */
+export async function* retomarChat(turno: Turno, token: string, signal?: AbortSignal): AsyncGenerator<ChatEvent> {
+  if (!token) throw new ApiError(SESSAO_EXPIRADA, 401, null);
+  const consulta = `conversa=${encodeURIComponent(turno.conversaId)}&ordem=${turno.ordem}`;
+  yield* lerEventos(await fetch(`${backendUrl()}/api/chat/retomar?${consulta}`, {
+    headers: { Authorization: `Bearer ${token}` }, signal,
+  }));
+}
+
+/** Asks the server to stop a turn (it saves what was written). Never throws. */
+export async function pararChat(turno: Turno, token: string): Promise<void> {
+  await fetch(`${backendUrl()}/api/chat/parar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ conversa_id: turno.conversaId, ordem: turno.ordem }),
+  }).catch(() => undefined);
+}
+
+type Resposta = Awaited<ReturnType<typeof fetch>>;
+
+async function* lerEventos(res: Resposta): AsyncGenerator<ChatEvent> {
   if (!res.ok) throw await erroDaResposta(res as unknown as Response);
   const leitor = res.body?.getReader();
   if (!leitor) throw new ApiError('A resposta chegou vazia.', 502, null);

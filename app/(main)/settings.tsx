@@ -2,7 +2,7 @@
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import React, { useEffect, useState } from 'react';
-import { Linking, Platform, Pressable, ScrollView, View } from 'react-native';
+import { Linking, Platform, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ALTURA_CHROME } from '../../components/Chrome';
@@ -14,9 +14,10 @@ import { carregarHaptics, definirHaptics, haptics } from '../../lib/device';
 import {
   apagarMemoria, definirMemoriaAtiva, itensDaMemoria, lerMemoria, removerFato, type ItemMemoria, type Memoria,
 } from '../../lib/memoria';
+import { DESCRICAO, NOTIFICACOES_DISPONIVEIS, definirNotificacoes, notificacoesAtivas } from '../../lib/notificacoes';
 import { readScheme, setScheme, useTheme, type ThemePreference } from '../../theme';
 
-const TEMAS: [ThemePreference, string][] = [['system', 'Sistema'], ['light', 'Claro'], ['dark', 'Escuro']];
+const TEMAS: [ThemePreference, string][] = [['system', 'Sistema'], ['light', 'Claro'], ['dark', 'Escuro'], ['oled', 'Escuro OLED']];
 const SITE = 'https://uspapo.turingusp.com';
 
 function formatarBytes(n: number): string {
@@ -36,8 +37,10 @@ function Linha({ rotulo, valor }: { rotulo: string; valor: string }) {
 export default function Ajustes() {
   const { colors, layout, spacing } = useTheme();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const [tema, setTema] = useState<ThemePreference>('system');
   const [vibracao, setVibracao] = useState(true);
+  const [avisos, setAvisos] = useState(false);
   const [cache, setCache] = useState<number | null>(null);
   const [limpando, setLimpando] = useState(false);
   const [uid, setUid] = useState('');
@@ -47,6 +50,7 @@ export default function Ajustes() {
   useEffect(() => {
     void readScheme().then(setTema);
     void carregarHaptics().then(setVibracao);
+    void notificacoesAtivas().then(setAvisos);
     void tamanhoDoCache().then(setCache);
     void sessaoAtual().then(async ({ userId }) => {
       setUid(userId);
@@ -95,9 +99,11 @@ export default function Ajustes() {
       <Texto v="titulo">Ajustes</Texto>
 
       <Cartao titulo="Tema">
-        <View style={{ flexDirection: 'row', gap: spacing.xs }} accessibilityRole="radiogroup">
+        {/* Two by two on phones, one row when it fits. */}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }} accessibilityRole="radiogroup">
           {TEMAS.map(([valor, rotulo]) => (
-            <Botao key={valor} compacto rotulo={rotulo} v={tema === valor ? 'primario' : 'secundario'} style={{ flex: 1 }}
+            <Botao key={valor} compacto rotulo={rotulo} v={tema === valor ? 'primario' : 'secundario'}
+              style={{ flexGrow: 1, flexBasis: width >= 640 ? 0 : '45%' }}
               onPress={() => { setTema(valor); void setScheme(valor); void haptics.selection(); }} />
           ))}
         </View>
@@ -107,6 +113,14 @@ export default function Ajustes() {
         <Cartao titulo="Vibração">
           <Interruptor ligado={vibracao} rotulo="Resposta tátil ao tocar, enviar e receber"
             onPress={() => { const v = !vibracao; setVibracao(v); void definirHaptics(v).then(() => v && haptics.selection()); }} />
+        </Cartao>
+      ) : null}
+
+      {NOTIFICACOES_DISPONIVEIS ? (
+        <Cartao titulo="Notificações">
+          <Interruptor ligado={avisos} rotulo="Avisar quando uma resposta ficar pronta"
+            onPress={() => { const v = !avisos; setAvisos(v); void definirNotificacoes(v).then(setAvisos); void haptics.selection(); }} />
+          <Texto v="legenda">{DESCRICAO}</Texto>
         </Cartao>
       ) : null}
 

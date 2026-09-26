@@ -1,6 +1,6 @@
 /** Home: brand, composer, 3 shuffled frequent questions and "Continuar de onde parou". */
-import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
 import { ScrollView, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -14,6 +14,7 @@ import { historicoEmCache } from '../../lib/cache';
 import { guardarPendente, novoId } from '../../lib/chat';
 import { lerHistorico, rotuloDa, type Conversa } from '../../lib/conversations';
 import { useAlturaDoTeclado } from '../../lib/device';
+import { exclusaoPendente } from '../../lib/exclusoes';
 import { useTheme } from '../../theme';
 
 const PERGUNTAS: [string, string][] = [
@@ -45,18 +46,21 @@ export default function Inicio() {
   const [perguntas] = useState(sortear);
   const [recentes, setRecentes] = useState<Conversa[]>([]);
 
-  useEffect(() => {
-    let ativo = true;
-    void (async () => {
-      const { userId } = await sessaoAtual();
-      if (!userId) return;
-      const lista = await lerHistorico(userId, 3).catch(() => historicoEmCache(userId));
-      if (ativo) setRecentes(lista.slice(0, 3));
-    })();
-    return () => {
-      ativo = false;
-    };
-  }, []);
+  // On every visit: going back to a mounted home must not list a conversation deleted meanwhile.
+  useFocusEffect(
+    useCallback(() => {
+      let ativo = true;
+      void (async () => {
+        const { userId } = await sessaoAtual();
+        if (!userId) return;
+        const lista = await lerHistorico(userId, 4).catch(() => historicoEmCache(userId));
+        if (ativo) setRecentes(lista.filter((c) => !exclusaoPendente(c.id)).slice(0, 3));
+      })();
+      return () => {
+        ativo = false;
+      };
+    }, []),
+  );
 
   function iniciar(texto: string) {
     const limpo = texto.trim();

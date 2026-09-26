@@ -96,11 +96,13 @@ export function Campo({ icone, final, style, multiline, ...props }: TextInputPro
 }
 
 /** Content column: the old `.app-container` (or the narrower chat measure). */
-export function Coluna({ children, chat, style }: { children: ReactNode; chat?: boolean; style?: StyleProp<ViewStyle> }) {
+export function Coluna({ children, chat, style, pointerEvents }: {
+  children: ReactNode; chat?: boolean; style?: StyleProp<ViewStyle>; pointerEvents?: 'box-none' | 'auto';
+}) {
   const { layout } = useTheme();
   const { width } = useWindowDimensions();
   return (
-    <View style={[{ width: '100%', alignSelf: 'center', maxWidth: chat ? layout.chatMaxWidth : layout.containerMaxWidth,
+    <View pointerEvents={pointerEvents} style={[{ width: '100%', alignSelf: 'center', maxWidth: chat ? layout.chatMaxWidth : layout.containerMaxWidth,
       paddingHorizontal: layout.gutter(width) }, style]}>
       {children}
     </View>

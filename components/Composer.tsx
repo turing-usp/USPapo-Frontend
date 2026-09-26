@@ -31,10 +31,13 @@ export default function Composer({ value, onChange, onSubmit, placeholder = 'Per
   const { colors, fonts, radius, typography } = useTheme();
   const [altura, setAltura] = useState(ALVO);
   const entrada = useRef<TextInput | null>(null);
+  const ultimoEnvio = useRef(0);
   const ditado = useDitado(onChange);
   const temTexto = value.trim().length > 0;
   const enviar = () => {
-    if (!temTexto || respondendo) return;
+    // One question per press: a hardware Enter (key down and up) or a double tap would send it twice.
+    if (!temTexto || respondendo || Date.now() - ultimoEnvio.current < 800) return;
+    ultimoEnvio.current = Date.now();
     if (ditado.ouvindo) void ditado.alternar(value);
     onSubmit(value);
   };
@@ -59,9 +62,9 @@ export default function Composer({ value, onChange, onSubmit, placeholder = 'Per
   };
 
   const acao = respondendo
-    ? { rotulo: 'Parar', icone: 'parar' as const, fundo: colors.danger, aoTocar: onStop }
+    ? { rotulo: 'Parar', icone: 'parar' as const, fundo: colors.danger }
     : temTexto
-      ? { rotulo: 'Enviar pergunta', icone: 'enviar' as const, fundo: colors.brand, aoTocar: enviar }
+      ? { rotulo: 'Enviar pergunta', icone: 'enviar' as const, fundo: colors.brand }
       : null;
 
   return (
@@ -92,7 +95,7 @@ export default function Composer({ value, onChange, onSubmit, placeholder = 'Per
           </Pressable>
         ) : null}
         {acao ? (
-          <Pressable accessibilityRole="button" accessibilityLabel={acao.rotulo} onPress={acao.aoTocar} style={styles.alvo}>
+          <Pressable accessibilityRole="button" accessibilityLabel={acao.rotulo} onPress={respondendo ? onStop : enviar} style={styles.alvo}>
             <View style={[styles.disco, { backgroundColor: acao.fundo, borderRadius: radius.full }]}>
               <Icone nome={acao.icone} cor={colors.brandForeground} tamanho={20} traco={2.5} />
             </View>

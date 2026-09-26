@@ -1,6 +1,6 @@
 /** History: grouped conversations with search, favorite, rename and delete (6 s undo); offline shows the cache. */
-import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -10,9 +10,10 @@ import { Icone } from '../../components/icons';
 import { MenuConversa } from '../../components/MenuConversa';
 import { Botao, Campo, Coluna, Estado, Texto } from '../../components/ui';
 import { sessaoAtual } from '../../lib/auth';
-import { esquecerConversa, guardarConversa, guardarHistorico, historicoEmCache } from '../../lib/cache';
-import { excluir, favoritar, lerHistorico, renomear, rotuloDa, type Conversa } from '../../lib/conversations';
+import { guardarConversa, guardarHistorico, historicoEmCache } from '../../lib/cache';
+import { favoritar, lerHistorico, renomear, rotuloDa, type Conversa } from '../../lib/conversations';
 import { haptics } from '../../lib/device';
+import { agendarExclusao, desfazerExclusao, efetivarExclusoes, exclusaoPendente } from '../../lib/exclusoes';
 import { useTheme } from '../../theme';
 
 const GRUPOS = ['Favoritas', 'Hoje', 'Ontem', 'Últimos 7 dias', 'Últimos 30 dias', 'Anteriores'] as const;
@@ -41,8 +42,6 @@ export default function Historico() {
   const [aviso, setAviso] = useState<string | null>(null);
   const [editando, setEditando] = useState<{ id: string; titulo: string } | null>(null);
   const [apagada, setApagada] = useState<Conversa | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const apagadaRef = useRef<Conversa | null>(null);
 
   const carregar = useCallback(async (userId: string) => {
     setUid(userId);
@@ -52,55 +51,48 @@ export default function Historico() {
     }
     try {
       const lista = await lerHistorico(userId);
-      setConversas(lista);
+      setConversas(lista.filter((c) => !exclusaoPendente(c.id)));
       setOffline(false);
       void guardarHistorico(userId, lista);
     } catch {
-      setConversas(await historicoEmCache(userId));
+      setConversas((await historicoEmCache(userId)).filter((c) => !exclusaoPendente(c.id)));
       setOffline(true);
     } finally {
       setAtualizando(false);
     }
   }, []);
   const recarregar = useCallback(() => void sessaoAtual().then(({ userId }) => carregar(userId)), [carregar]);
-  useEffect(recarregar, [recarregar]);
 
-  const confirmarExclusao = useCallback(async (c: Conversa) => {
-    try {
-      await excluir(uid, c.id);
-      await esquecerConversa(uid, c.id);
-    } catch {
-      setConversas((atual) => [c, ...(atual ?? [])]);
-      setAviso('Não foi possível apagar a conversa.');
-    }
-  }, [uid]);
-
-  // Leaving the screen inside the undo window commits the delete (it is not an undo).
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current);
-    if (apagadaRef.current) void confirmarExclusao(apagadaRef.current);
-  }, [confirmarExclusao]);
+  // Reload on every visit (a pushed history stays mounted); leaving commits pending deletes, not undoes them.
+  useFocusEffect(
+    useCallback(() => {
+      recarregar();
+      return () => {
+        setApagada(null);
+        void efetivarExclusoes();
+      };
+    }, [recarregar]),
+  );
 
   function apagar(c: Conversa) {
-    if (timer.current) clearTimeout(timer.current);
-    if (apagadaRef.current) void confirmarExclusao(apagadaRef.current);
+    void efetivarExclusoes(); // only the latest delete keeps an undo
     void haptics.press();
-    apagadaRef.current = c;
     setApagada(c);
     setConversas((atual) => (atual ?? []).filter((x) => x.id !== c.id));
-    timer.current = setTimeout(() => {
-      apagadaRef.current = null;
-      setApagada(null);
-      void confirmarExclusao(c);
-    }, 6000);
+    agendarExclusao(uid, c.id, 6000, {
+      aoEfetivar: () => setApagada((atual) => (atual?.id === c.id ? null : atual)),
+      aoFalhar: () => {
+        setApagada((atual) => (atual?.id === c.id ? null : atual));
+        setConversas((atual) => [c, ...(atual ?? []).filter((x) => x.id !== c.id)]);
+        setAviso('Não foi possível apagar a conversa.');
+      },
+    });
   }
 
   function desfazer() {
-    if (timer.current) clearTimeout(timer.current);
-    const c = apagadaRef.current;
-    apagadaRef.current = null;
+    const c = apagada;
     setApagada(null);
-    if (c) setConversas((atual) => [c, ...(atual ?? [])]);
+    if (c && desfazerExclusao(c.id)) setConversas((atual) => [c, ...(atual ?? [])]);
   }
 
   async function atualizar(c: Conversa, mudanca: Partial<Conversa>, salvar: () => Promise<void>) {

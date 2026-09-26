@@ -22,6 +22,24 @@ adb reverse tcp:8000 tcp:8000        # backend local
 Com os `adb reverse`, o `127.0.0.1` do `.env` funciona dentro do emulador.
 Builds debug aceitam HTTP; builds release não.
 
+Para medir desempenho de verdade (blur, rolagem), use um build **release**
+apontando para o ambiente local: exporte `EXPO_PUBLIC_BACKEND_URL`,
+`EXPO_PUBLIC_SUPABASE_URL` e `EXPO_PUBLIC_SUPABASE_ANON_KEY` no shell (eles
+vencem os arquivos `.env`), acrescente `android:usesCleartextTraffic="true"`
+ao `<application>` de `android/app/src/main/AndroidManifest.xml` e rode o
+Gradle. Nunca distribua esse APK: gere o final com `npm run apk:preview`,
+que recria `android/` do zero.
+
+```bash
+adb shell dumpsys gfxinfo org.turingusp.uspapo reset   # zera as estatísticas
+# ... role a tela, abra a gaveta ...
+adb shell dumpsys gfxinfo org.turingusp.uspapo | grep -E "Janky|50th|90th"
+```
+
+Não envie teclas pelo adb (`input keyevent`, `input text`) durante testes
+visuais: elas tiram o Android do modo toque, e ele passa a desenhar o
+realce de foco e a rolar a tela até o elemento focado.
+
 ## Gerar um APK
 
 ```bash
@@ -39,6 +57,67 @@ de debug: serve para testes internos, não para a Play Store.
 > anterior, e o APK passa a recusar os updates novos. Use sempre
 > `npm run apk:preview` ou apague
 > `android/app/build/generated/assets/createReleaseUpdatesResources/`.
+
+## Notificações push (Firebase)
+
+O push do Android passa pelo FCM. Sem esta configuração o app funciona, mas
+não recebe push: o log mostra `Default FirebaseApp is not initialized` e
+nenhum aparelho é registrado.
+
+1. [Firebase Console](https://console.firebase.google.com) → criar projeto
+   → **Adicionar app → Android**, pacote `org.turingusp.uspapo` → baixar o
+   `google-services.json`.
+2. Builds locais: salve o arquivo na raiz deste repositório
+   (`app.config.js` o encontra sozinho). Builds no EAS: crie a variável de
+   arquivo
+   `npx eas-cli env:create --name GOOGLE_SERVICES_JSON --type file --value ./google-services.json --environment preview`
+   (e `production`).
+3. Firebase → Configurações do projeto → **Contas de serviço** → *Gerar nova
+   chave privada*. Envie o JSON ao Expo:
+   `npx eas-cli credentials` → Android → *Google Service Account* →
+   *FCM V1*. É com essa chave que o servidor da Expo entrega o push.
+4. Gere um **APK novo**: o `google-services.json` vai dentro do binário.
+5. Opcional: se ativar *Enhanced Security for Push Notifications* no
+   expo.dev, coloque o token de acesso em `EXPO_ACCESS_TOKEN` no Render.
+
+Para testar, faça uma pergunta, feche o app e espere: o backend grava a
+resposta e manda "Sua resposta está pronta". Os tokens ficam em
+`dispositivos`; o backend apaga os que a Expo diz que não existem mais.
+
+## Comunicados (novidades e avisos)
+
+Um comunicado aparece no app sem atualização nenhuma. Pela linha de comando
+(no repositório do backend, com a service key):
+
+```bash
+export SUPABASE_URL=https://<projeto>.supabase.co SUPABASE_SERVICE_KEY=...
+python scripts/comunicados.py publicar novidade "Novidades do USPapo" novidades.md --imagem tela.png
+python scripts/comunicados.py publicar aviso "Manutenção programada" manutencao.md \
+  --pilula "USPapo entrará em manutenção" --fim 2026-10-04T04:00-03:00
+python scripts/comunicados.py listar
+python scripts/comunicados.py retirar 3f2a      # id ou começo do id
+```
+
+Ou pelo Dashboard: suba as imagens no bucket **comunicados** (Storage) e
+insira uma linha em `comunicados` (Table Editor):
+
+| Coluna | O que colocar |
+|---|---|
+| `tipo` | `novidade` (vidro gigante, abre uma vez) ou `aviso` (pílula que abre o vidro) |
+| `titulo` | até 120 caracteres |
+| `texto` | Markdown (negrito, listas, links, tabelas) |
+| `imagens` | caminhos dentro do bucket (`2026-10-01-novidades/tela.png`) ou URLs completas |
+| `pilula` | só para aviso: o texto curto da pílula (até 60 caracteres) |
+| `plataformas` | vazio = todas; ou `{android}`, `{web}`, `{android,ios}` |
+| `inicio` / `fim` | quando entra e sai do ar (vazio = agora / nunca) |
+| `ativo` | `false` retira o comunicado |
+
+**Retirar:** `retirar` (ou `ativo = false`) tira o comunicado em até ~2
+minutos. O app relê a lista ao voltar para ele e a cada 2 minutos: a pílula
+some e o vidro aberto fecha. Uma novidade já vista não volta a abrir.
+
+Imagens de fora do Supabase não carregam no site (a CSP só libera o
+projeto): use o bucket.
 
 ## Publicar uma atualização OTA
 

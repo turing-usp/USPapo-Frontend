@@ -65,12 +65,12 @@ function PortaDeSessao({ children }: { children: ReactNode }) {
 }
 
 function Pilha() {
-  const { colors, scheme } = useTheme();
-  const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
+  const { colors, escuro } = useTheme();
+  const base = escuro ? DarkTheme : DefaultTheme;
   // Transparent navigator theme: the scene is painted by each group layout.
   return (
     <NavTheme value={{ ...base, colors: { ...base.colors, background: 'transparent' } }}>
-      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+      <StatusBar style={escuro ? 'light' : 'dark'} />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.canvas } }} />
     </NavTheme>
   );
