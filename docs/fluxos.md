@@ -96,6 +96,7 @@ python scripts/comunicados.py publicar aviso "Manutenção programada" manutenca
   --pilula "USPapo entrará em manutenção" --fim 2026-10-04T04:00-03:00
 python scripts/comunicados.py listar
 python scripts/comunicados.py retirar 3f2a      # id ou começo do id
+python scripts/comunicados.py remover 3f2a      # só depois de retirar: apaga linha e imagens
 ```
 
 Ou pelo Dashboard: suba as imagens no bucket **comunicados** (Storage) e
@@ -115,6 +116,11 @@ insira uma linha em `comunicados` (Table Editor):
 **Retirar:** `retirar` (ou `ativo = false`) tira o comunicado em até ~2
 minutos. O app relê a lista ao voltar para ele e a cada 2 minutos: a pílula
 some e o vidro aberto fecha. Uma novidade já vista não volta a abrir.
+
+**Remover de vez:** `remover` apaga do banco um comunicado já retirado e as
+imagens dele no bucket (mantém as que outro comunicado também usa). Com o
+comunicado ainda ativo, ele recusa: retire antes. Pede o id curto como
+confirmação (`--sim` pula a pergunta).
 
 Imagens de fora do Supabase não carregam no site (a CSP só libera o
 projeto): use o bucket.

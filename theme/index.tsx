@@ -76,10 +76,15 @@ export const scene = {
 };
 export type SceneColors = (typeof scene)['light'];
 
-/** Glass: translucent tint per variant, a bright top filament, and a soft lift. */
+/**
+ * Glass: translucent tint per variant, a bright top filament, and a soft lift. Flat panes use
+ * `surface`; every blurred pane uses `vidro`, so they all match. `vidro` is a touch denser, and a
+ * neutral shade in OLED (a white veil left bright content bright): text sits on it over whatever
+ * scrolls behind, with WCAG AA at the busiest spot of each theme.
+ */
 export const glass = {
   light: {
-    tint: { surface: 'rgba(238,239,255,0.42)', panel: 'rgba(255,255,255,0.55)', raised: 'rgba(255,255,255,0.85)', brand: 'rgba(238,239,255,0.35)' },
+    tint: { surface: 'rgba(238,239,255,0.42)', vidro: 'rgba(238,239,255,0.46)' },
     hairline: {
       borderWidth: 1,
       borderTopColor: 'rgba(255,255,255,0.95)',
@@ -90,7 +95,7 @@ export const glass = {
     shadow: { shadowColor: 'rgb(11,16,48)', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 10 },
   },
   dark: {
-    tint: { surface: 'rgba(13,25,131,0.38)', panel: 'rgba(8,17,101,0.55)', raised: 'rgba(10,13,60,0.92)', brand: 'rgba(13,25,131,0.30)' },
+    tint: { surface: 'rgba(13,25,131,0.38)', vidro: 'rgba(13,25,131,0.40)' },
     hairline: {
       borderWidth: 1,
       borderTopColor: 'rgba(255,255,255,0.38)',
@@ -102,7 +107,7 @@ export const glass = {
   },
   // Graphite glass over black; the top filament glows like an ember.
   oled: {
-    tint: { surface: 'rgba(255,255,255,0.05)', panel: 'rgba(18,18,18,0.62)', raised: 'rgba(24,24,24,0.94)', brand: 'rgba(255,255,255,0.03)' },
+    tint: { surface: 'rgba(255,255,255,0.05)', vidro: 'rgba(24,24,24,0.22)' },
     hairline: {
       borderWidth: 1,
       borderTopColor: 'rgba(241,134,61,0.34)',

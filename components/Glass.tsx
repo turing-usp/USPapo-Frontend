@@ -1,28 +1,32 @@
 /**
  * Glass surfaces.
  *
- * `desfoque` panes (floating chrome, composer, drawer) blur EVERYTHING behind
- * them, content included: CSS backdrop-filter on web, the native blur on iOS
- * and, on Android, a hardware RenderEffect blur of the nearest <CamadaDeVidro>
- * background (a BlurView can never sample a target it lives inside, so floating
- * panes are rendered as siblings of what they blur). Other panes (bubbles,
- * cards, pills inside scrolling content) are a cheap translucent tint.
+ * `desfoque` panes (floating chrome, composer, drawer, menus, toasts) blur
+ * EVERYTHING behind them, content included, all with the same glass: the
+ * pane's own CSS backdrop-filter on web, the native blur on iOS and, on
+ * Android, a hardware RenderEffect blur of the nearest <CamadaDeVidro>
+ * background (a BlurView can never sample a target it lives inside, so
+ * floating panes are rendered as siblings of what they blur). Other panes
+ * (bubbles, cards, pills inside scrolling content) are a cheap translucent tint.
  */
 import { BlurTargetView, BlurView } from 'expo-blur';
 import React, { createContext, useContext, useRef, type ReactNode, type RefObject } from 'react';
-import { PixelRatio, Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Animated, PixelRatio, Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Backdrop } from './Cena';
 import { useTheme, type GlassVariant } from '../theme';
 
 const Alvo = createContext<RefObject<View | null> | null>(null);
-const INTENSIDADE: Record<GlassVariant, number> = { surface: 36, panel: 48, raised: 40, brand: 32 };
+/** Blur strength: one for every floating pane (a Gaussian sigma of INTENSIDADE / 2 dp). */
+const INTENSIDADE = 36;
 /**
  * Android: the blur clamps the target's edge pixels outward, so text crossing the screen edge would
  * pulse through the status bar and bottom panes while scrolling. The target overhangs the screen by
- * more than 3 sigma of the widest blur, and the overhang is still backdrop.
+ * just over 3 sigma of the blur, and the overhang is still backdrop. Every blurred pane renders the
+ * whole target (overhang included) into an offscreen layer each frame, whatever its own size, so the
+ * overhang is no wider than that.
  */
-const MARGEM_ANDROID = 80;
+const MARGEM_ANDROID = 56;
 /**
  * The Android BlurView multiplies its radius by 4. It also has no `saturate(150%)` like the web: a
  * color filter over it (a hardware layer) re-rasterized every frame and dropped scrolling to ~12 fps.
@@ -51,15 +55,10 @@ export function CamadaDeVidro({ fundo, frente }: { fundo: ReactNode; frente: Rea
   );
 }
 
+/** Native blur layer (web blurs through the pane's own style: see Glass). */
 function Desfoque({ intensidade }: { intensidade: number }) {
   const { escuro } = useTheme();
   const alvo = useContext(Alvo);
-  if (Platform.OS === 'web') {
-    const filtro = `blur(${Math.round(intensidade * 0.5)}px) saturate(150%)`;
-    return React.createElement('div', {
-      style: { position: 'absolute', inset: 0, backdropFilter: filtro, WebkitBackdropFilter: filtro },
-    });
-  }
   if (Platform.OS === 'android') {
     if (!alvo) return null;
     // The web's blur(intensidade * 0.5 dp) is a Gaussian sigma; RenderEffect takes a radius with
@@ -86,6 +85,8 @@ export type GlassProps = {
   /** Extra edge styling over the hairline (focus/brand rings). */
   borda?: ViewStyle;
   style?: StyleProp<ViewStyle>;
+  /** Fades the whole pane, its blur included (for entrances and exits; not with onPress). */
+  opacidade?: Animated.Value | Animated.AnimatedInterpolation<number>;
   onPress?: () => void;
   onLongPress?: () => void;
   disabled?: boolean;
@@ -95,21 +96,26 @@ export type GlassProps = {
 };
 
 export default function Glass({
-  children, variante = 'surface', desfoque = false, radius, semBorda, semSombra, borda, style,
+  children, desfoque = false, variante = desfoque ? 'vidro' : 'surface', radius, semBorda, semSombra, borda, style, opacidade,
   onPress, onLongPress, disabled, accessibilityLabel, testID, pointerEvents,
 }: GlassProps) {
   const { glass } = useTheme();
   const plano = StyleSheet.flatten(style) ?? {};
   const raio = radius ?? (plano.borderRadius as number | undefined) ?? 0;
   const sombra = semSombra ? null : glass.shadow;
+  // Web: the blur is the pane's own backdrop-filter. An ancestor with opacity < 1 (a fade on a
+  // wrapper) cuts a backdrop-filter off from what is behind it, and Chrome keeps it cut off after
+  // the fade ends; the pane's own opacity (`opacidade`) fades it with its blur.
+  const filtro = desfoque && Platform.OS === 'web'
+    ? ({ backdropFilter: `blur(${Math.round(INTENSIDADE * 0.5)}px) saturate(150%)` } as ViewStyle) : null;
   // zIndex 0 makes the pane its own stacking context so the layers (zIndex -1) sit behind every
   // child on web too, including static ones like <svg> and <input>.
-  const base = [plano, sombra, { borderRadius: raio, zIndex: plano.zIndex ?? 0 }];
+  const base = [plano, sombra, filtro, { borderRadius: raio, zIndex: plano.zIndex ?? 0 }];
 
   const camadas = (
     <>
       <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.atras, { borderRadius: raio, overflow: 'hidden' }]}>
-        {desfoque ? <Desfoque intensidade={INTENSIDADE[variante]} /> : null}
+        {desfoque && Platform.OS !== 'web' ? <Desfoque intensidade={INTENSIDADE} /> : null}
         <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.tint[variante] }]} />
       </View>
       {semBorda ? null : (
@@ -135,9 +141,10 @@ export default function Glass({
     );
   }
   return (
-    <View style={base} testID={testID} pointerEvents={pointerEvents} accessibilityLabel={accessibilityLabel}>
+    <Animated.View style={[...base, opacidade ? { opacity: opacidade } : null]} testID={testID} pointerEvents={pointerEvents}
+      accessibilityLabel={accessibilityLabel}>
       {camadas}
-    </View>
+    </Animated.View>
   );
 }
 

@@ -57,7 +57,7 @@ function LinhaNav({ icone, rotulo, aoTocar }: { icone: NomeIcone; rotulo: string
         backgroundColor: pressed ? 'rgba(241,134,61,0.15)' : 'transparent' }]}
     >
       <Icone nome={icone} cor={colors.brand} />
-      <Texto v="suave" style={{ fontFamily: 'Geom' }}>{rotulo}</Texto>
+      <Texto v="suave" cor={colors.foreground} style={{ fontFamily: 'Geom' }}>{rotulo}</Texto>
     </Pressable>
   );
 }
@@ -89,7 +89,7 @@ function Gaveta({ aberta, fechar, admin }: { aberta: boolean; fechar: () => void
         <Pressable accessibilityLabel="Fechar menu lateral" onPress={fechar} style={[StyleSheet.absoluteFill, { backgroundColor: colors.scrim + '40' }]} />
       </Animated.View>
       <Animated.View style={[styles.gaveta, { width: largura, transform: [{ translateX: x }] }]}>
-        <Glass desfoque variante="panel" semSombra style={{ flex: 1, paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.lg, paddingHorizontal: spacing.lg }}>
+        <Glass desfoque semSombra style={{ flex: 1, paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.lg, paddingHorizontal: spacing.lg }}>
           <View style={[styles.cabecalho, { borderBottomColor: colors.line + '1a', paddingBottom: spacing.lg }]}>
             <View style={[styles.linha, { gap: 10 }]}>
               <LogoUSPapo size={32} />
@@ -151,10 +151,10 @@ export default function Chrome() {
               : <Texto cor={colors.brandForeground} style={{ fontFamily: fonts.bodyBold }}>{(conta.nome || 'U')[0].toUpperCase()}</Texto>}
           </Pressable>
           {menu ? (
-            <Glass desfoque variante="panel" radius={radius.lg} style={styles.menu}>
+            <Glass desfoque radius={radius.lg} style={styles.menu}>
               <View style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
                 {conta.nome ? <Texto v="suave" cor={colors.foreground} numberOfLines={1}>{conta.nome}</Texto> : null}
-                <Texto v="legenda" numberOfLines={1}>{conta.email}</Texto>
+                <Texto v="legenda" cor={colors.mutedForeground} numberOfLines={1}>{conta.email}</Texto>
               </View>
               <View style={{ borderTopColor: colors.line + '1a', borderTopWidth: 1, marginVertical: 4 }} />
               <Pressable accessibilityRole="button" onPress={() => void sair()}

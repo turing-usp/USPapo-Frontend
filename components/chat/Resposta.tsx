@@ -116,13 +116,16 @@ function Tabela({ no, estilo, children }: { no: ASTNode; estilo: MarkdownStyleMa
   const { larguras, rola } = distribuirColunas(medirColunas(linhas), disponivel, {
     caractere: typography.sm.fontSize * 0.56, folga: 2 * spacing.md + 1, minimo: 56, maximo: 280, conforto: 120,
   });
+  const corpo = (
+    <Larguras.Provider value={larguras}>
+      <View style={{ width: larguras.reduce((a, b) => a + b, 0) }}>{children}</View>
+    </Larguras.Provider>
+  );
+  // A table that fits is a plain View: a disabled ScrollView is `touch-action: none` on the web,
+  // and a swipe starting on the table could not scroll the conversation.
   return (
     <View style={estilo._VIEW_SAFE_table} onLayout={(e) => setDisponivel(Math.floor(e.nativeEvent.layout.width) - 2)}>
-      <ScrollView horizontal scrollEnabled={rola} showsHorizontalScrollIndicator={rola} nestedScrollEnabled bounces={false}>
-        <Larguras.Provider value={larguras}>
-          <View style={{ width: larguras.reduce((a, b) => a + b, 0) }}>{children}</View>
-        </Larguras.Provider>
-      </ScrollView>
+      {rola ? <ScrollView horizontal nestedScrollEnabled bounces={false}>{corpo}</ScrollView> : corpo}
     </View>
   );
 }

@@ -1,4 +1,7 @@
-/** Admin panel (web): KPIs, daily series, rankings, providers, top users and the feedback review. */
+/**
+ * Admin panel (web): KPIs, daily series, rankings, providers, top users and the feedback review.
+ * A window seen before shows its last summary at once while the fresh one loads.
+ */
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
@@ -7,14 +10,21 @@ import { Colunas, Ranking } from '../../components/charts';
 import Glass from '../../components/Glass';
 import { Icone } from '../../components/icons';
 import { Botao, Cartao, Estado, Texto } from '../../components/ui';
-import { JANELAS, carregarResumo, dataHora, diaCurto, duracao, numero, porcento, segundos, type ItemFeedback, type Resumo } from '../../lib/admin';
+import {
+  JANELAS, carregarResumo, dataHora, diaCurto, duracao, numero, porcento, resumoGuardado, segundos, type ItemFeedback, type Resumo,
+} from '../../lib/admin';
 import { ApiError, ferramenta } from '../../lib/api';
 import { useTheme } from '../../theme';
 
+/** A card in a wrapping row: `base` wide, growing to fill the line and shrinking to fit a phone. */
+const bloco = (base: number | `${number}%`) => ({ flexBasis: base, flexGrow: 1, flexShrink: 1, minWidth: 0 });
+
 function Kpi({ rotulo, valor, detalhe }: { rotulo: string; valor: string; detalhe: string }) {
   const { spacing } = useTheme();
+  const { width } = useWindowDimensions();
+  // Two per row on phones.
   return (
-    <Glass radius={16} style={{ flexGrow: 1, flexBasis: 170, gap: spacing.xs, padding: spacing.lg }} testID="kpi">
+    <Glass radius={16} style={{ ...bloco(width < 640 ? 140 : 170), gap: spacing.xs, padding: width < 640 ? spacing.md : spacing.lg }} testID="kpi">
       <Texto v="suave">{rotulo}</Texto>
       <Texto style={{ fontFamily: 'Roboto-Bold', fontSize: 28, lineHeight: 34 }}>{valor}</Texto>
       <Texto v="legenda">{detalhe}</Texto>
@@ -24,6 +34,8 @@ function Kpi({ rotulo, valor, detalhe }: { rotulo: string; valor: string; detalh
 
 function Tabela({ colunas, linhas }: { colunas: string[]; linhas: (string | number)[][] }) {
   const { colors, spacing } = useTheme();
+  const { width } = useWindowDimensions();
+  const primeira = width < 640 ? 132 : 180;
   if (!linhas.length) return <Texto v="legenda">Sem dados no período.</Texto>;
   return (
     <ScrollView horizontal>
@@ -32,7 +44,7 @@ function Tabela({ colunas, linhas }: { colunas: string[]; linhas: (string | numb
           <View key={i} style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: colors.line + '14', paddingVertical: spacing.xs }}>
             {linha.map((celula, j) => (
               <Texto key={j} v={i ? 'suave' : 'secao'} cor={i && !j ? colors.foreground : undefined} numberOfLines={1}
-                style={{ width: j ? 96 : 180, textAlign: j ? 'right' : 'left', fontVariant: ['tabular-nums'] }}>{String(celula)}</Texto>
+                style={{ width: j ? 96 : primeira, textAlign: j ? 'right' : 'left', fontVariant: ['tabular-nums'] }}>{String(celula)}</Texto>
             ))}
           </View>
         ))}
@@ -69,11 +81,12 @@ function ItemAvaliacao({ item }: { item: ItemFeedback }) {
 }
 
 export default function Analytics() {
-  const { colors, spacing } = useTheme();
+  const { colors, radius, spacing } = useTheme();
   const router = useRouter();
   const { width } = useWindowDimensions();
+  const estreito = width < 640;
   const [dias, setDias] = useState<number>(30);
-  const [dados, setDados] = useState<Resumo | null>(null);
+  const [dados, setDados] = useState<Resumo | null>(() => resumoGuardado(30));
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [filtro, setFiltro] = useState<(typeof FILTROS)[number][0]>('todos');
@@ -99,7 +112,10 @@ export default function Analytics() {
   const recarregar = (janela = dias) => {
     setCarregando(true);
     if (janela === dias) void carregar(janela);
-    else setDias(janela);
+    else {
+      setDados((atual) => resumoGuardado(janela) ?? atual);
+      setDias(janela);
+    }
   };
 
   const k = dados?.kpis;
@@ -108,7 +124,7 @@ export default function Analytics() {
   const serie = (campo: 'perguntas' | 'usuarios' | 'latencia_media_ms') => (dados?.serie ?? []).map((d) => ({ chave: d.data, valor: d[campo] }));
 
   return (
-    <ScrollView contentContainerStyle={{ alignSelf: 'center', width: '100%', maxWidth: 1200, padding: spacing.xl, gap: spacing.lg }}>
+    <ScrollView contentContainerStyle={{ alignSelf: 'center', width: '100%', maxWidth: 1200, padding: estreito ? spacing.lg : spacing.xl, gap: spacing.lg }}>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
           <Pressable accessibilityLabel="Voltar" onPress={() => router.replace('/')} hitSlop={8}>
@@ -116,11 +132,17 @@ export default function Analytics() {
           </Pressable>
           <Texto v="titulo">Painel do USPapo</Texto>
         </View>
-        <View style={{ flexDirection: 'row', gap: spacing.xs }}>
+        {/* On phones the refresh is just its icon, so the whole row fits. */}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }}>
           {JANELAS.map((j) => (
             <Botao key={j} compacto v={dias === j ? 'primario' : 'secundario'} rotulo={j === 1 ? '24 h' : `${j} dias`} onPress={() => recarregar(j)} />
           ))}
-          <Botao compacto v="secundario" icone="atualizar" rotulo="Atualizar" onPress={() => recarregar()} />
+          {estreito ? (
+            <Glass radius={radius.full} onPress={() => recarregar()} accessibilityLabel="Atualizar" semSombra
+              style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
+              <Icone nome="atualizar" cor={colors.foreground} tamanho={16} />
+            </Glass>
+          ) : <Botao compacto v="secundario" icone="atualizar" rotulo="Atualizar" onPress={() => recarregar()} />}
         </View>
       </View>
 
@@ -141,24 +163,24 @@ export default function Analytics() {
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
             {([['Perguntas por dia', 'perguntas', numero], ['Usuários ativos por dia', 'usuarios', numero],
               ['Tempo médio de resposta', 'latencia_media_ms', segundos]] as const).map(([titulo, campo, formatar]) => (
-              <Cartao key={campo} style={{ flexBasis: `${100 / colunasGrafico - 2}%`, flexGrow: 1 }}>
+              <Cartao key={campo} style={bloco(`${100 / colunasGrafico - 2}%`)}>
                 <Colunas titulo={titulo} dados={serie(campo)} formatar={formatar} rotuloX={diaCurto} />
               </Cartao>
             ))}
           </View>
 
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
-            <Cartao style={{ flexBasis: 300, flexGrow: 1 }}><Ranking titulo="Ferramentas usadas" itens={dados.ferramentas.map((f) => ({ nome: ferramenta(f.nome).rotulo, valor: f.contagem }))} /></Cartao>
-            <Cartao style={{ flexBasis: 300, flexGrow: 1 }}><Ranking titulo="Fontes mais citadas" itens={dados.fontes.map((f) => ({ nome: f.fonte, valor: f.contagem }))} /></Cartao>
-            <Cartao style={{ flexBasis: 300, flexGrow: 1 }}><Ranking titulo="Temas frequentes" itens={dados.temas.map((t) => ({ nome: t.tema, valor: t.contagem }))} /></Cartao>
+            <Cartao style={bloco(300)}><Ranking titulo="Ferramentas usadas" itens={dados.ferramentas.map((f) => ({ nome: ferramenta(f.nome).rotulo, valor: f.contagem }))} /></Cartao>
+            <Cartao style={bloco(300)}><Ranking titulo="Fontes mais citadas" itens={dados.fontes.map((f) => ({ nome: f.fonte, valor: f.contagem }))} /></Cartao>
+            <Cartao style={bloco(300)}><Ranking titulo="Temas frequentes" itens={dados.temas.map((t) => ({ nome: t.tema, valor: t.contagem }))} /></Cartao>
           </View>
 
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
-            <Cartao titulo="Provedores de LLM" style={{ flexBasis: 480, flexGrow: 1 }}>
+            <Cartao titulo="Provedores de LLM" style={bloco(480)}>
               <Tabela colunas={['Provedor', 'Chamadas', 'Falhas', '% falha', 'Tempo', 'Tokens']}
                 linhas={dados.provedores.map((p) => [p.nome, numero(p.chamadas), numero(p.erros), porcento(p.taxa_erro), duracao(p.latencia_media_ms), numero(p.tokens)])} />
             </Cartao>
-            <Cartao titulo="Quem mais pergunta" style={{ flexBasis: 480, flexGrow: 1 }}>
+            <Cartao titulo="Quem mais pergunta" style={bloco(480)}>
               <Tabela colunas={['Usuário', 'Perguntas', 'Tokens', 'Última']}
                 linhas={dados.top_usuarios.map((u) => [u.nome ?? u.id, numero(u.perguntas), numero(u.tokens), u.ultima ? diaCurto(u.ultima.slice(0, 10)) : '—'])} />
             </Cartao>

@@ -28,9 +28,15 @@ export type Resumo = {
 
 export const JANELAS = [1, 7, 30, 90] as const;
 
+/** The last summary of each window (this session), shown at once while a fresh one loads. */
+const ultimos = new Map<number, Resumo>();
+export const resumoGuardado = (dias: number): Resumo | null => ultimos.get(dias) ?? null;
+
 export async function carregarResumo(dias: number, signal?: AbortSignal): Promise<Resumo> {
   const { token } = await sessaoAtual();
-  return (await getAdmin<{ data: Resumo }>(`/api/analytics/resumo?dias=${dias}`, token, signal)).data;
+  const resumo = (await getAdmin<{ data: Resumo }>(`/api/analytics/resumo?dias=${dias}`, token, signal)).data;
+  ultimos.set(dias, resumo);
+  return resumo;
 }
 
 const compacto = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });

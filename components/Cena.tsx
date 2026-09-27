@@ -56,15 +56,20 @@ export function Backdrop({ margem = 0 }: { margem?: number }) {
 
 /**
  * Screen shell used as each stack's `screenLayout`: the entrance replays on every focus. On native,
- * a pushed screen is focused ~80 ms before its first frame, which would hide most of the rise, so
- * the first entrance waits for the screen's first layout.
+ * a pushed screen is focused ~80 ms before its first frame, so the first entrance waits for the
+ * screen's first layout; and every entrance starts a frame later, hidden, because the frames right
+ * after a screen mounts or shows (its views, its blurred panes) are the long ones and would swallow
+ * the 220 ms rise (the giant glass does the same).
  */
 export function Tela({ children }: { children: ReactNode }) {
   const [entrada] = useState(() => new Animated.Value(0));
-  const estado = useRef({ medida: false, pendente: false });
+  const estado = useRef({ medida: false, pendente: false, quadro: 0 });
   const animar = useCallback(() => {
     entrada.setValue(0);
-    Animated.timing(entrada, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    cancelAnimationFrame(estado.current.quadro);
+    estado.current.quadro = requestAnimationFrame(() => {
+      Animated.timing(entrada, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    });
   }, [entrada]);
   useFocusEffect(
     useCallback(() => {
@@ -72,6 +77,7 @@ export function Tela({ children }: { children: ReactNode }) {
       else estado.current.pendente = true;
       return () => {
         estado.current.pendente = false;
+        cancelAnimationFrame(estado.current.quadro);
         entrada.stopAnimation();
       };
     }, [animar, entrada]),

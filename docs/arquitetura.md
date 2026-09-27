@@ -88,7 +88,9 @@ relida ao abrir o app e ao voltar para ele depois de 5 minutos.
   Se couber, a tabela ocupa a largura toda; se não, as colunas de texto
   quebram linha até um piso confortável; e, se nem assim couber, a tabela
   rola na horizontal, com nenhuma coluna maior que 60% da caixa. Tem
-  cabeçalho, listras e alinhamento por coluna.
+  cabeçalho, listras e alinhamento por coluna. Uma tabela que cabe é uma
+  `View` comum: um `ScrollView` desligado vira `touch-action: none` na web,
+  e o dedo que começava na tabela não rolava a conversa.
 - `<br>`, `<br/>` e `</br>` (comuns em células de tabela escritas pelo
   modelo) viram quebra de linha (`quebras`), exceto dentro de código.
 - Os estilos de texto vêm do ancestral mais próximo (corpo, negrito,
@@ -103,14 +105,25 @@ relida ao abrir o app e ao voltar para ele depois de 5 minutos.
 
 ## Vidro fosco (`components/Glass.tsx`)
 
-- **Web:** `backdrop-filter: blur() saturate()`.
+Todo painel flutuante com blur usa o mesmo vidro do botão de menu (tinta
+`vidro`, um pouco mais densa que a dos cartões, para o texto passar no AA do
+WCAG no ponto mais movimentado de cada tema): gaveta, menu da conta, pílula
+de aviso, vidro gigante, menu de ações do histórico, "Desfazer" e o composer
+do chat. O composer tem só a borda laranja a mais.
+
+- **Web:** `backdrop-filter: blur() saturate()` no próprio painel. Um
+  ancestral com `opacity < 1` isola o painel do que está atrás; o Chrome
+  mantém o painel sem blur mesmo depois que o fade termina. Por isso o fade
+  de entrada/saída vai no próprio vidro (`opacidade`), nunca num embrulho.
 - **iOS:** `BlurView` nativo.
 - **Android 12+:** `BlurView` com `RenderEffect` (acelerado por hardware).
   Em versões anteriores, o painel fica só translúcido.
   Um `BlurView` não consegue borrar o que está dentro dele mesmo; por isso
   `CamadaDeVidro` separa o `fundo` (conteúdo que rola, dentro de um
   `BlurTargetView`) da `frente` (menu, composer), que fica por cima como
-  irmã e borra o alvo.
+  irmã e borra o alvo. O chat (composer) e o histórico (menu de ações e
+  "Desfazer") têm a sua própria camada; o menu de ações não é um `Modal`,
+  que abriria outra janela, fora do alcance do blur.
 - Superfícies dentro do conteúdo (balões, cartões) usam só uma tinta
   translúcida, que é barata.
 
@@ -122,12 +135,20 @@ Detalhes do Android, sem alterar o `expo-blur`:
 - O desfoque replica os pixels da borda do alvo (`CLAMP`). Se o alvo
   terminasse na borda da tela, o texto que passa por ali pulsaria na
   status bar e no composer ao rolar. Por isso o alvo transborda a tela em
-  80dp, preenchidos pelo próprio fundo (`Backdrop` com `margem`).
-- **Cada vidro com blur redesenha a tela inteira a cada quadro.** Por isso,
-  no Android, a faixa da status bar é um degradê do fundo e a pílula de
-  aviso não tem blur. Um `filter` (saturação, contraste) sobre o blur
-  criava uma camada re-rasterizada a cada quadro e derrubava a rolagem para
-  ~12 fps: não use.
+  56dp (pouco mais de 3σ do blur), preenchidos pelo próprio fundo
+  (`Backdrop` com `margem`).
+- **Cada vidro com blur renderiza o alvo inteiro (a tela mais a sobra)
+  numa camada fora da tela e refaz o blur a cada quadro, seja qual for o
+  tamanho do vidro** (medido: camadas de 1530×2790 px no Galaxy S22). O custo
+  cresce com o número de vidros na tela, não com a área deles; a sobra do
+  alvo é a mínima que evita o artefato da borda. Por isso, no Android, a faixa da
+  status bar é um degradê do fundo, e nada fica animando em loop com a tela
+  parada: o ponto da pílula respira uma vez ao aparecer e depois a cada 20 s
+  (em loop contínuo, mantinha a tela redesenhando a ~60 fps). Escalar um bloco grande de texto também custa
+  caro (os glifos são rasterizados de novo a cada quadro): o vidro gigante
+  entra com fade e subida, sem zoom. Um `filter` (saturação, contraste)
+  sobre o blur criava uma camada re-rasterizada a cada quadro e derrubava a
+  rolagem para ~12 fps: não use.
 - O Android não tem o `saturate(150%)` do web, e a BlurView aplica um ruído
   leve por cima (não configurável sem mexer na biblioteca).
 

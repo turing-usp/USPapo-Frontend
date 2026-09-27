@@ -1,13 +1,16 @@
-/** History: grouped conversations with search, favorite, rename and delete (6 s undo); offline shows the cache. */
+/**
+ * History: grouped conversations with search, favorite, rename and delete (6 s undo); offline shows
+ * the cache. The actions menu and the undo toast float over the list and blur it.
+ */
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ALTURA_CHROME } from '../../components/Chrome';
-import Glass from '../../components/Glass';
+import Glass, { CamadaDeVidro } from '../../components/Glass';
 import { Icone } from '../../components/icons';
-import { MenuConversa } from '../../components/MenuConversa';
+import { BotaoAcoes, MenuConversa, type AcaoConversa, type Ancora } from '../../components/MenuConversa';
 import { Botao, Campo, Coluna, Estado, Texto } from '../../components/ui';
 import { sessaoAtual } from '../../lib/auth';
 import { guardarConversa, guardarHistorico, historicoEmCache } from '../../lib/cache';
@@ -42,6 +45,7 @@ export default function Historico() {
   const [aviso, setAviso] = useState<string | null>(null);
   const [editando, setEditando] = useState<{ id: string; titulo: string } | null>(null);
   const [apagada, setApagada] = useState<Conversa | null>(null);
+  const [acoes, setAcoes] = useState<{ c: Conversa; ancora: Ancora } | null>(null);
 
   const carregar = useCallback(async (userId: string) => {
     setUid(userId);
@@ -69,6 +73,7 @@ export default function Historico() {
       recarregar();
       return () => {
         setApagada(null);
+        setAcoes(null);
         void efetivarExclusoes();
       };
     }, [recarregar]),
@@ -107,6 +112,17 @@ export default function Historico() {
     }
   }
 
+  function escolher(acao: AcaoConversa) {
+    const c = acoes?.c;
+    setAcoes(null);
+    if (!c) return;
+    if (acao === 'favoritar') void atualizar(c, { favorita: !c.favorita }, () => favoritar(uid, c.id, !c.favorita));
+    else if (acao === 'renomear') setEditando({ id: c.id, titulo: rotuloDa(c) });
+    else apagar(c);
+  }
+  const fecharAcoes = useCallback(() => setAcoes(null), []);
+  const menuAberto = useMemo(() => acoes && { favorita: acoes.c.favorita, ancora: acoes.ancora }, [acoes]);
+
   async function confirmarNome() {
     const alvo = editando;
     setEditando(null);
@@ -128,60 +144,64 @@ export default function Historico() {
   }, [conversas, busca]);
 
   return (
-    <View style={{ flex: 1 }}>
-      <FlatList
-        data={itens}
-        keyExtractor={(i) => i.id}
-        keyboardShouldPersistTaps="handled"
-        refreshControl={<RefreshControl refreshing={atualizando} onRefresh={() => { setAtualizando(true); recarregar(); }} tintColor={colors.brand} />}
-        contentContainerStyle={{ alignSelf: 'center', width: '100%', maxWidth: layout.containerMaxWidth, gap: spacing.sm,
-          paddingHorizontal: spacing.lg, paddingTop: insets.top + ALTURA_CHROME + spacing.md, paddingBottom: insets.bottom + 96 }}
-        ListHeaderComponent={
-          <View style={{ gap: spacing.md, marginBottom: spacing.sm }}>
-            <Texto v="titulo">Histórico</Texto>
-            <Campo icone="busca" value={busca} onChangeText={setBusca} placeholder="Buscar nas conversas" autoCapitalize="none" autoCorrect={false} />
-            {offline ? <Texto v="legenda" centro>Sem conexão — mostrando a última cópia salva neste aparelho.</Texto> : null}
-            {aviso ? <Texto v="erro" centro onPress={() => setAviso(null)}>{aviso}</Texto> : null}
-          </View>
-        }
-        ListEmptyComponent={
-          conversas === null ? null : offline
-            ? <Estado mensagem="Não consegui carregar seu histórico." acao="Tentar de novo" aoAgir={() => { setAtualizando(true); recarregar(); }} />
-            : <Estado mensagem={busca ? 'Nenhuma conversa encontrada.' : 'Suas conversas aparecem aqui.'} />
-        }
-        renderItem={({ item }) => item.tipo === 'grupo' ? (
-          <Texto v="secao" style={{ marginTop: spacing.md }}>{item.id}</Texto>
-        ) : (
-          <Glass radius={radius.md} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 60, paddingRight: 6 }}>
-            <Pressable accessibilityRole="link" accessibilityLabel={rotuloDa(item.c)} disabled={editando?.id === item.id}
-              onPress={() => router.push(`/chat/${item.id}`)}
-              style={({ pressed }) => ({ flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, alignSelf: 'stretch',
-                paddingVertical: spacing.sm, paddingLeft: 14, opacity: pressed ? 0.7 : 1 })}>
-            {item.c.favorita ? <Icone nome="estrela" cor={colors.brand} tamanho={15} /> : null}
-            {editando?.id === item.id ? (
-              <TextInput value={editando.titulo} onChangeText={(t) => setEditando({ id: item.id, titulo: t })} autoFocus selectTextOnFocus
-                onBlur={() => void confirmarNome()} onSubmitEditing={() => void confirmarNome()} returnKeyType="done" maxLength={120}
-                style={{ flex: 1, color: colors.foreground, fontFamily: 'Roboto', fontSize: typography.sm.fontSize, padding: 0, position: 'relative', outlineStyle: 'none' } as object} />
-            ) : (
-              <Texto v="suave" cor={colors.foreground} numberOfLines={2} style={{ flex: 1 }}>{rotuloDa(item.c)}</Texto>
-            )}
-            {item.c.resposta === null ? <Texto v="legenda" cor={colors.danger} style={{ fontFamily: 'Roboto-Bold' }}>PENDENTE</Texto> : null}
-            </Pressable>
-            <MenuConversa favorita={item.c.favorita}
-              aoFavoritar={() => void atualizar(item.c, { favorita: !item.c.favorita }, () => favoritar(uid, item.c.id, !item.c.favorita))}
-              aoRenomear={() => setEditando({ id: item.id, titulo: rotuloDa(item.c) })}
-              aoApagar={() => apagar(item.c)} />
-          </Glass>
-        )}
-      />
-      {apagada ? (
-        <Coluna style={{ position: 'absolute', bottom: insets.bottom + spacing.lg }}>
-          <Glass desfoque variante="raised" radius={radius.lg} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingLeft: spacing.lg, paddingRight: spacing.sm, paddingVertical: spacing.sm }}>
-            <Texto v="suave" cor={colors.foreground} style={{ flex: 1 }}>Conversa apagada</Texto>
-            <Botao compacto v="secundario" rotulo="Desfazer" onPress={desfazer} />
-          </Glass>
-        </Coluna>
-      ) : null}
-    </View>
+    <CamadaDeVidro
+      fundo={
+        <FlatList
+          data={itens}
+          keyExtractor={(i) => i.id}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={<RefreshControl refreshing={atualizando} onRefresh={() => { setAtualizando(true); recarregar(); }} tintColor={colors.brand} />}
+          contentContainerStyle={{ alignSelf: 'center', width: '100%', maxWidth: layout.containerMaxWidth, gap: spacing.sm,
+            paddingHorizontal: spacing.lg, paddingTop: insets.top + ALTURA_CHROME + spacing.md, paddingBottom: insets.bottom + 96 }}
+          ListHeaderComponent={
+            <View style={{ gap: spacing.md, marginBottom: spacing.sm }}>
+              <Texto v="titulo">Histórico</Texto>
+              <Campo icone="busca" value={busca} onChangeText={setBusca} placeholder="Buscar nas conversas" autoCapitalize="none" autoCorrect={false} />
+              {offline ? <Texto v="legenda" centro>Sem conexão — mostrando a última cópia salva neste aparelho.</Texto> : null}
+              {aviso ? <Texto v="erro" centro onPress={() => setAviso(null)}>{aviso}</Texto> : null}
+            </View>
+          }
+          ListEmptyComponent={
+            conversas === null ? null : offline
+              ? <Estado mensagem="Não consegui carregar seu histórico." acao="Tentar de novo" aoAgir={() => { setAtualizando(true); recarregar(); }} />
+              : <Estado mensagem={busca ? 'Nenhuma conversa encontrada.' : 'Suas conversas aparecem aqui.'} />
+          }
+          renderItem={({ item }) => item.tipo === 'grupo' ? (
+            <Texto v="secao" style={{ marginTop: spacing.md }}>{item.id}</Texto>
+          ) : (
+            <Glass radius={radius.md} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 60, paddingRight: 6 }}>
+              <Pressable accessibilityRole="link" accessibilityLabel={rotuloDa(item.c)} disabled={editando?.id === item.id}
+                onPress={() => router.push(`/chat/${item.id}`)}
+                style={({ pressed }) => ({ flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, alignSelf: 'stretch',
+                  paddingVertical: spacing.sm, paddingLeft: 14, opacity: pressed ? 0.7 : 1 })}>
+              {item.c.favorita ? <Icone nome="estrela" cor={colors.brand} tamanho={15} /> : null}
+              {editando?.id === item.id ? (
+                <TextInput value={editando.titulo} onChangeText={(t) => setEditando({ id: item.id, titulo: t })} autoFocus selectTextOnFocus
+                  onBlur={() => void confirmarNome()} onSubmitEditing={() => void confirmarNome()} returnKeyType="done" maxLength={120}
+                  style={{ flex: 1, color: colors.foreground, fontFamily: 'Roboto', fontSize: typography.sm.fontSize, padding: 0, position: 'relative', outlineStyle: 'none' } as object} />
+              ) : (
+                <Texto v="suave" cor={colors.foreground} numberOfLines={2} style={{ flex: 1 }}>{rotuloDa(item.c)}</Texto>
+              )}
+              {item.c.resposta === null ? <Texto v="legenda" cor={colors.danger} style={{ fontFamily: 'Roboto-Bold' }}>PENDENTE</Texto> : null}
+              </Pressable>
+              <BotaoAcoes aoAbrir={(ancora) => setAcoes({ c: item.c, ancora })} />
+            </Glass>
+          )}
+        />
+      }
+      frente={
+        <>
+          {apagada ? (
+            <Coluna pointerEvents="box-none" style={{ position: 'absolute', bottom: insets.bottom + spacing.lg }}>
+              <Glass desfoque radius={radius.lg} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingLeft: spacing.lg, paddingRight: spacing.sm, paddingVertical: spacing.sm }}>
+                <Texto v="suave" cor={colors.foreground} style={{ flex: 1 }}>Conversa apagada</Texto>
+                <Botao compacto v="secundario" rotulo="Desfazer" onPress={desfazer} />
+              </Glass>
+            </Coluna>
+          ) : null}
+          <MenuConversa aberto={menuAberto} aoFechar={fecharAcoes} aoEscolher={escolher} />
+        </>
+      }
+    />
   );
 }

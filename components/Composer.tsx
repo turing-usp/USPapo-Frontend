@@ -69,7 +69,7 @@ export default function Composer({ value, onChange, onSubmit, placeholder = 'Per
 
   return (
     <View>
-      <Glass variante="brand" desfoque={desfoque} radius={28} borda={{ borderColor: colors.brand, borderWidth: 1.5 }} style={styles.pilula}>
+      <Glass desfoque={desfoque} radius={28} borda={{ borderColor: colors.brand, borderWidth: 1.5 }} style={styles.pilula}>
         <TextInput
           ref={entrada}
           {...(Platform.OS === 'web' ? { rows: 1 } : null)}

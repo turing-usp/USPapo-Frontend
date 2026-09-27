@@ -5,7 +5,7 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Animated, AppState, BackHandler, Easing, Image, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions,
+  Animated, AppState, BackHandler, Easing, Image, Pressable, ScrollView, StyleSheet, View, useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -80,20 +80,37 @@ export function useComunicados() {
   return { aviso, aberto: visivel, abrir: setAberto, fechar: () => setAberto(null), ocultarAviso };
 }
 
-/** The aviso pill. Android keeps it unblurred: each Android blur redraws the screen every frame. */
+const ENTRE_RESPIROS_MS = 20_000;
+
+/**
+ * The aviso pill, in the same glass as the menu button beside it. Its dot breathes once when it
+ * appears and then every 20 s, resting in between: each frame of the breath redraws every blurred
+ * pane on Android, and a nonstop loop kept a still screen redrawing at ~60 fps.
+ */
 export function PilulaAviso({ aviso, aoAbrir }: { aviso: Comunicado; aoAbrir: () => void }) {
   const { colors, radius, spacing } = useTheme();
   const [pulso] = useState(() => new Animated.Value(1));
   useEffect(() => {
-    const loop = Animated.loop(Animated.sequence([
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const respiro = Animated.sequence([
       Animated.timing(pulso, { toValue: 0.35, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
       Animated.timing(pulso, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-    ]));
-    loop.start();
-    return () => loop.stop();
-  }, [pulso]);
+    ]);
+    const respirar = () => {
+      respiro.reset();
+      respiro.start(({ finished }) => {
+        if (finished) timer = setTimeout(respirar, ENTRE_RESPIROS_MS);
+      });
+    };
+    respirar();
+    return () => {
+      clearTimeout(timer);
+      respiro.stop();
+      pulso.setValue(1);
+    };
+  }, [pulso, aviso.id]);
   return (
-    <Glass desfoque={Platform.OS !== 'android'} variante={Platform.OS === 'android' ? 'raised' : 'surface'} radius={radius.full}
+    <Glass desfoque radius={radius.full}
       onPress={() => { void haptics.selection(); aoAbrir(); }} accessibilityLabel={`Aviso: ${aviso.pilula}. Toque para saber mais.`}
       style={[styles.pilula, { gap: spacing.sm, paddingHorizontal: spacing.md }]}>
       <Animated.View style={[styles.ponto, { backgroundColor: colors.brand, opacity: pulso }]} />
@@ -126,13 +143,21 @@ export function VidroGigante({ comunicado, aoFechar, aoOcultar }: {
   // The last content stays on screen while it fades out.
   const [atual, setAtual] = useState<Comunicado | null>(comunicado);
   if (comunicado && comunicado !== atual) setAtual(comunicado);
+  // The fade starts a frame after the content's first layout: mounting a page of Markdown (and the
+  // blur's first draw) takes a few long frames, which would swallow the start of the fade.
+  const [medido, setMedido] = useState(false);
 
   useEffect(() => {
+    if (comunicado && !medido) return;
     Animated.timing(entrada, {
       toValue: comunicado ? 1 : 0, duration: comunicado ? 260 : 180, useNativeDriver: true,
       easing: comunicado ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
-    }).start(({ finished }) => finished && !comunicado && setAtual(null));
-  }, [comunicado, entrada]);
+    }).start(({ finished }) => {
+      if (!finished || comunicado) return;
+      setAtual(null);
+      setMedido(false);
+    });
+  }, [comunicado, medido, entrada]);
 
   useEffect(() => {
     if (!comunicado) return;
@@ -144,17 +169,18 @@ export function VidroGigante({ comunicado, aoFechar, aoOcultar }: {
   }, [comunicado, aoFechar]);
 
   if (!atual) return null;
-  const escala = entrada.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] });
+  // A rise, not a zoom: scaling a page of text re-rasterizes every glyph each frame on Android.
+  const subida = entrada.interpolate({ inputRange: [0, 1], outputRange: [12, 0] });
   return (
     <View pointerEvents={comunicado ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, styles.camada]}>
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: entrada }]}>
         <Pressable accessibilityLabel="Fechar" onPress={aoFechar} style={[StyleSheet.absoluteFill, { backgroundColor: colors.scrim + '59' }]} />
       </Animated.View>
-      <Animated.View pointerEvents="box-none" style={[styles.centro, {
+      <Animated.View pointerEvents="box-none" onLayout={() => !medido && requestAnimationFrame(() => setMedido(true))} style={[styles.centro, {
         paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.lg, paddingHorizontal: spacing.lg,
-        opacity: entrada, transform: [{ scale: escala }],
+        transform: [{ translateY: subida }],
       }]}>
-        <Glass desfoque variante="panel" radius={radius.xl}
+        <Glass desfoque radius={radius.xl} opacidade={entrada}
           style={{ width: '100%', maxWidth: 560, maxHeight: height - insets.top - insets.bottom - 2 * spacing.lg }}>
           <ScrollView contentContainerStyle={{ gap: spacing.lg, padding: width >= 640 ? spacing['3xl'] : spacing.xl }}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md }}>
