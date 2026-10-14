@@ -1,7 +1,6 @@
 /**
- * Per-conversation actions (favoritar, renomear, apagar): the kebab button in each row and a small
- * glass menu anchored to it. The menu is drawn in the history's `frente` layer, over the list it
- * blurs (a Modal is another window, which the Android blur cannot sample).
+ * Per-conversation actions (favoritar, renomear, apagar): the kebab button in each row of the
+ * drawer's list and a small opaque-glass menu anchored to it, drawn in the drawer's panel.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, BackHandler, Easing, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
@@ -30,7 +29,7 @@ export function BotaoAcoes({ aoAbrir }: { aoAbrir: (ancora: Ancora) => void }) {
   );
 }
 
-/** Must fill the window (its origin is the anchor's). While it fades out it stays where it was. */
+/** Its parent must start at the window's origin (the anchor is in window coordinates). While it fades out it stays where it was. */
 export function MenuConversa({ aberto, aoFechar, aoEscolher }: {
   aberto: { favorita: boolean; ancora: Ancora } | null; aoFechar: () => void; aoEscolher: (acao: AcaoConversa) => void;
 }) {
@@ -73,9 +72,9 @@ export function MenuConversa({ aberto, aoFechar, aoEscolher }: {
   );
 
   return (
-    <View pointerEvents={aberto ? 'auto' : 'none'} style={StyleSheet.absoluteFill}>
+    <View pointerEvents={aberto ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, { zIndex: 10 }]}>
       <Pressable accessibilityLabel="Fechar ações da conversa" onPress={aoFechar} style={StyleSheet.absoluteFill} />
-      <Glass desfoque radius={radius.lg} opacidade={entrada} style={{ position: 'absolute', left, top, width: LARGURA, paddingVertical: 4 }}>
+      <Glass opaco radius={radius.lg} opacidade={entrada} style={{ position: 'absolute', left, top, width: LARGURA, paddingVertical: 4 }}>
         {item(atual.favorita ? 'Remover dos favoritos' : 'Favoritar', 'favoritar')}
         {item('Renomear', 'renomear')}
         {item('Apagar', 'apagar', true)}

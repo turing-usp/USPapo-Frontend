@@ -1,7 +1,7 @@
 /**
  * Announcements (lib/comunicados.ts) in the floating chrome: a giant glass pop-up (a novidade opens
  * by itself once; an aviso opens from its pill) and the aviso pill between the menu and the avatar.
- * They live in the chrome so the pop-up blurs the whole screen behind it.
+ * They live in the chrome, over every screen; the pop-up is opaque glass (no blur over the whole screen).
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -180,7 +180,7 @@ export function VidroGigante({ comunicado, aoFechar, aoOcultar }: {
         paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.lg, paddingHorizontal: spacing.lg,
         transform: [{ translateY: subida }],
       }]}>
-        <Glass desfoque radius={radius.xl} opacidade={entrada}
+        <Glass opaco radius={radius.xl} opacidade={entrada}
           style={{ width: '100%', maxWidth: 560, maxHeight: height - insets.top - insets.bottom - 2 * spacing.lg }}>
           <ScrollView contentContainerStyle={{ gap: spacing.lg, padding: width >= 640 ? spacing['3xl'] : spacing.xl }}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md }}>

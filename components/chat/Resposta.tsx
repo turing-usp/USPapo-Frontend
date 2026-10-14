@@ -4,22 +4,27 @@
  * The text is split into blocks (blank-line separated, fences kept whole) and
  * each block is a memoized renderer with a stable key: finished blocks never
  * re-parse, and every new block fades and rises in — the streaming animation.
+ * One cursor follows the text down (the thinking mark collapses into it).
  * A finished answer with formulas renders through KaTeX (components/chat/Matematica).
  * Tables size each column to its content and scroll sideways when they cannot fit.
  */
 import {
-  createMarkdownIt, MarkdownStream, type ASTNode, type MarkdownStyleMap, type RenderRules,
+  createMarkdownIt, MarkdownStream, sealIncompleteMarkdown, type ASTNode, type MarkdownStyleMap, type RenderRules,
 } from '@ronradtke/react-native-markdown-display';
-import React, { createContext, memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import React, { createContext, memo, useContext, useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Animated, Easing, Linking, Platform, ScrollView, Text, View, useWindowDimensions, type ViewStyle } from 'react-native';
 
 import { Matematica } from './Matematica';
+import { COR_LOGO } from '../icons';
 import { blocos, distribuirColunas, medirColunas, quebras, selar, temMatematica, tintasDaTabela } from '../../lib/markdown';
 import { useTheme, type Theme } from '../../theme';
 
-/** Characters on screen now: chases the received text ~0.25 s behind, never slower than 30 chars/s. */
-export function useRevelacao(texto: string, streaming: boolean): string {
-  const [revelado, setRevelado] = useState(() => (streaming ? 0 : texto.length));
+/**
+ * Characters on screen now: chases the received text ~0.25 s behind, never slower than 30 chars/s.
+ * `revelar` starts from nothing even when the text is already complete.
+ */
+export function useRevelacao(texto: string, streaming: boolean, revelar = streaming): string {
+  const [revelado, setRevelado] = useState(() => (revelar ? 0 : texto.length));
   const pos = useRef(revelado);
   const alvo = useRef(texto);
   const ativo = useRef(streaming);
@@ -176,28 +181,96 @@ const Bloco = memo(function Bloco({ texto, streaming, animar, tema, estilo }: {
   const translateY = entrada.interpolate({ inputRange: [0, 1], outputRange: [6, 0] });
   return (
     <Animated.View style={{ opacity: entrada, transform: [{ translateY }] }}>
-      <MarkdownStream colorScheme={tema.escuro ? 'dark' : 'light'} cursorColor={tema.colors.brand} cursorStyle={{ height: 18, width: 2, borderRadius: 1 }}
-        markdownit={analisador} mergeStyle={false} onLinkPress={abrirLink} rules={regras} streaming={streaming} style={estilo}>
-        {streaming ? selar(texto) : texto}
+      <MarkdownStream colorScheme={tema.escuro ? 'dark' : 'light'} markdownit={analisador} mergeStyle={false} onLinkPress={abrirLink}
+        rules={regras} style={estilo}>
+        {streaming ? sealIncompleteMarkdown(selar(texto)) : texto}
       </MarkdownStream>
     </Animated.View>
   );
 });
 
-export default function Resposta({ texto, streaming }: { texto: string; streaming: boolean }) {
-  const tema = useTheme();
-  const visivel = useRevelacao(texto, streaming);
-  const estilo = useMemo(() => estilos(tema), [tema]);
-  const [animar] = useState(streaming); // saved answers open without animation
-  const escrevendo = streaming || visivel.length < texto.length;
+/** The cursor under the text being written: where it sits in an empty answer (the mark's target). */
+export const CURSOR = { x: 0, y: 4, largura: 2, altura: 18 };
+/** Without new text for this long, the cursor starts blinking. */
+const ESPERA_MS = 600;
 
-  if (!escrevendo && temMatematica(texto)) return <Matematica texto={texto} />;
+/**
+ * Solid while the text grows, a soft blink while it waits, and a fade when the answer is done
+ * (`aoSair`). It glides down to each new line. Only opacity and position animate, on the native driver.
+ */
+function Cursor({ y, escrito, ativo, aoSair }: { y: number; escrito: number; ativo: boolean; aoSair: () => void }) {
+  const [opacidade] = useState(() => new Animated.Value(1));
+  const [topo] = useState(() => new Animated.Value(y));
+  const sair = useEffectEvent(aoSair);
+
+  useEffect(() => {
+    Animated.timing(topo, { toValue: y, duration: 120, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  }, [y, topo]);
+
+  useEffect(() => {
+    opacidade.stopAnimation();
+    if (!ativo) {
+      Animated.timing(opacidade, { toValue: 0, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true })
+        .start(({ finished }) => finished && sair());
+      return;
+    }
+    opacidade.setValue(1);
+    const piscar = Animated.loop(Animated.sequence([
+      Animated.timing(opacidade, { toValue: 0, duration: 180, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.delay(300),
+      Animated.timing(opacidade, { toValue: 1, duration: 180, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.delay(540),
+    ]));
+    const espera = setTimeout(() => piscar.start(), ESPERA_MS);
+    return () => {
+      clearTimeout(espera);
+      piscar.stop();
+    };
+  }, [escrito, ativo, opacidade]);
+
+  return (
+    <Animated.View pointerEvents="none" style={{
+      position: 'absolute', left: CURSOR.x, top: CURSOR.y, width: CURSOR.largura, height: CURSOR.altura, borderRadius: CURSOR.largura / 2,
+      backgroundColor: COR_LOGO, opacity: opacidade, transform: [{ translateY: topo }],
+    }} />
+  );
+}
+
+/**
+ * `revelar` (a live answer, taking over from the thinking mark) reveals the text from the start with
+ * the cursor; `aoRevelar` fires once all of it is on screen and the cursor has gone.
+ */
+export default function Resposta({ texto, streaming, revelar = streaming, aoRevelar }: {
+  texto: string; streaming: boolean; revelar?: boolean; aoRevelar?: () => void;
+}) {
+  const tema = useTheme();
+  const visivel = useRevelacao(texto, streaming, revelar);
+  const estilo = useMemo(() => estilos(tema), [tema]);
+  const [animar] = useState(revelar); // saved answers open without animation
+  const [cursor, setCursor] = useState(revelar);
+  const [altura, setAltura] = useState(0);
+  const escrevendo = streaming || visivel.length < texto.length;
+  const revelada = useEffectEvent(() => aoRevelar?.());
+
+  useEffect(() => {
+    if (!escrevendo && !cursor) revelada();
+  }, [escrevendo, cursor]);
+
+  if (!escrevendo && !cursor && temMatematica(texto)) return <Matematica texto={texto} />;
   const partes = blocos(visivel);
   return (
-    <>
-      {partes.map((parte, i) => (
-        <Bloco key={i} texto={parte} streaming={escrevendo && i === partes.length - 1} animar={animar} tema={tema} estilo={estilo} />
-      ))}
-    </>
+    <View>
+      <View onLayout={(e) => setAltura(e.nativeEvent.layout.height)}>
+        {partes.map((parte, i) => (
+          <Bloco key={i} texto={parte} streaming={escrevendo && i === partes.length - 1} animar={animar} tema={tema} estilo={estilo} />
+        ))}
+      </View>
+      {cursor ? (
+        <>
+          <View style={{ height: CURSOR.y + CURSOR.altura }} />
+          <Cursor y={altura} escrito={visivel.length} ativo={escrevendo} aoSair={() => setCursor(false)} />
+        </>
+      ) : null}
+    </View>
   );
 }

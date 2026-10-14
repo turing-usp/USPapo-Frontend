@@ -6,8 +6,8 @@
  * and saves the answer (so does the app on a successful end, whichever is
  * first). Opening a conversation with a pending turn reattaches to the server's
  * answer, and only re-sends it when there is none. "Parar" stops it on the
- * server, which saves the partial answer. `pensando` carries no reasoning text:
- * it only drives the "Pensando…" indicator.
+ * server, which saves the partial answer. Of the tools the app only keeps the
+ * server's status for the last one used, shown beside the thinking mark.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
@@ -22,19 +22,19 @@ import { aoPerguntar, avisarRespostaPronta } from './notificacoes';
 export type Linha =
   | { id: string; autor: 'user'; texto: string }
   | { id: string; autor: 'assistant'; texto: string; fontes: string[]; completo: boolean; ordem: number }
-  | { id: string; autor: 'ferramenta'; indice: number; nome: string; pronta: boolean; resultados: number }
   | { id: string; autor: 'erro'; mensagem: string; tipo: TipoErro }
   | { id: string; autor: 'nota'; texto: string };
 export type TipoErro = 'sessao' | 'limite' | 'rede' | 'outro';
 export type Status = 'idle' | 'respondendo' | 'errou';
-export type EstadoChat = { linhas: Linha[]; status: Status; pergunta: string; ordem: number; escrevendo: boolean };
+/** `etapa`: the status of the last tool this turn used (null until one runs). */
+export type EstadoChat = { linhas: Linha[]; status: Status; pergunta: string; ordem: number; etapa: string | null };
 
 const CONTEXTO_TURNOS = 6;
 const NOTA_INTERROMPIDA = 'A resposta foi interrompida.';
 /** How the server stores a stopped answer (USPapo-Backend/app/jobs.py). */
 const MARCA_INTERROMPIDA = '*Resposta interrompida.*';
 
-export const estadoVazio = (): EstadoChat => ({ linhas: [], status: 'idle', pergunta: '', ordem: 0, escrevendo: false });
+export const estadoVazio = (): EstadoChat => ({ linhas: [], status: 'idle', pergunta: '', ordem: 0, etapa: null });
 
 /** Saved turns as lines (a trailing pending turn is left out: it is about to be re-sent). */
 export function linhasSalvas(mensagens: Mensagem[]): Linha[] {
@@ -47,13 +47,13 @@ export function linhasSalvas(mensagens: Mensagem[]): Linha[] {
 export function iniciar(pergunta: string, ordem: number, anteriores: Linha[]): EstadoChat {
   return {
     linhas: [...anteriores, { id: `user:${ordem}`, autor: 'user', texto: pergunta }],
-    status: 'respondendo', pergunta, ordem, escrevendo: false,
+    status: 'respondendo', pergunta, ordem, etapa: null,
   };
 }
 
 function erroLinha(estado: EstadoChat, mensagem: string, tipo: TipoErro): EstadoChat {
   return {
-    ...estado, status: 'errou', escrevendo: false,
+    ...estado, status: 'errou',
     linhas: [...estado.linhas, { id: `erro:${estado.linhas.length}`, autor: 'erro', mensagem, tipo }],
   };
 }
@@ -65,27 +65,18 @@ export function reduzir(estado: EstadoChat, ev: ChatEvent): EstadoChat {
   const ultima = linhas[linhas.length - 1];
   const respostaAberta = ultima?.autor === 'assistant' && !ultima.completo ? ultima : null;
   switch (ev.type) {
-    case 'tool':
-      if (ev.state === 'start') {
-        return { ...estado, escrevendo: false, linhas: [...linhas, {
-          id: `ferramenta:${estado.ordem}:${ev.index}:${linhas.length}`, autor: 'ferramenta', indice: ev.index, nome: ev.name,
-          pronta: false, resultados: 0,
-        }] };
-      }
-      return { ...estado, linhas: linhas.map((l) => l.autor === 'ferramenta' && !l.pronta && l.indice === ev.index
-        ? { ...l, pronta: true, resultados: ev.results ?? 0 } : l) };
+    case 'status':
+      return typeof ev.text === 'string' && ev.text.trim() ? { ...estado, etapa: ev.text.trim().slice(0, 60) } : estado;
     case 'text':
-      return { ...estado, escrevendo: true, linhas: respostaAberta
+      return { ...estado, linhas: respostaAberta
         ? [...linhas.slice(0, -1), { ...respostaAberta, texto: respostaAberta.texto + ev.delta }]
         : [...linhas, { id: `assistant:${estado.ordem}`, autor: 'assistant', texto: ev.delta, fontes: [], completo: false, ordem: estado.ordem }] };
-    case 'pensando':
-      return { ...estado, escrevendo: false };
     case 'sources':
       return respostaAberta ? { ...estado, linhas: [...linhas.slice(0, -1), { ...respostaAberta, fontes: ev.urls }] } : estado;
     case 'error':
       return erroLinha(estado, ev.message, 'outro');
     case 'end':
-      return { ...estado, status: 'idle', escrevendo: false,
+      return { ...estado, status: 'idle',
         linhas: respostaAberta ? [...linhas.slice(0, -1), { ...respostaAberta, completo: true }] : linhas };
     default:
       return estado;
@@ -177,9 +168,8 @@ export function useChat(id: string, opts: { aoSessaoExpirada: () => void; pertoD
         // Leaving the screen also aborts: the server goes on and saves the answer. Only "Parar"
         // ends the turn, and the server saves the partial answer marked as interrupted.
         const aberta = local.linhas.find((l): l is Extract<Linha, { autor: 'assistant' }> => l.autor === 'assistant' && !l.completo);
-        const encerradas = local.linhas.map((l): Linha => (l === aberta ? { ...aberta, completo: true }
-          : l.autor === 'ferramenta' && !l.pronta ? { ...l, pronta: true } : l));
-        setEstado({ ...local, status: 'idle', escrevendo: false, linhas: aberta || parado.current
+        const encerradas = local.linhas.map((l): Linha => (l === aberta ? { ...aberta, completo: true } : l));
+        setEstado({ ...local, status: 'idle', linhas: aberta || parado.current
           ? [...encerradas, { id: `nota:${local.linhas.length}`, autor: 'nota', texto: NOTA_INTERROMPIDA }] : encerradas });
         if (parado.current) {
           const texto = aberta?.texto.trim();

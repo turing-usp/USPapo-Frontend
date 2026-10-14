@@ -16,8 +16,11 @@ function rgba(value: string): { cor: string; opacidade: number } {
   return m ? { cor: `rgb(${m[1]},${m[2]},${m[3]})`, opacidade: m[4] === undefined ? 1 : Number(m[4]) } : { cor: value, opacidade: 1 };
 }
 
-/** `margem` extends the scene past the window on every side (the Android blur target overhang). */
-export function Backdrop({ margem = 0 }: { margem?: number }) {
+/**
+ * `margem` extends the scene past the window on every side (the Android blur target overhang);
+ * `recorte` draws only the window's top-left region of that size (an opaque pane's own copy).
+ */
+export function Backdrop({ margem = 0, recorte }: { margem?: number; recorte?: { width: number; height: number } }) {
   const { scene } = useTheme();
   const { width, height } = useWindowDimensions();
   const id = useId().replace(/:/g, '');
@@ -27,10 +30,12 @@ export function Backdrop({ margem = 0 }: { margem?: number }) {
   const mx = margem / width;
   const my = margem / height;
   const fora = { x: -mx, y: -my, width: 1 + 2 * mx, height: 1 + 2 * my };
+  const tela = recorte ?? { width: width + 2 * margem, height: height + 2 * margem };
+  const vista = recorte ? { x: 0, y: 0, width: recorte.width / width, height: recorte.height / height } : fora;
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
       {/* Explicit numeric size: percentage props stop react-native-svg painting on web. */}
-      <Svg width={width + 2 * margem} height={height + 2 * margem} viewBox={`${fora.x} ${fora.y} ${fora.width} ${fora.height}`}
+      <Svg width={tela.width} height={tela.height} viewBox={`${vista.x} ${vista.y} ${vista.width} ${vista.height}`}
         preserveAspectRatio="none" style={StyleSheet.absoluteFill}>
         <Defs>
           <LinearGradient id={`base${id}`} x1="0" y1="0" x2="1" y2="1" gradientUnits="userSpaceOnUse">

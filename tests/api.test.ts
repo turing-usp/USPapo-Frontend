@@ -1,4 +1,4 @@
-import { ApiError, SESSAO_EXPIRADA, ferramenta, lerFrames, streamChat, type ChatEvent } from '../lib/api';
+import { ApiError, SESSAO_EXPIRADA, lerFrames, streamChat, type ChatEvent } from '../lib/api';
 
 const mockFetch = jest.fn();
 jest.mock('expo/fetch', () => ({ fetch: (...args: unknown[]) => mockFetch(...args) }));
@@ -50,7 +50,8 @@ test('maps HTTP failures to ApiError with the backend wording', async () => {
   await expect(coletar(streamChat({ question: 'oi', token: '' }))).rejects.toBeInstanceOf(ApiError);
 });
 
-test('tool labels fall back to a generic pt-BR label', () => {
-  expect(ferramenta('consultar_bandejao').rotulo).toBe('Consultando cardápio');
-  expect(ferramenta('desconhecida').rotulo).toBe('Usando ferramenta');
+test('events the app does not use are dropped (an older backend still sends them)', () => {
+  const [eventos] = lerFrames('data: {"type":"provedor","name":"g","index":0}\n\ndata: {"type":"pensando"}\n\n'
+    + 'data: {"type":"tool","state":"start","index":0,"name":"pesquisar_web"}\n\ndata: {"type":"status","text":"Pesquisando a web"}\n\n');
+  expect(eventos).toEqual([{ type: 'status', text: 'Pesquisando a web' }]);
 });

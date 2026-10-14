@@ -8,25 +8,29 @@ const aplicar = (estado: EstadoChat, eventos: ChatEvent[]) => eventos.reduce(red
 
 test('a full successful turn', () => {
   const fim = aplicar(iniciar('Cardápio?', 2, []), [
-    { type: 'provedor', name: 'groq', index: 0 },
-    { type: 'pensando' },
-    { type: 'tool', state: 'start', index: 0, name: 'consultar_bandejao' },
-    { type: 'tool', state: 'end', index: 0, name: 'consultar_bandejao', results: 1 },
+    { type: 'status', text: 'Consultando cardápio' },
     { type: 'text', delta: 'Arroz ' },
     { type: 'text', delta: 'e feijão' },
     { type: 'sources', urls: ['https://usp.br/a'] },
     { type: 'end' },
   ]);
   expect(fim.status).toBe('idle');
-  expect(fim.linhas.map((l) => l.autor)).toEqual(['user', 'ferramenta', 'assistant']);
-  expect(fim.linhas[1]).toMatchObject({ pronta: true, resultados: 1 });
-  expect(fim.linhas[2]).toMatchObject({ texto: 'Arroz e feijão', fontes: ['https://usp.br/a'], completo: true, ordem: 2 });
+  expect(fim.etapa).toBe('Consultando cardápio');
+  expect(fim.linhas.map((l) => l.autor)).toEqual(['user', 'assistant']);
+  expect(fim.linhas[1]).toMatchObject({ texto: 'Arroz e feijão', fontes: ['https://usp.br/a'], completo: true, ordem: 2 });
 });
 
-test('pensando only marks "not writing" and carries no text', () => {
-  const escrevendo = aplicar(iniciar('oi', 0, []), [{ type: 'text', delta: 'a' }]);
-  expect(escrevendo.escrevendo).toBe(true);
-  expect(reduzir(escrevendo, { type: 'pensando' }).escrevendo).toBe(false);
+test('the status keeps the last tool used, and text around tools stays one answer', () => {
+  const fim = aplicar(iniciar('oi', 0, []), [
+    { type: 'status', text: 'Pesquisando a web' },
+    { type: 'text', delta: 'Vou ver. ' },
+    { type: 'status', text: 'Avaliando professores' },
+    { type: 'text', delta: 'Pronto.' },
+    { type: 'status', text: '   ' },
+  ]);
+  expect(fim.etapa).toBe('Avaliando professores');
+  expect(fim.linhas.filter((l) => l.autor === 'assistant')).toEqual([expect.objectContaining({ texto: 'Vou ver. Pronto.' })]);
+  expect(iniciar('de novo', 0, fim.linhas).etapa).toBeNull();
 });
 
 test('an error is terminal: later events do not touch the state', () => {

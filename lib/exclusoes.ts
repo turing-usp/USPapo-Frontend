@@ -1,8 +1,8 @@
 /**
- * Conversation deletes with an undo window. The pending deletes live here, not in the history
- * screen: a pushed screen stays mounted, so leaving it never unmounted anything and the delete
- * could land after another screen had already listed the conversation again. Leaving the history
- * or the app commits every pending delete at once; lists skip what is still pending.
+ * Conversation deletes with an undo window. The pending deletes live here, not in the drawer's
+ * list: the drawer stays mounted, so closing it never unmounts anything and the delete could land
+ * after another screen had already listed the conversation again. Closing the drawer or leaving the
+ * app commits every pending delete at once; lists skip what is still pending.
  */
 import { AppState } from 'react-native';
 

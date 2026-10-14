@@ -1,17 +1,20 @@
 /**
  * Glass surfaces.
  *
- * `desfoque` panes (floating chrome, composer, drawer, menus, toasts) blur
- * EVERYTHING behind them, content included, all with the same glass: the
+ * `desfoque` panes (the small floating controls: menu button, aviso pill, composer,
+ * menus) blur EVERYTHING behind them, content included, all with the same glass: the
  * pane's own CSS backdrop-filter on web, the native blur on iOS and, on
  * Android, a hardware RenderEffect blur of the nearest <CamadaDeVidro>
  * background (a BlurView can never sample a target it lives inside, so
- * floating panes are rendered as siblings of what they blur). Other panes
- * (bubbles, cards, pills inside scrolling content) are a cheap translucent tint.
+ * floating panes are rendered as siblings of what they blur). Large panes (drawer,
+ * announcements, toasts) are `opaco` instead: the same tint and edges over their own
+ * copy of the scene, so they look like the glass over an empty backdrop and cost no
+ * blur. Other panes (bubbles, cards, pills inside scrolling content) are a cheap
+ * translucent tint.
  */
 import { BlurTargetView, BlurView } from 'expo-blur';
-import React, { createContext, useContext, useRef, type ReactNode, type RefObject } from 'react';
-import { Animated, PixelRatio, Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import React, { createContext, useContext, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { Animated, PixelRatio, Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Backdrop } from './Cena';
 import { useTheme, type GlassVariant } from '../theme';
@@ -79,6 +82,8 @@ export type GlassProps = {
   children?: ReactNode;
   variante?: GlassVariant;
   desfoque?: boolean;
+  /** Opaque glass over its own copy of the scene (large panes), instead of a blur. */
+  opaco?: boolean;
   radius?: number;
   semBorda?: boolean;
   semSombra?: boolean;
@@ -96,10 +101,11 @@ export type GlassProps = {
 };
 
 export default function Glass({
-  children, desfoque = false, variante = desfoque ? 'vidro' : 'surface', radius, semBorda, semSombra, borda, style, opacidade,
-  onPress, onLongPress, disabled, accessibilityLabel, testID, pointerEvents,
+  children, desfoque = false, opaco = false, variante = desfoque || opaco ? 'vidro' : 'surface', radius, semBorda, semSombra, borda, style,
+  opacidade, onPress, onLongPress, disabled, accessibilityLabel, testID, pointerEvents,
 }: GlassProps) {
-  const { glass } = useTheme();
+  const { colors, glass } = useTheme();
+  const [tamanho, setTamanho] = useState<{ width: number; height: number } | null>(null);
   const plano = StyleSheet.flatten(style) ?? {};
   const raio = radius ?? (plano.borderRadius as number | undefined) ?? 0;
   const sombra = semSombra ? null : glass.shadow;
@@ -116,6 +122,8 @@ export default function Glass({
     <>
       <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.atras, { borderRadius: raio, overflow: 'hidden' }]}>
         {desfoque && Platform.OS !== 'web' ? <Desfoque intensidade={INTENSIDADE} /> : null}
+        {opaco ? <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.canvas }]} /> : null}
+        {opaco && tamanho ? <Backdrop recorte={tamanho} /> : null}
         <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.tint[variante] }]} />
       </View>
       {semBorda ? null : (
@@ -125,9 +133,15 @@ export default function Glass({
     </>
   );
 
+  const medir = opaco ? (e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    if (width !== tamanho?.width || height !== tamanho?.height) setTamanho({ width, height });
+  } : undefined;
+
   if (onPress || onLongPress) {
     return (
       <Pressable
+        onLayout={medir}
         onPress={onPress}
         onLongPress={onLongPress}
         disabled={disabled}
@@ -142,7 +156,7 @@ export default function Glass({
   }
   return (
     <Animated.View style={[...base, opacidade ? { opacity: opacidade } : null]} testID={testID} pointerEvents={pointerEvents}
-      accessibilityLabel={accessibilityLabel}>
+      accessibilityLabel={accessibilityLabel} onLayout={medir}>
       {camadas}
     </Animated.View>
   );

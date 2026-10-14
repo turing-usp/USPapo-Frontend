@@ -1,69 +1,20 @@
-/** Chat lines: question bubble, answer (+ sources), tool/thinking status tags, error and note lines. */
+/** Chat lines: question bubble and answer (+ sources); progress, errors and notes are in Andamento. */
 import React, { useEffect, useState, type ReactNode } from 'react';
 import { Animated, Easing, Linking, View, useWindowDimensions } from 'react-native';
 
 import Resposta from './Resposta';
 import Glass from '../Glass';
 import { Icone } from '../icons';
-import { Botao, Texto } from '../ui';
-import { ferramenta } from '../../lib/api';
+import { Texto } from '../ui';
 import type { Linha } from '../../lib/chat';
 import { useTheme } from '../../theme';
 
-function usePulso(ativo: boolean): Animated.Value {
-  const [pulso] = useState(() => new Animated.Value(1));
+function useEntrada(animar = true): Animated.Value {
+  const [entrada] = useState(() => new Animated.Value(animar ? 0 : 1));
   useEffect(() => {
-    if (!ativo) return;
-    const loop = Animated.loop(Animated.sequence([
-      Animated.timing(pulso, { toValue: 0.3, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      Animated.timing(pulso, { toValue: 1, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-    ]));
-    loop.start();
-    return () => {
-      loop.stop();
-      pulso.setValue(1);
-    };
-  }, [ativo, pulso]);
-  return pulso;
-}
-
-function useEntrada(): Animated.Value {
-  const [entrada] = useState(() => new Animated.Value(0));
-  useEffect(() => {
-    Animated.timing(entrada, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-  }, [entrada]);
+    if (animar) Animated.timing(entrada, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  }, [animar, entrada]);
   return entrada;
-}
-
-/** One status tag shape for "Pensando…" and every tool: pulse while running, check when done. */
-export function Etiqueta({ rotulo, descricao, pronta, testID }: { rotulo: string; descricao: string; pronta: boolean; testID?: string }) {
-  const { colors, radius, spacing } = useTheme();
-  const pulso = usePulso(!pronta);
-  const entrada = useEntrada();
-  return (
-    <Animated.View style={{ alignSelf: 'flex-start', maxWidth: '92%', opacity: entrada }}>
-      <Glass testID={testID} radius={radius.lg} style={{ flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: 8 }}>
-        {pronta ? <Icone nome="check" cor={colors.brand} tamanho={14} traco={2.4} />
-          : <Animated.View style={{ width: 8, height: 8, marginTop: 4, borderRadius: 4, backgroundColor: colors.brand, opacity: pulso }} />}
-        <View style={{ flexShrink: 1, gap: 1 }}>
-          <Texto v="legenda" numberOfLines={1} cor={pronta ? colors.mutedForeground : colors.brand} style={{ fontFamily: 'Roboto-Bold' }}>{rotulo}</Texto>
-          <Texto v="legenda" numberOfLines={2}>{descricao}</Texto>
-        </View>
-      </Glass>
-    </Animated.View>
-  );
-}
-
-export function Pensando() {
-  return <Etiqueta testID="pensando" rotulo="Pensando…" descricao="O USPapo está preparando a resposta." pronta={false} />;
-}
-
-export function LinhaFerramenta({ linha }: { linha: Extract<Linha, { autor: 'ferramenta' }> }) {
-  const { rotulo, descricao } = ferramenta(linha.nome);
-  return (
-    <Etiqueta testID="etiqueta-ferramenta" pronta={linha.pronta} descricao={descricao}
-      rotulo={linha.pronta && linha.resultados > 0 ? `${rotulo} · ${linha.resultados}` : rotulo} />
-  );
 }
 
 function rotuloDaFonte(url: string): string {
@@ -107,27 +58,24 @@ export function BolhaUsuario({ texto }: { texto: string }) {
   );
 }
 
-export function BolhaAssistente({ linha, children }: { linha: Extract<Linha, { autor: 'assistant' }>; children?: ReactNode }) {
+/**
+ * The answer. A live one (`revelar`) is written out from the cursor the thinking mark became, and
+ * its sources and feedback fade in once all of it is on screen.
+ */
+export function BolhaAssistente({ linha, escrevendo, revelar = false, children }: {
+  linha: Extract<Linha, { autor: 'assistant' }>; escrevendo: boolean; revelar?: boolean; children?: ReactNode;
+}) {
+  const [revelada, setRevelada] = useState(!revelar);
   return (
     <View style={{ alignSelf: 'stretch' }}>
-      <Resposta texto={linha.texto} streaming={!linha.completo} />
-      {linha.completo ? <Fontes urls={linha.fontes} /> : null}
-      {children}
+      <Resposta texto={linha.texto} streaming={escrevendo} revelar={revelar} aoRevelar={() => setRevelada(true)} />
+      {linha.completo && revelada ? <Rodape animar={revelar}><Fontes urls={linha.fontes} />{children}</Rodape> : null}
     </View>
   );
 }
 
-export function LinhaErro({ linha, aoTentar }: { linha: Extract<Linha, { autor: 'erro' }>; aoTentar?: () => void }) {
-  const { colors, radius, spacing } = useTheme();
-  return (
-    <Glass radius={radius.lg} borda={{ borderLeftColor: colors.danger, borderLeftWidth: 3 }}
-      style={{ alignSelf: 'flex-start', maxWidth: '92%', padding: spacing.md, gap: spacing.sm }}>
-      <Texto v="suave" cor={colors.foreground}>{linha.mensagem}</Texto>
-      {aoTentar && linha.tipo !== 'sessao' ? <Botao compacto rotulo="Tentar de novo" onPress={aoTentar} style={{ alignSelf: 'flex-start' }} /> : null}
-    </Glass>
-  );
-}
-
-export function LinhaNota({ texto }: { texto: string }) {
-  return <Texto v="legenda" style={{ fontStyle: 'italic' }}>{texto}</Texto>;
+function Rodape({ animar, children }: { animar: boolean; children: ReactNode }) {
+  const entrada = useEntrada(animar);
+  const translateY = entrada.interpolate({ inputRange: [0, 1], outputRange: [4, 0] });
+  return <Animated.View style={{ opacity: entrada, transform: [{ translateY }] }}>{children}</Animated.View>;
 }

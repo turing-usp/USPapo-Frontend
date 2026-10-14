@@ -3,6 +3,8 @@ import React from 'react';
 import { Circle, Path, Svg } from 'react-native-svg';
 
 const BRAND = '#f1863d';
+/** The USPapo mark's own orange (also its animated form and the answer's cursor). */
+export const COR_LOGO = '#ff914c';
 
 const PATHS = {
   menu: 'M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5',
@@ -70,7 +72,7 @@ export function LogoUSPapo({ size = 40 }: { size?: number }) {
     <Svg width={size} height={size} viewBox="131.297 24.502 249.939 453.875">
       <Path
         fill="none"
-        stroke="#ff914c"
+        stroke={COR_LOGO}
         strokeWidth={25}
         d="m 228.1516,306.48441 h -39.14196 m 39.1358,-77.8353 h -39.1358 m 39.12939,-77.92258 H 189.00964 M 227.99942,94.767333 143.79671,46.152882 V 374.86912 l 141.78215,81.85796 V 404.10032 M 228.13173,55.371627 368.70639,137.28661 367.44383,451.80426 228.15668,370.63953 Z"
       />

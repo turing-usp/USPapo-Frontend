@@ -19,7 +19,8 @@ export type Resumo = {
   };
   serie: Dia[];
   provedores: { nome: string; chamadas: number; erros: number; taxa_erro: number; latencia_media_ms: number; tokens: number }[];
-  ferramentas: { nome: string; contagem: number }[];
+  /** `rotulo`: the status the app shows for the tool (sent by the server). */
+  ferramentas: { nome: string; contagem: number; rotulo?: string }[];
   fontes: { fonte: string; contagem: number }[];
   temas: { tema: string; contagem: number }[];
   top_usuarios: { id: string; nome: string | null; perguntas: number; tokens: number; ultima: string | null }[];

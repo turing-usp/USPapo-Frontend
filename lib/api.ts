@@ -14,34 +14,16 @@ import { Platform } from 'react-native';
 
 declare const process: { env: Record<string, string | undefined> };
 
+/**
+ * What the app needs of a turn: a status while a tool runs (the server's own wording, shown as plain
+ * text), the answer, its sources and how it ended.
+ */
 export type ChatEvent =
-  | { type: 'provedor'; name: string; index: number }
-  | { type: 'pensando' }
-  | { type: 'tool'; state: 'start' | 'end'; index: number; name: string; args?: Record<string, unknown>; results?: number }
+  | { type: 'status'; text: string }
   | { type: 'text'; delta: string }
   | { type: 'sources'; urls: string[] }
   | { type: 'error'; message: string }
   | { type: 'end' };
-
-/** pt-BR label and what the tool consults, per backend tool name. */
-export const FERRAMENTAS: Record<string, [string, string]> = {
-  buscar_documentos: ['Pesquisando nos documentos', 'Busca nos documentos oficiais da USP indexados pelo USPapo.'],
-  consultar_bandejao: ['Consultando cardápio', 'Lê o cardápio publicado pelo RUCard.'],
-  consultar_grade_curricular: ['Consultando grade curricular', 'Lê a grade curricular do curso no JupiterWeb.'],
-  consultar_turmas: ['Consultando turmas', 'Lê as turmas e os horários da disciplina no JupiterWeb.'],
-  buscar_disciplina: ['Buscando disciplina', 'Lê a ementa, os créditos e os requisitos da disciplina no JupiterWeb.'],
-  consultar_avaliacoes_professor: ['Buscando avaliações do professor', 'Lê as avaliações de professores publicadas no USP Avalia.'],
-  consultar_sala: ['Procurando a sala', 'Localiza a sala e o prédio pelo USPolis.'],
-  consultar_circulares: ['Consultando a SPTrans', 'Consulta o GTFS oficial e o Olho Vivo da SPTrans para itinerários, paradas e horários.'],
-  consultar_wikipedia: ['Consultando a Wikipédia', 'Lê o resumo do verbete na Wikipédia.'],
-  pesquisar_web: ['Pesquisando na web', 'Busca rápida na internet (fonte não oficial).'],
-  atualizar_memoria: ['Atualizando memória', 'Guarda o que você contou (curso, unidade, ingresso) para as próximas conversas.'],
-};
-
-export function ferramenta(name: string): { rotulo: string; descricao: string } {
-  const [rotulo, descricao] = FERRAMENTAS[name] ?? ['Usando ferramenta', 'Consultando uma fonte oficial da USP.'];
-  return { rotulo, descricao };
-}
 
 export function backendUrl(): string {
   if (Platform.OS === 'web' && !__DEV__) return '';
@@ -67,7 +49,7 @@ async function erroDaResposta(res: Response): Promise<ApiError> {
   return new ApiError(mensagem, res.status, espera);
 }
 
-const TIPOS = new Set(['provedor', 'pensando', 'tool', 'text', 'sources', 'error', 'end']);
+const TIPOS = new Set(['status', 'text', 'sources', 'error', 'end']);
 
 /** The complete frames in `buffer`; returns [events, leftover]. Malformed or unknown frames are dropped. */
 export function lerFrames(buffer: string): [ChatEvent[], string] {

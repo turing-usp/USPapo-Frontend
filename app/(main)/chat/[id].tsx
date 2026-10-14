@@ -1,12 +1,13 @@
-/** A conversation: streamed answers, status tags, sources, feedback, and the composer floating over the list. */
+/** A conversation: the thinking mark, streamed answers, sources, feedback, and the composer floating over the list. */
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ALTURA_CHROME } from '../../../components/Chrome';
+import Andamento from '../../../components/chat/Andamento';
 import Feedback from '../../../components/chat/Feedback';
-import { BolhaAssistente, BolhaUsuario, LinhaErro, LinhaFerramenta, LinhaNota, Pensando } from '../../../components/chat/Linhas';
+import { BolhaAssistente, BolhaUsuario } from '../../../components/chat/Linhas';
 import Composer from '../../../components/Composer';
 import { CamadaDeVidro } from '../../../components/Glass';
 import { Coluna, Estado } from '../../../components/ui';
@@ -41,7 +42,13 @@ export default function Chat() {
     pertoDoFim: () => rolagem.current.seguindo,
   });
   const respondendo = chat.status === 'respondendo';
-  const ferramentaRodando = chat.linhas.some((l) => l.autor === 'ferramenta' && !l.pronta);
+  // The live turn: its progress line stands in for the answer until the mark has become its cursor.
+  const vivo = chat.ordem;
+  const comecou = chat.linhas.some((l) => l.autor === 'assistant' && l.ordem === vivo && l.texto.length > 0);
+  const pensando = respondendo && !comecou;
+  const [cursor, setCursor] = useState<number | null>(null);
+  const aguardando = comecou && cursor !== vivo && chat.status !== 'errou';
+  if (pensando && cursor === vivo) setCursor(null); // a new attempt at the same turn collapses again
 
   useEffect(() => {
     if (chat.userId && chat.status === 'idle') void feedbacksDaConversa(chat.userId, String(id)).then(setFeedbacks);
@@ -68,26 +75,38 @@ export default function Chat() {
     );
   }
 
+  // One keyed list, so the progress line keeps its instance (and its animation) when the turn starts
+  // writing, fails or is retried; an error or note after a partial answer gets a line of its own.
+  const andamento = `andamento:${vivo}`;
   const renderizar = (item: Linha) => {
     switch (item.autor) {
       case 'user':
-        return <BolhaUsuario texto={item.texto} />;
+        return <BolhaUsuario key={item.id} texto={item.texto} />;
       case 'assistant':
+        if (item.ordem === vivo && aguardando) return null;
         return (
-          <BolhaAssistente linha={item}>
+          <BolhaAssistente key={item.id} linha={item} escrevendo={respondendo && !item.completo} revelar={item.ordem === vivo}>
             {item.completo && chat.userId ? (
               <Feedback userId={chat.userId} conversaId={String(id)} ordem={item.ordem} inicial={feedbacks[item.ordem] ?? null} />
             ) : null}
           </BolhaAssistente>
         );
-      case 'ferramenta':
-        return <LinhaFerramenta linha={item} />;
       case 'erro':
-        return <LinhaErro linha={item} aoTentar={respondendo ? undefined : () => chat.send(chat.pergunta)} />;
+        return (
+          <Andamento key={comecou ? item.id : andamento} estado="erro" texto={item.mensagem}
+            aoTentar={respondendo || item.tipo === 'sessao' ? undefined : () => chat.send(chat.pergunta)} />
+        );
       default:
-        return <LinhaNota texto={item.texto} />;
+        return <Andamento key={comecou ? item.id : andamento} estado="parado" texto={item.texto} />;
     }
   };
+  const itens = chat.linhas.map(renderizar);
+  if (pensando || aguardando) {
+    itens.push(
+      <Andamento key={andamento} estado={aguardando ? 'escrevendo' : 'pensando'} texto={chat.etapa ?? 'Pensando'}
+        aoConcluir={() => setCursor(vivo)} />,
+    );
+  }
 
   return (
     <CamadaDeVidro
@@ -111,8 +130,7 @@ export default function Chat() {
             paddingHorizontal: spacing.lg, paddingTop: insets.top + ALTURA_CHROME + spacing.xl, paddingBottom: alturaComposer + spacing.lg,
           }}
         >
-          {chat.linhas.map((l) => <React.Fragment key={l.id}>{renderizar(l)}</React.Fragment>)}
-          {respondendo && !chat.escrevendo && !ferramentaRodando ? <Pensando /> : null}
+          {itens}
         </ScrollView>
       }
       frente={

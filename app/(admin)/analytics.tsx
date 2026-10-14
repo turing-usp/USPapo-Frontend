@@ -13,7 +13,7 @@ import { Botao, Cartao, Estado, Texto } from '../../components/ui';
 import {
   JANELAS, carregarResumo, dataHora, diaCurto, duracao, numero, porcento, resumoGuardado, segundos, type ItemFeedback, type Resumo,
 } from '../../lib/admin';
-import { ApiError, ferramenta } from '../../lib/api';
+import { ApiError } from '../../lib/api';
 import { useTheme } from '../../theme';
 
 /** A card in a wrapping row: `base` wide, growing to fill the line and shrinking to fit a phone. */
@@ -170,7 +170,7 @@ export default function Analytics() {
           </View>
 
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
-            <Cartao style={bloco(300)}><Ranking titulo="Ferramentas usadas" itens={dados.ferramentas.map((f) => ({ nome: ferramenta(f.nome).rotulo, valor: f.contagem }))} /></Cartao>
+            <Cartao style={bloco(300)}><Ranking titulo="Ferramentas usadas" itens={dados.ferramentas.map((f) => ({ nome: f.rotulo ?? f.nome, valor: f.contagem }))} /></Cartao>
             <Cartao style={bloco(300)}><Ranking titulo="Fontes mais citadas" itens={dados.fontes.map((f) => ({ nome: f.fonte, valor: f.contagem }))} /></Cartao>
             <Cartao style={bloco(300)}><Ranking titulo="Temas frequentes" itens={dados.temas.map((t) => ({ nome: t.tema, valor: t.contagem }))} /></Cartao>
           </View>

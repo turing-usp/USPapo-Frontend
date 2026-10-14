@@ -93,7 +93,7 @@ Um comunicado aparece no app sem atualização nenhuma. Pela linha de comando
 export SUPABASE_URL=https://<projeto>.supabase.co SUPABASE_SERVICE_KEY=...
 python scripts/comunicados.py publicar novidade "Novidades do USPapo" novidades.md --imagem tela.png
 python scripts/comunicados.py publicar aviso "Manutenção programada" manutencao.md \
-  --pilula "USPapo entrará em manutenção" --fim 2026-10-04T04:00-03:00
+  --pilula "USPapo entrará em manutenção" --imagem horario.png --fim 2026-10-04T04:00-03:00
 python scripts/comunicados.py listar
 python scripts/comunicados.py retirar 3f2a      # id ou começo do id
 python scripts/comunicados.py remover 3f2a      # só depois de retirar: apaga linha e imagens
@@ -107,7 +107,7 @@ insira uma linha em `comunicados` (Table Editor):
 | `tipo` | `novidade` (vidro gigante, abre uma vez) ou `aviso` (pílula que abre o vidro) |
 | `titulo` | até 120 caracteres |
 | `texto` | Markdown (negrito, listas, links, tabelas) |
-| `imagens` | caminhos dentro do bucket (`2026-10-01-novidades/tela.png`) ou URLs completas |
+| `imagens` | novidade e aviso: até 6, caminhos dentro do bucket (`2026-10-01-novidades/tela.png`) ou URLs completas |
 | `pilula` | só para aviso: o texto curto da pílula (até 60 caracteres) |
 | `plataformas` | vazio = todas; ou `{android}`, `{web}`, `{android,ios}` |
 | `inicio` / `fim` | quando entra e sai do ar (vazio = agora / nunca) |

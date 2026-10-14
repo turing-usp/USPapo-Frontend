@@ -1,7 +1,8 @@
 /**
- * Floating chrome (the only navigation surface): a glass menu button that opens
- * a sliding glass drawer, the account avatar with its menu (Sair), which a tap
- * anywhere else closes, and the announcements (aviso pill and giant glass).
+ * Floating chrome (the only navigation surface): a blurred glass menu button that
+ * opens a sliding opaque-glass drawer (new chat, the conversations, settings), the
+ * account avatar with its menu (Sair), which a tap anywhere else closes, and the
+ * announcements (aviso pill and giant glass).
  */
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -9,6 +10,7 @@ import { Animated, Easing, Image, Platform, Pressable, StyleSheet, View, useWind
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PilulaAviso, VidroGigante, useComunicados } from './Comunicados';
+import Conversas from './Conversas';
 import Glass from './Glass';
 import { Icone, LogoUSPapo, type NomeIcone } from './icons';
 import { Texto } from './ui';
@@ -62,19 +64,20 @@ function LinhaNav({ icone, rotulo, aoTocar }: { icone: NomeIcone; rotulo: string
   );
 }
 
+/** Opening decelerates hard and closing leaves at once: the drawer follows the tap without a slow start. */
+const ABRIR = { duration: 260, easing: Easing.bezier(0.22, 1, 0.36, 1) };
+const FECHAR = { duration: 200, easing: Easing.out(Easing.cubic) };
+
 function Gaveta({ aberta, fechar, admin }: { aberta: boolean; fechar: () => void; admin: boolean }) {
   const { colors, spacing } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const largura = width >= 768 ? 288 : 256;
+  const largura = width >= 768 ? 320 : Math.min(304, width - 56);
   // Stays mounted (hidden by pointerEvents + position): unmounting mid-animation broke later opens.
   const [progresso] = useState(() => new Animated.Value(0));
   useEffect(() => {
-    Animated.timing(progresso, {
-      toValue: aberta ? 1 : 0, duration: 300, useNativeDriver: true,
-      easing: aberta ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
-    }).start();
+    Animated.timing(progresso, { toValue: aberta ? 1 : 0, useNativeDriver: true, ...(aberta ? ABRIR : FECHAR) }).start();
   }, [aberta, progresso]);
 
   const ir = (destino: string) => {
@@ -89,7 +92,7 @@ function Gaveta({ aberta, fechar, admin }: { aberta: boolean; fechar: () => void
         <Pressable accessibilityLabel="Fechar menu lateral" onPress={fechar} style={[StyleSheet.absoluteFill, { backgroundColor: colors.scrim + '40' }]} />
       </Animated.View>
       <Animated.View style={[styles.gaveta, { width: largura, transform: [{ translateX: x }] }]}>
-        <Glass desfoque semSombra style={{ flex: 1, paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.lg, paddingHorizontal: spacing.lg }}>
+        <Glass opaco semSombra style={{ flex: 1, gap: spacing.md, paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.md, paddingHorizontal: spacing.lg }}>
           <View style={[styles.cabecalho, { borderBottomColor: colors.line + '1a', paddingBottom: spacing.lg }]}>
             <View style={[styles.linha, { gap: 10 }]}>
               <LogoUSPapo size={32} />
@@ -99,9 +102,9 @@ function Gaveta({ aberta, fechar, admin }: { aberta: boolean; fechar: () => void
               <Icone nome="fechar" cor={colors.mutedForeground} tamanho={24} />
             </Pressable>
           </View>
-          <View style={{ gap: spacing.xs, marginTop: spacing.lg }}>
-            <LinhaNav icone="novo" rotulo="Novo chat" aoTocar={() => ir('/')} />
-            <LinhaNav icone="busca" rotulo="Histórico" aoTocar={() => ir('/history')} />
+          <LinhaNav icone="novo" rotulo="Novo chat" aoTocar={() => ir('/')} />
+          <Conversas aberta={aberta} aoAbrir={ir} />
+          <View style={{ gap: spacing.xs, borderTopColor: colors.line + '1a', borderTopWidth: 1, paddingTop: spacing.sm }}>
             <LinhaNav icone="ajustes" rotulo="Configurações" aoTocar={() => ir('/settings')} />
             {admin && Platform.OS === 'web' ? <LinhaNav icone="grafico" rotulo="Painel de métricas" aoTocar={() => ir('/analytics')} /> : null}
           </View>
