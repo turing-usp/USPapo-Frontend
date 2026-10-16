@@ -3,11 +3,11 @@
  * once and opens the reason/comment form.
  */
 import React, { useState, type ReactNode } from 'react';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 
 import Glass from '../Glass';
 import { Icone } from '../icons';
-import { Botao, Campo, Erro, Texto } from '../ui';
+import { Botao, BotaoDeIcone, Campo, Erro, Texto } from '../ui';
 import { haptics } from '../../lib/device';
 import { removerFeedback, salvarFeedback, type Feedback as Salvo, type TipoFeedback } from '../../lib/feedback';
 import { alfa, useTheme } from '../../theme';
@@ -57,12 +57,7 @@ export default function Feedback({ userId, conversaId, ordem, inicial, acoes }: 
 
   // The chosen thumb takes the accent over a tint of it; both thumbs look alike otherwise.
   const polegar = (tipo: TipoFeedback, rotulo: string) => (
-    <Pressable accessibilityRole="button" accessibilityLabel={rotulo} accessibilityState={{ selected: nota === tipo }}
-      onPress={() => void avaliar(tipo)} hitSlop={6}
-      style={({ pressed }) => ({ width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md,
-        backgroundColor: nota === tipo ? alfa(colors.accent, 0.14) : pressed ? alfa(colors.foreground, 0.08) : 'transparent' })}>
-      <Icone nome={tipo} cor={nota === tipo ? colors.accent : colors.mutedForeground} tamanho={17} />
-    </Pressable>
+    <BotaoDeIcone icone={tipo} rotulo={rotulo} ativo={nota === tipo} lado={34} onPress={() => void avaliar(tipo)} />
   );
 
   return (
@@ -77,7 +72,7 @@ export default function Feedback({ userId, conversaId, ordem, inicial, acoes }: 
         <Glass radius={radius.lg} style={{ padding: spacing.md, gap: spacing.sm }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <Texto v="subtitulo" style={{ flexShrink: 1 }}>Como podemos melhorar esta resposta?</Texto>
-            <Pressable accessibilityLabel="Fechar" onPress={() => setForm(false)} hitSlop={8}><Icone nome="fechar" cor={colors.mutedForeground} tamanho={16} /></Pressable>
+            <BotaoDeIcone icone="fechar" rotulo="Fechar" onPress={() => setForm(false)} tamanho={16} lado={28} rente />
           </View>
           {estado === 'enviado' ? (
             <View style={{ flexDirection: 'row', gap: spacing.xs, alignItems: 'center' }}>

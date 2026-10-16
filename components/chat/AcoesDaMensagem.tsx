@@ -5,13 +5,14 @@
  */
 import * as Clipboard from 'expo-clipboard';
 import React, { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
-import { AccessibilityInfo, Platform, Pressable, Share, View, type StyleProp, type ViewStyle } from 'react-native';
+import { AccessibilityInfo, Platform, Share, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
-import { Icone, type NomeIcone } from '../icons';
+import type { NomeIcone } from '../icons';
 import { MenuAncorado, ancoraDoToque, type Ancora, type ItemDoMenu } from '../MenuAncorado';
+import { BotaoDeIcone } from '../ui';
 import { haptics } from '../../lib/device';
-import { alfa, useTheme } from '../../theme';
+import { useTheme } from '../../theme';
 
 /** The web shares only where the browser can; Android and iOS always can. */
 const PODE_COMPARTILHAR = Platform.OS !== 'web' || (typeof navigator !== 'undefined' && typeof navigator.share === 'function');
@@ -58,17 +59,6 @@ export function Segurar({ texto, children }: { texto: string | null; children: R
   }), [texto, abrir]);
   if (Platform.OS === 'web') return <>{children}</>;
   return <GestureDetector gesture={gesto}><View collapsable={false}>{children}</View></GestureDetector>;
-}
-
-function BotaoDeIcone({ icone, rotulo, cor, onPress }: { icone: NomeIcone; rotulo: string; cor?: string; onPress: () => void }) {
-  const { colors, radius } = useTheme();
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={rotulo} onPress={onPress} hitSlop={4}
-      style={({ pressed }) => ({ width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md,
-        backgroundColor: pressed ? alfa(colors.foreground, 0.08) : 'transparent' })}>
-      <Icone nome={icone} cor={cor ?? colors.mutedForeground} tamanho={17} />
-    </Pressable>
-  );
 }
 
 /** The buttons: Copiar turns into a check for a moment once the text is on the clipboard. */

@@ -9,7 +9,7 @@ import { ActivityIndicator, Pressable, ScrollView, View, useWindowDimensions } f
 import { Colunas, Ranking } from '../../components/charts';
 import Glass from '../../components/Glass';
 import { Icone } from '../../components/icons';
-import { Botao, Cartao, Estado, Texto } from '../../components/ui';
+import { Botao, Cartao, Estado, Texto, tintaDoToque } from '../../components/ui';
 import {
   JANELAS, carregarResumo, dataHora, diaCurto, duracao, numero, porcento, resumoGuardado, segundos, type ItemFeedback, type Resumo,
 } from '../../lib/admin';
@@ -61,7 +61,8 @@ function ItemAvaliacao({ item }: { item: ItemFeedback }) {
   return (
     <Glass radius={radius.md} style={{ padding: spacing.md, gap: spacing.sm }}>
       <Pressable onPress={() => setAberto((a) => !a)} accessibilityRole="button" accessibilityState={{ expanded: aberto }}
-        style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}>
+        style={(estado) => ({ flexDirection: 'row', gap: spacing.sm, alignItems: 'center', margin: -spacing.xs, padding: spacing.xs,
+          borderRadius: radius.sm, backgroundColor: tintaDoToque(estado, colors.foreground) })}>
         <Icone nome={item.tipo} cor={item.tipo === 'like' ? colors.accent : colors.foreground} tamanho={18} />
         <View style={{ flex: 1 }}>
           <Texto v="suave" cor={colors.foreground} numberOfLines={aberto ? undefined : 1}>{item.pergunta ?? item.titulo ?? 'Conversa apagada'}</Texto>
@@ -127,7 +128,8 @@ export default function Analytics() {
     <ScrollView contentContainerStyle={{ alignSelf: 'center', width: '100%', maxWidth: 1200, padding: estreito ? spacing.lg : spacing.xl, gap: spacing.lg }}>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-          <Pressable accessibilityLabel="Voltar" onPress={() => router.replace('/')} hitSlop={8}>
+          <Pressable accessibilityLabel="Voltar" onPress={() => router.replace('/')} hitSlop={8}
+            style={(estado) => ({ padding: 6, margin: -6, borderRadius: radius.md, backgroundColor: tintaDoToque(estado, colors.foreground) })}>
             <View style={{ transform: [{ rotate: '180deg' }] }}><Icone nome="seta" cor={colors.mutedForeground} /></View>
           </Pressable>
           <Texto v="titulo">Painel de métricas</Texto>

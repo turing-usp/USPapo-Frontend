@@ -11,7 +11,7 @@ import { FlatList, Platform, Pressable, TextInput, View } from 'react-native';
 
 import { Icone } from './icons';
 import { BotaoAcoes, MenuAncorado, ancoraDoToque, type Ancora, type MenuAberto } from './MenuAncorado';
-import { ANEL_DE_FOCO, Botao, Erro, Texto, useTintaDeCampo } from './ui';
+import { ANEL_DE_FOCO, Botao, Erro, Texto, tintaDoToque, useTintaDeCampo } from './ui';
 import { sessaoAtual } from '../lib/auth';
 import { guardarConversa, guardarHistorico, historicoEmCache } from '../lib/cache';
 import { favoritar, lerHistorico, renomear, rotuloDa, type Conversa } from '../lib/conversations';
@@ -53,6 +53,9 @@ export default function Conversas({ aberta, assentada, aoAbrir }: {
   const [editando, setEditando] = useState<{ id: string; titulo: string } | null>(null);
   const [apagada, setApagada] = useState<Conversa | null>(null);
   const [acoes, setAcoes] = useState<{ c: Conversa; ancora: Ancora } | null>(null);
+  // The row under the mouse (web): lit whole, its kebab included.
+  const [sobre, setSobre] = useState<string | null>(null);
+  const sobrevoar = (id: string, dentro: boolean) => setSobre((atual) => (dentro ? id : atual === id ? null : atual));
 
   const carregar = useCallback(async (userId: string | null) => {
     setUid(userId ?? '');
@@ -180,6 +183,7 @@ export default function Conversas({ aberta, assentada, aoAbrir }: {
         data={itens}
         keyExtractor={(i) => i.id}
         keyboardShouldPersistTaps="handled"
+        extraData={sobre}
         style={{ flex: 1, marginHorizontal: -spacing.xs }}
         contentContainerStyle={{ paddingHorizontal: spacing.xs, paddingBottom: spacing.md }}
         ListEmptyComponent={conversas === null ? null : (
@@ -192,15 +196,16 @@ export default function Conversas({ aberta, assentada, aoAbrir }: {
         ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center', borderRadius: radius.md,
             borderWidth: ANEL_DE_FOCO, borderColor: editando?.id === item.id ? colors.brand : 'transparent',
-            backgroundColor: caminho === `/chat/${item.id}` ? alfa(colors.brand, 0.14) : 'transparent' }}>
+            backgroundColor: caminho === `/chat/${item.id}` ? alfa(colors.brand, 0.14) : sobre === item.id ? alfa(colors.foreground, 0.06) : 'transparent' }}>
             <Pressable accessibilityRole="link" accessibilityLabel={rotuloDa(item.c)} disabled={editando?.id === item.id}
               onPress={() => aoAbrir(`/chat/${item.id}`)} delayLongPress={400}
+              onHoverIn={() => sobrevoar(item.id, true)} onHoverOut={() => sobrevoar(item.id, false)}
               onLongPress={Platform.OS === 'web' ? undefined : (e) => {
                 void haptics.segurar();
                 setAcoes({ c: item.c, ancora: ancoraDoToque(e.nativeEvent.pageX, e.nativeEvent.pageY) });
               }}
               style={({ pressed }) => ({ flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 40,
-                paddingVertical: spacing.sm, paddingLeft: spacing.sm, borderRadius: radius.md, backgroundColor: pressed ? alfa(colors.foreground, 0.08) : 'transparent' })}>
+                paddingVertical: spacing.sm, paddingLeft: spacing.sm, borderRadius: radius.md, backgroundColor: tintaDoToque({ pressed }, colors.foreground) })}>
               {item.c.favorita ? <Icone nome="estrela" cor={colors.brand} tamanho={14} /> : null}
               {editando?.id === item.id ? (
                 <TextInput value={editando.titulo} onChangeText={(t) => setEditando({ id: item.id, titulo: t })} autoFocus selectTextOnFocus {...tinta}
@@ -211,7 +216,8 @@ export default function Conversas({ aberta, assentada, aoAbrir }: {
               )}
               {item.c.resposta === null ? <Texto v="detalhe" cor={colors.accent}>pendente</Texto> : null}
             </Pressable>
-            <BotaoAcoes rotulo="Ações da conversa" aoAbrir={(ancora) => setAcoes({ c: item.c, ancora })} />
+            <BotaoAcoes rotulo="Ações da conversa" aoAbrir={(ancora) => setAcoes({ c: item.c, ancora })}
+              aoSobrevoar={(dentro) => sobrevoar(item.id, dentro)} />
           </View>
         )}
       />

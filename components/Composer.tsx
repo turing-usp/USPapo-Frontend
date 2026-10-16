@@ -7,7 +7,7 @@ import { Platform, Pressable, StyleSheet, TextInput, View, type NativeSyntheticE
 
 import Glass from './Glass';
 import { Icone } from './icons';
-import { Erro, useTintaDeCampo } from './ui';
+import { Erro, opacidadeDoToque, tintaDoToque, useTintaDeCampo } from './ui';
 import { useDitado } from '../lib/device';
 import { alfa, useTheme } from '../theme';
 
@@ -91,12 +91,14 @@ export default function Composer({ value, onChange, onSubmit, placeholder = 'Per
         />
         {ditado.disponivel && !respondendo ? (
           <Pressable accessibilityRole="button" accessibilityLabel={ditado.ouvindo ? 'Parar ditado' : 'Ditar pergunta'}
-            onPress={() => void ditado.alternar(value)} style={[styles.alvo, { borderRadius: radius.full, backgroundColor: ditado.ouvindo ? alfa(colors.brand, 0.15) : 'transparent' }]}>
+            onPress={() => void ditado.alternar(value)}
+            style={(estado) => [styles.alvo, { borderRadius: radius.full, backgroundColor: ditado.ouvindo ? alfa(colors.brand, 0.15) : tintaDoToque(estado, colors.foreground) }]}>
             <Icone nome="microfone" cor={ditado.ouvindo ? colors.brand : colors.mutedForeground} tamanho={22} traco={2} />
           </Pressable>
         ) : null}
         {acao ? (
-          <Pressable accessibilityRole="button" accessibilityLabel={acao.rotulo} onPress={respondendo ? onStop : enviar} style={styles.alvo}>
+          <Pressable accessibilityRole="button" accessibilityLabel={acao.rotulo} onPress={respondendo ? onStop : enviar}
+            style={(estado) => [styles.alvo, { opacity: opacidadeDoToque(estado) }]}>
             <View style={[styles.disco, { backgroundColor: acao.fundo, borderRadius: radius.full }]}>
               <Icone nome={acao.icone} cor={acao.tinta} tamanho={20} traco={2.5} />
             </View>

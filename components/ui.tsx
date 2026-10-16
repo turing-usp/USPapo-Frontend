@@ -21,6 +21,9 @@ export function Texto({ v = 'corpo', cor, centro, style, ...props }: TextProps &
   v?: VarianteTexto; cor?: string; centro?: boolean; style?: StyleProp<TextStyle>;
 }) {
   const { colors, fonts, typography } = useTheme();
+  // Web: a pressable text (a link) underlines under the mouse; react-native-web's Text takes mouse events.
+  const [sobre, setSobre] = useState(false);
+  const mouse = Platform.OS === 'web' && props.onPress ? { onMouseEnter: () => setSobre(true), onMouseLeave: () => setSobre(false) } : null;
   const base: Record<VarianteTexto, TextStyle> = {
     titulo: { fontFamily: fonts.title, ...typography['2xl'], color: colors.foreground },
     subtitulo: { fontFamily: fonts.title, ...typography.lg, color: colors.foreground },
@@ -31,7 +34,44 @@ export function Texto({ v = 'corpo', cor, centro, style, ...props }: TextProps &
     detalhe: { fontFamily: fonts.mono, ...typography.xs, color: colors.mutedForeground },
     link: { fontFamily: fonts.body, ...typography.sm, color: colors.accent },
   };
-  return <Text {...props} style={[base[v], cor ? { color: cor } : null, centro && { textAlign: 'center' }, style]} />;
+  return (
+    <Text {...props} {...mouse}
+      style={[base[v], cor ? { color: cor } : null, centro && { textAlign: 'center' }, sobre && { textDecorationLine: 'underline' }, style]} />
+  );
+}
+
+/**
+ * A pressable's state. On the web, react-native-web adds `hovered` (the mouse is over it); Android
+ * and iOS report only `pressed`.
+ */
+export type EstadoDoToque = { pressed: boolean; hovered?: boolean };
+
+/** The tint behind a pressable row or icon: light under the mouse, stronger while pressed. */
+export function tintaDoToque({ pressed, hovered }: EstadoDoToque, cor: string): string {
+  return pressed ? alfa(cor, 0.1) : hovered ? alfa(cor, 0.06) : 'transparent';
+}
+
+/** A solid pressable (the orange button, the send disc, the avatar) only fades: the palette has no lighter orange. */
+export const opacidadeDoToque = ({ pressed, hovered }: EstadoDoToque): number => (pressed ? 0.85 : hovered ? 0.92 : 1);
+
+/**
+ * An icon button with the tint behind it. `ativo` keeps the accent tint (a chosen thumb); `rente`
+ * lets the tint spill past the icon without moving anything (a close button beside a title).
+ */
+export function BotaoDeIcone({ icone, rotulo, onPress, cor, tamanho = 17, lado = 32, ativo, rente, desabilitado }: {
+  icone: NomeIcone; rotulo: string; onPress: () => void; cor?: string; tamanho?: number; lado?: number;
+  ativo?: boolean; rente?: boolean; desabilitado?: boolean;
+}) {
+  const { colors, radius } = useTheme();
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={rotulo} accessibilityState={{ selected: ativo, disabled: desabilitado }}
+      onPress={onPress} disabled={desabilitado} hitSlop={4}
+      style={(estado) => ({ width: lado, height: lado, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md,
+        margin: rente ? -(lado - tamanho) / 2 : 0, opacity: desabilitado ? 0.5 : 1,
+        backgroundColor: ativo ? alfa(colors.accent, 0.14) : tintaDoToque(estado, colors.foreground) })}>
+      <Icone nome={icone} cor={cor ?? (ativo ? colors.accent : colors.mutedForeground)} tamanho={tamanho} />
+    </Pressable>
+  );
 }
 
 /** An error or failure: the alert mark in the brand orange beside the text (the palette has no red). */
@@ -92,7 +132,7 @@ export function Botao({ rotulo, onPress, v = 'primario', icone, carregando, desa
   if (v === 'primario') {
     return (
       <Pressable {...a11y} onPress={onPress} disabled={inativo}
-        style={({ pressed }) => [medidas, glass.shadow, { backgroundColor: colors.brand, opacity: inativo ? 0.55 : pressed ? 0.85 : 1 }, style]}>
+        style={(estado) => [medidas, glass.shadow, { backgroundColor: colors.brand, opacity: inativo ? 0.55 : opacidadeDoToque(estado) }, style]}>
         {conteudo}
       </Pressable>
     );
@@ -169,8 +209,8 @@ export function ItemDeMenu({ rotulo, icone, onPress }: { rotulo: string; icone?:
   const { colors, radius, spacing } = useTheme();
   return (
     <Pressable accessibilityRole="button" onPress={onPress}
-      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 44, paddingHorizontal: spacing.md,
-        borderRadius: radius.md, backgroundColor: pressed ? alfa(colors.foreground, 0.08) : 'transparent' })}>
+      style={(estado) => ({ flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 44, paddingHorizontal: spacing.md,
+        borderRadius: radius.md, backgroundColor: tintaDoToque(estado, colors.foreground) })}>
       {icone ? <Icone nome={icone} cor={colors.mutedForeground} tamanho={18} /> : null}
       <Texto v="suave" cor={colors.foreground}>{rotulo}</Texto>
     </Pressable>
@@ -192,8 +232,10 @@ export function Cartao({ titulo, children, style }: { titulo?: string; children:
 export function Interruptor({ ligado, rotulo, onPress }: { ligado: boolean; rotulo: string; onPress: () => void }) {
   const { colors, radius, spacing } = useTheme();
   return (
+    // The tint spills past the row (negative margins), so the card's layout stays put.
     <Pressable accessibilityRole="switch" accessibilityState={{ checked: ligado }} onPress={onPress}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+      style={(estado) => ({ flexDirection: 'row', alignItems: 'center', gap: spacing.md, margin: -spacing.sm, padding: spacing.sm,
+        borderRadius: radius.md, backgroundColor: tintaDoToque(estado, colors.foreground) })}>
       <View style={{ width: 48, height: 28, padding: 3, borderRadius: radius.full, justifyContent: 'center',
         alignItems: ligado ? 'flex-end' : 'flex-start', backgroundColor: ligado ? colors.brand : alfa(colors.foreground, 0.25) }}>
         <View style={{ width: 22, height: 22, borderRadius: radius.full, backgroundColor: paleta.branco }} />

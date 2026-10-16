@@ -2,12 +2,11 @@
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import React, { useEffect, useState } from 'react';
-import { Linking, Platform, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
+import { Linking, Platform, ScrollView, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ALTURA_CHROME } from '../../components/Chrome';
-import { Icone } from '../../components/icons';
-import { Assinatura, Botao, Cartao, Interruptor, Texto } from '../../components/ui';
+import { Assinatura, Botao, BotaoDeIcone, Cartao, Interruptor, Texto } from '../../components/ui';
 import { sessaoAtual } from '../../lib/auth';
 import { limparCache, tamanhoDoCache } from '../../lib/cache';
 import { carregarHaptics, definirHaptics, haptics } from '../../lib/device';
@@ -36,7 +35,7 @@ function Linha({ rotulo, valor }: { rotulo: string; valor: string }) {
 }
 
 export default function Configuracoes() {
-  const { colors, layout, spacing } = useTheme();
+  const { layout, spacing } = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [tema, setTema] = useState<ThemePreference>('system');
@@ -138,10 +137,8 @@ export default function Configuracoes() {
                 {itens[i - 1]?.chave !== item.chave ? <Texto v="suave">{item.rotulo}</Texto> : null}
                 <Texto>{item.valor}</Texto>
               </View>
-              <Pressable accessibilityRole="button" accessibilityLabel={`Esquecer: ${item.valor}`} hitSlop={8} disabled={!!ocupada}
-                onPress={() => void esquecer(item)} style={({ pressed }) => ({ opacity: pressed || ocupada ? 0.5 : 1 })}>
-                <Icone nome="fechar" cor={colors.mutedForeground} tamanho={16} />
-              </Pressable>
+              <BotaoDeIcone icone="fechar" rotulo={`Esquecer: ${item.valor}`} onPress={() => void esquecer(item)} desabilitado={!!ocupada}
+                tamanho={16} lado={28} rente />
             </View>
           )) : <Texto v="suave">Nada guardado ainda.</Texto>}
           <Botao v="secundario" icone="lixo" rotulo="Apagar memória" carregando={ocupada === 'tudo'} desabilitado={!itens.length || !!ocupada}

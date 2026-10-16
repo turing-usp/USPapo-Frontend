@@ -7,7 +7,7 @@ import { Animated, BackHandler, Easing, Platform, Pressable, StyleSheet, View, u
 
 import Glass from './Glass';
 import { Icone, type NomeIcone } from './icons';
-import { ItemDeMenu } from './ui';
+import { ItemDeMenu, tintaDoToque } from './ui';
 import { useTheme } from '../theme';
 
 const LARGURA = 220;
@@ -22,13 +22,17 @@ export type MenuAberto = { itens: ItemDoMenu[]; ancora: Ancora };
 /** A long press at (x, y): the menu opens centered under the finger, or above it. */
 export const ancoraDoToque = (x: number, y: number): Ancora => ({ direita: x + LARGURA / 2, topo: y - 12, base: y + 12 });
 
-export function BotaoAcoes({ rotulo, aoAbrir }: { rotulo: string; aoAbrir: (ancora: Ancora) => void }) {
-  const { colors } = useTheme();
+/** The kebab button; `aoSobrevoar` tells its row whether the mouse is over it (web), so the row stays lit. */
+export function BotaoAcoes({ rotulo, aoAbrir, aoSobrevoar }: {
+  rotulo: string; aoAbrir: (ancora: Ancora) => void; aoSobrevoar?: (sobre: boolean) => void;
+}) {
+  const { colors, radius } = useTheme();
   const botao = useRef<View>(null);
   return (
     <Pressable ref={botao} accessibilityRole="button" accessibilityLabel={rotulo} hitSlop={6}
       onPress={() => botao.current?.measureInWindow((x, y, w, h) => aoAbrir({ direita: x + w, topo: y, base: y + h }))}
-      style={({ pressed }) => ({ padding: 6, opacity: pressed ? 0.6 : 1 })}>
+      onHoverIn={() => aoSobrevoar?.(true)} onHoverOut={() => aoSobrevoar?.(false)}
+      style={(estado) => ({ padding: 6, borderRadius: radius.md, backgroundColor: tintaDoToque(estado, colors.foreground) })}>
       <Icone nome="kebab" cor={colors.mutedForeground} tamanho={18} />
     </Pressable>
   );

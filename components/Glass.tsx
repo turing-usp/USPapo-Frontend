@@ -25,7 +25,8 @@ import React, {
 import { Animated, PixelRatio, Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Backdrop } from './Cena';
-import { useTheme, type GlassVariant } from '../theme';
+import type { EstadoDoToque } from './ui';
+import { alfa, useTheme, type GlassVariant } from '../theme';
 
 const Alvo = createContext<RefObject<View | null> | null>(null);
 const Congelada = createContext(false);
@@ -165,12 +166,14 @@ export default function Glass({
   const cor = borda?.borderColor;
   const contorno = cor ? { ...borda, borderTopColor: cor, borderRightColor: cor, borderBottomColor: cor, borderLeftColor: cor } : borda;
 
-  const camadas = (
+  // A pressable pane takes a tint of the text color under the mouse (web), as rows and icons do.
+  const camadas = (sobre = false) => (
     <>
       <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.atras, { borderRadius: raio, overflow: 'hidden' }]}>
         {desfoque && Platform.OS !== 'web' ? <Desfoque intensidade={INTENSIDADE} /> : null}
         {opaco ? <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.canvas }]} /> : null}
         <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.tint[variante] }]} />
+        {sobre ? <View style={[StyleSheet.absoluteFill, { backgroundColor: alfa(colors.foreground, 0.06) }]} /> : null}
       </View>
       {semBorda ? null : (
         <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.atras, { borderRadius: raio }, glass.hairline, contorno]} />
@@ -190,14 +193,14 @@ export default function Glass({
         testID={testID}
         style={({ pressed }) => [...base, pressed && { opacity: 0.85 }]}
       >
-        {camadas}
+        {(estado: EstadoDoToque) => camadas(estado.hovered)}
       </Pressable>
     );
   }
   return (
     <Animated.View style={[...base, opacidade ? { opacity: opacidade } : null]} testID={testID} pointerEvents={pointerEvents}
       accessibilityLabel={accessibilityLabel}>
-      {camadas}
+      {camadas()}
     </Animated.View>
   );
 }

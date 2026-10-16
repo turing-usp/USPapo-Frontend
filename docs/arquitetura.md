@@ -242,6 +242,15 @@ O app segue o manual de identidade visual do Turing USP (2021).
   manual no claro, na forma branca nos escuros) fecha a tela inicial, as
   telas de entrada e Configurações.
 
+- **Mouse (web):** tudo que é tocável reage ao passar o mouse, como ao
+  toque, só que mais leve (`components/ui.tsx`): linhas e ícones ganham um
+  tom da cor do texto (`tintaDoToque`: 6% sob o mouse, 10% pressionado;
+  `BotaoDeIcone` para os ícones), o vidro tocável ganha o mesmo tom por
+  cima, o laranja só perde opacidade (`opacidadeDoToque`; a paleta não tem
+  laranja mais claro) e os links se sublinham. Uma conversa da gaveta fica
+  acesa inteira enquanto o mouse está nela ou no seu ⋮. No app, onde não há
+  mouse, os mesmos tons aparecem só ao pressionar.
+
 A escolha do tema (sistema, claro, escuro, OLED) fica salva no aparelho;
 `escuro` vale para o escuro e para o OLED.
 

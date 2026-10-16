@@ -18,7 +18,7 @@ import { PilulaAviso, VidroGigante, useComunicados } from './Comunicados';
 import Conversas from './Conversas';
 import Glass, { useCongelarTela } from './Glass';
 import { Icone, type NomeIcone } from './icons';
-import { ItemDeMenu, Marca, Texto } from './ui';
+import { BotaoDeIcone, ItemDeMenu, Marca, Texto, opacidadeDoToque, tintaDoToque } from './ui';
 import { haptics } from '../lib/device';
 import { esquecerAparelho } from '../lib/notificacoes';
 import { supabase } from '../lib/supabase';
@@ -61,8 +61,8 @@ function LinhaNav({ icone, rotulo, aoTocar }: { icone: NomeIcone; rotulo: string
     <Pressable
       accessibilityRole="link"
       onPress={aoTocar}
-      style={({ pressed }) => [styles.linha, { borderRadius: radius.md, gap: spacing.md, minHeight: 44, paddingHorizontal: spacing.md,
-        backgroundColor: pressed ? alfa(colors.foreground, 0.08) : 'transparent' }]}
+      style={(estado) => [styles.linha, { borderRadius: radius.md, gap: spacing.md, minHeight: 44, paddingHorizontal: spacing.md,
+        backgroundColor: tintaDoToque(estado, colors.foreground) }]}
     >
       <Icone nome={icone} cor={colors.brand} />
       <Texto cor={colors.foreground} style={{ fontFamily: fonts.title, ...typography.base }}>{rotulo}</Texto>
@@ -214,9 +214,7 @@ function Gaveta({ gaveta, admin }: { gaveta: ControleDaGaveta; admin: boolean })
           <Glass opaco semSombra style={{ flex: 1, gap: spacing.md, paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.md, paddingHorizontal: spacing.lg }}>
             <View style={[styles.cabecalho, { borderBottomColor: alfa(colors.foreground, 0.1), paddingBottom: spacing.lg }]}>
               <Marca logo={28} fonte={24} />
-              <Pressable accessibilityLabel="Fechar menu lateral" onPress={fechar} hitSlop={8}>
-                <Icone nome="fechar" cor={colors.mutedForeground} tamanho={24} />
-              </Pressable>
+              <BotaoDeIcone icone="fechar" rotulo="Fechar menu lateral" onPress={fechar} tamanho={24} lado={36} rente />
             </View>
             <LinhaNav icone="novo" rotulo="Novo chat" aoTocar={() => ir('/')} />
             <Conversas aberta={estado.aberta} assentada={estado.assentada} aoAbrir={ir} />
@@ -267,7 +265,7 @@ export default function Chrome({ gaveta }: { gaveta: ControleDaGaveta }) {
         <View>
           {/* The same lift as the glass beside it; the photo is clipped by an inner circle. */}
           <Pressable accessibilityLabel="Menu do usuário" onPress={() => setMenu((v) => !v)}
-            style={[styles.avatar, glass.shadow, { backgroundColor: colors.brand, borderRadius: radius.full }]}>
+            style={(estado) => [styles.avatar, glass.shadow, { backgroundColor: colors.brand, borderRadius: radius.full, opacity: opacidadeDoToque(estado) }]}>
             <View style={[styles.foto, { borderRadius: radius.full }]}>
               {conta.foto ? <Image source={{ uri: conta.foto }} style={StyleSheet.absoluteFill} />
                 : <Texto cor={colors.brandForeground} style={{ fontFamily: fonts.title, ...typography.lg }}>{(conta.nome || 'U')[0].toUpperCase()}</Texto>}

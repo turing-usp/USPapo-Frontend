@@ -11,8 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import Resposta from './chat/Resposta';
 import Glass, { useCongelarTela } from './Glass';
-import { Icone } from './icons';
-import { Botao, Texto } from './ui';
+import { Botao, BotaoDeIcone, Texto } from './ui';
 import { escolher, lerComunicados, lerVistos, marcarVisto, urlDaImagem, type Comunicado } from '../lib/comunicados';
 import { haptics } from '../lib/device';
 import { alfa, useTheme } from '../theme';
@@ -187,9 +186,7 @@ export function VidroGigante({ comunicado, aoFechar, aoOcultar }: {
           <ScrollView contentContainerStyle={{ gap: spacing.lg, padding: width >= 640 ? spacing['3xl'] : spacing.xl }}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md }}>
               <Texto v="titulo" style={{ flex: 1 }}>{atual.titulo}</Texto>
-              <Pressable accessibilityRole="button" accessibilityLabel="Fechar" hitSlop={10} onPress={aoFechar}>
-                <Icone nome="fechar" cor={colors.mutedForeground} tamanho={24} />
-              </Pressable>
+              <BotaoDeIcone icone="fechar" rotulo="Fechar" onPress={aoFechar} tamanho={24} lado={36} rente />
             </View>
             {atual.imagens.map((caminho) => <Imagem key={caminho} uri={urlDaImagem(caminho)} />)}
             {atual.texto.trim() ? <View><Resposta texto={atual.texto} streaming={false} /></View> : null}
