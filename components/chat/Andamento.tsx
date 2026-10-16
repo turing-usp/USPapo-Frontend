@@ -2,11 +2,11 @@
  * A turn's progress line: the animated USPapo mark (lib/logo.ts) with a status beside it.
  *
  * - pensando: the pages go around their square and the status (the last tool's label, or
- *   "Pensando") breathes left to right in the logo's orange.
+ *   "Pensando") breathes left to right in the brand orange.
  * - escrevendo: the answer has started; the status fades into the mark and the mark collapses into
  *   the answer's cursor, then `aoConcluir` hands over to Resposta, whose cursor is in that same spot.
- * - erro / parado: the mark settles back into the logo (red / muted) and the status becomes the
- *   message, with "Tentar de novo" for errors.
+ * - erro / parado: the mark settles back into the logo (in the text color / muted) and the status
+ *   becomes the message, with "Tentar de novo" for errors.
  *
  * Each change starts from wherever the loop is and blends away from it while it keeps moving. The
  * mark is drawn on the UI thread, and a settled line renders no frames.
@@ -20,10 +20,12 @@ import Animated, {
 import Svg, { Path } from 'react-native-svg';
 
 import { CURSOR } from './Resposta';
-import { COR_LOGO } from '../icons';
 import { Botao } from '../ui';
 import { CAIXA, TRACO, paginaDoCursor, tracados } from '../../lib/logo';
-import { useTheme } from '../../theme';
+import { paleta, useTheme } from '../../theme';
+
+/** The mark's own color while it moves (the brand orange, like the still logo). */
+const LARANJA = paleta.laranja;
 
 export type EstadoAndamento = 'pensando' | 'escrevendo' | 'erro' | 'parado';
 
@@ -51,8 +53,8 @@ function Marca({ fase, repouso, colapso, tom, cor }: {
 }) {
   const quadro = useDerivedValue(() => tracados(fase.value, repouso.value, colapso.value, ALVO));
   // The stroke follows `color` (currentColor): react-native-svg's web shapes drop an animated `stroke` string.
-  const verso = useAnimatedProps(() => ({ d: quadro.value.verso, color: interpolateColor(tom.value, [0, 1], [COR_LOGO, cor]) }), [cor]);
-  const frente = useAnimatedProps(() => ({ d: quadro.value.frente, color: interpolateColor(tom.value, [0, 1], [COR_LOGO, cor]) }), [cor]);
+  const verso = useAnimatedProps(() => ({ d: quadro.value.verso, color: interpolateColor(tom.value, [0, 1], [LARANJA, cor]) }), [cor]);
+  const frente = useAnimatedProps(() => ({ d: quadro.value.frente, color: interpolateColor(tom.value, [0, 1], [LARANJA, cor]) }), [cor]);
   const [inicial] = useState(() => tracados(fase.get(), repouso.get(), colapso.get(), ALVO));
   return (
     <Svg width={LARGURA} height={ALTURA} viewBox={`${CAIXA.x} ${CAIXA.y} ${LARGURA / ESCALA} ${CAIXA.altura}`} aria-hidden>
@@ -72,7 +74,7 @@ function Fatia({ i, largura, texto, estilo, onda }: { i: number; largura: number
   }, [largura]);
   return (
     <Animated.View style={[{ position: 'absolute', top: 0, bottom: 0, left: i * FATIA, width: FATIA, overflow: 'hidden' }, brilho]}>
-      <Text numberOfLines={1} style={[estilo, { position: 'absolute', top: 0, left: -i * FATIA, width: largura + 1, color: COR_LOGO }]}>{texto}</Text>
+      <Text numberOfLines={1} style={[estilo, { position: 'absolute', top: 0, left: -i * FATIA, width: largura + 1, color: LARANJA }]}>{texto}</Text>
     </Animated.View>
   );
 }
@@ -171,7 +173,7 @@ export default function Andamento({ estado, texto, aoTentar, aoConcluir }: {
 
   return (
     <Animated.View testID="andamento" accessibilityLiveRegion="polite" style={[{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }, linha]}>
-      <Marca fase={fase} repouso={repouso} colapso={colapso} tom={tom} cor={estado === 'erro' ? colors.danger : colors.mutedForeground} />
+      <Marca fase={fase} repouso={repouso} colapso={colapso} tom={tom} cor={estado === 'erro' ? colors.foreground : colors.mutedForeground} />
       <Animated.View style={[{ flex: 1, gap: spacing.sm, paddingTop: (ALTURA - typography.base.lineHeight) / 2 }, lado]}>
         {mostrado.estado === 'pensando' || mostrado.estado === 'escrevendo'
           ? <Respiro texto={mostrado.texto} estilo={estilo} cor={corDoTexto} onda={onda} />

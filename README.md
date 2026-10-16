@@ -15,14 +15,14 @@ Expo (React Native) gera o app Android, o app iOS e o site
 ```
 app/                 rotas (expo-router); só telas, sem lógica de dados
   (auth)/            login, cadastro, redefinir senha
-  (main)/            início, chat/[id], histórico, ajustes
+  (main)/            início (novo chat), chat/[id], configurações
   (admin)/           painel de métricas (só web, só admin)
 components/          interface: ui.tsx (Texto, Botao, Campo…), Glass (vidro fosco),
                      Cena (fundo), Chrome (menu), Composer, charts, chat/
 lib/                 dados e regras: api (SSE), chat (estado da conversa), conversations,
                      cache (leitura offline), auth, device (háptica, teclado, ditado),
                      markdown (LaTeX), admin, supabase
-theme/               cores, espaçamento, tipografia, tokens de vidro, claro/escuro
+theme/               paleta do manual (paleta.ts), papéis de cor por tema, fontes, vidro
 tests/               jest (lib/, offline)
 scripts/             pós-instalação (KaTeX) e cabeçalho do HTML web
 public/              favicon, ícones e manifest do site

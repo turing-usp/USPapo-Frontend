@@ -1,4 +1,4 @@
-/** Auth group: login / register / reset over the scene, no chrome. */
+/** Auth group: login / register / reset over the canvas, no chrome. */
 import { Stack } from 'expo-router';
 import React from 'react';
 

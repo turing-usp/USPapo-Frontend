@@ -1,11 +1,10 @@
 /** Login: e-mail + password, and "Continuar com o Google". */
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { View } from 'react-native';
 
 import { Divisor, OlhoDaSenha } from '../../components/auth';
-import { GoogleG, TuringWordmark } from '../../components/icons';
-import { Botao, Campo, ColunaCentral, Texto } from '../../components/ui';
+import { GoogleG } from '../../components/icons';
+import { Botao, Campo, ColunaCentral, Erro, Texto } from '../../components/ui';
 import { entrarComGoogle, mapAuthError } from '../../lib/auth';
 import { haptics } from '../../lib/device';
 import { supabase } from '../../lib/supabase';
@@ -51,13 +50,12 @@ export default function Login() {
 
   return (
     <ColunaCentral>
-      <View style={{ alignItems: 'center' }}><TuringWordmark size={144} /></View>
       <Texto v="titulo" centro>Entre com sua conta</Texto>
       <Campo icone="envelope" value={email} onChangeText={setEmail} placeholder="E-mail" autoCapitalize="none" autoCorrect={false}
         keyboardType="email-address" autoComplete="email" textContentType="emailAddress" />
       <Campo icone="cadeado" value={senha} onChangeText={setSenha} placeholder="Senha" secureTextEntry={!ver} autoComplete="current-password"
         textContentType="password" onSubmitEditing={() => void entrar()} final={<OlhoDaSenha visivel={ver} alternar={() => setVer((v) => !v)} />} />
-      {erro ? <Texto v="erro" centro role="alert">{erro}</Texto> : null}
+      {erro ? <Erro centro>{erro}</Erro> : null}
       <Botao rotulo="Entrar" carregando={carregando} onPress={() => void entrar()} />
       <Texto v="link" centro onPress={() => router.push('/reset')}>Esqueceu a senha?</Texto>
       <Divisor />

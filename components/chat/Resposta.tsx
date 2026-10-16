@@ -12,10 +12,9 @@ import {
   createMarkdownIt, MarkdownStream, sealIncompleteMarkdown, type ASTNode, type MarkdownStyleMap, type RenderRules,
 } from '@ronradtke/react-native-markdown-display';
 import React, { createContext, memo, useContext, useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Animated, Easing, Linking, Platform, ScrollView, Text, View, useWindowDimensions, type ViewStyle } from 'react-native';
+import { Animated, Easing, Linking, ScrollView, Text, View, useWindowDimensions, type ViewStyle } from 'react-native';
 
 import { Matematica } from './Matematica';
-import { COR_LOGO } from '../icons';
 import { blocos, distribuirColunas, medirColunas, quebras, selar, temMatematica, tintasDaTabela } from '../../lib/markdown';
 import { useTheme, type Theme } from '../../theme';
 
@@ -58,29 +57,32 @@ export function useRevelacao(texto: string, streaming: boolean, revelar = stream
   return texto.slice(0, revelado);
 }
 
-const MONO = Platform.select({ ios: 'Courier New', default: 'monospace' });
 const analisador = createMarkdownIt({ plugins: [quebras] });
 
-function estilos({ colors, fonts, radius, spacing, typography, escuro }: Theme): MarkdownStyleMap {
+/**
+ * The manual's type: text in M PLUS 1p, every heading (and table header) in Changa, code in Roboto
+ * Mono, framed in orange like the manual's own code sample.
+ */
+function estilos({ colors, fonts, radius, spacing, typography }: Theme): MarkdownStyleMap {
   // Leaves take the nearest styled ancestor's text style (body, strong, heading, cell): `text` and
   // `textgroup` stay empty, or they would override bold, headings and table cells with the body style.
   const corpo = { color: colors.foreground, fontFamily: fonts.body, ...typography.lg };
-  const { linha, cabecalho: tinta, listra } = tintasDaTabela(escuro);
+  const { linha, cabecalho: tinta, listra } = tintasDaTabela(colors.foreground);
   const celula = { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, ...typography.sm, color: colors.foreground };
-  const titulo = (passo: keyof typeof typography, fonte: string = fonts.displayBold, cor = colors.foreground) => ({
-    flexDirection: 'row' as const, flexWrap: 'wrap' as const, color: cor, fontFamily: fonte, ...typography[passo], marginTop: spacing.md, marginBottom: spacing.xs,
+  const titulo = (passo: keyof typeof typography, cor = colors.foreground) => ({
+    flexDirection: 'row' as const, flexWrap: 'wrap' as const, color: cor, fontFamily: fonts.title, ...typography[passo], marginTop: spacing.md, marginBottom: spacing.xs,
   });
-  const codigo = { backgroundColor: tinta, borderColor: linha, borderRadius: radius.md, borderWidth: 1, color: colors.foreground,
-    fontFamily: MONO, fontSize: typography.sm.fontSize, marginBottom: spacing.md, padding: spacing.md };
+  const codigo = { borderColor: colors.brand, borderRadius: radius.md, borderWidth: 1, color: colors.foreground,
+    fontFamily: fonts.mono, ...typography.sm, marginBottom: spacing.md, padding: spacing.md };
   return {
     body: corpo, text: {}, textgroup: {},
     paragraph: { marginTop: 0, marginBottom: spacing.md, flexWrap: 'wrap', flexDirection: 'row', width: '100%' },
     heading1: titulo('2xl'), heading2: titulo('xl'), heading3: titulo('lg'),
-    heading4: titulo('base', fonts.bodyBold), heading5: titulo('sm', fonts.bodyBold, colors.mutedForeground), heading6: titulo('xs', fonts.bodyBold, colors.mutedForeground),
+    heading4: titulo('base'), heading5: titulo('sm', colors.mutedForeground), heading6: titulo('xs', colors.mutedForeground),
     strong: { fontFamily: fonts.bodyBold, color: colors.foreground },
     em: { fontStyle: 'italic', color: colors.mutedForeground },
     s: { textDecorationLine: 'line-through' },
-    link: { color: colors.brand, textDecorationLine: 'underline' },
+    link: { color: colors.accent, textDecorationLine: 'underline' },
     hr: { backgroundColor: linha, height: 1, marginVertical: spacing.lg },
     blockquote: { backgroundColor: 'transparent', borderLeftColor: colors.brand, borderLeftWidth: 2, marginLeft: 0, paddingLeft: spacing.md, marginBottom: spacing.md },
     bullet_list: { marginBottom: spacing.md }, ordered_list: { marginBottom: spacing.md },
@@ -88,14 +90,14 @@ function estilos({ colors, fonts, radius, spacing, typography, escuro }: Theme):
     bullet_list_icon: { color: colors.brand, ...typography.lg, marginLeft: 0, marginRight: spacing.sm },
     ordered_list_icon: { ...corpo, color: colors.mutedForeground, marginLeft: 0, marginRight: spacing.sm },
     bullet_list_content: { flex: 1 }, ordered_list_content: { flex: 1 },
-    code_inline: { backgroundColor: tinta, borderRadius: radius.sm, borderWidth: 0, color: colors.foreground, fontFamily: MONO, fontSize: typography.sm.fontSize, paddingHorizontal: 5 },
+    code_inline: { backgroundColor: tinta, borderRadius: radius.sm, borderWidth: 0, color: colors.foreground, fontFamily: fonts.mono, fontSize: typography.sm.fontSize, paddingHorizontal: 5 },
     code_block: codigo, fence: codigo,
     table: { borderColor: linha, borderRadius: radius.md, borderWidth: 1, marginBottom: spacing.md, overflow: 'hidden' },
     thead: { backgroundColor: tinta },
     tr: { borderColor: linha, flexDirection: 'row' },
     tr_divisa: { borderBottomWidth: 1 },
     tr_listra: { backgroundColor: listra },
-    th: { ...celula, fontFamily: fonts.bodyBold },
+    th: { ...celula, fontFamily: fonts.title },
     td: { ...celula, fontFamily: fonts.body },
     celula_divisa: { borderLeftWidth: 1, borderColor: linha },
   };
@@ -118,8 +120,9 @@ function Tabela({ no, estilo, children }: { no: ASTNode; estilo: MarkdownStyleMa
   const { width } = useWindowDimensions();
   const [disponivel, setDisponivel] = useState(() => Math.min(width, layout.chatMaxWidth) - 2 * spacing.lg - 2);
   const linhas = no.children.flatMap((secao) => secao.children.map((tr) => tr.children.map(textoDe)));
+  // M PLUS 1p averages ~0.51 em over table text, but its digits are 0.62 em: 0.6 keeps times and codes on one line.
   const { larguras, rola } = distribuirColunas(medirColunas(linhas), disponivel, {
-    caractere: typography.sm.fontSize * 0.56, folga: 2 * spacing.md + 1, minimo: 56, maximo: 280, conforto: 120,
+    caractere: typography.sm.fontSize * 0.6, folga: 2 * spacing.md + 1, minimo: 56, maximo: 280, conforto: 120,
   });
   const corpo = (
     <Larguras.Provider value={larguras}>
@@ -199,6 +202,7 @@ const ESPERA_MS = 600;
  * (`aoSair`). It glides down to each new line. Only opacity and position animate, on the native driver.
  */
 function Cursor({ y, escrito, ativo, aoSair }: { y: number; escrito: number; ativo: boolean; aoSair: () => void }) {
+  const { colors } = useTheme();
   const [opacidade] = useState(() => new Animated.Value(1));
   const [topo] = useState(() => new Animated.Value(y));
   const sair = useEffectEvent(aoSair);
@@ -231,7 +235,7 @@ function Cursor({ y, escrito, ativo, aoSair }: { y: number; escrito: number; ati
   return (
     <Animated.View pointerEvents="none" style={{
       position: 'absolute', left: CURSOR.x, top: CURSOR.y, width: CURSOR.largura, height: CURSOR.altura, borderRadius: CURSOR.largura / 2,
-      backgroundColor: COR_LOGO, opacity: opacidade, transform: [{ translateY: topo }],
+      backgroundColor: colors.brand, opacity: opacidade, transform: [{ translateY: topo }],
     }} />
   );
 }

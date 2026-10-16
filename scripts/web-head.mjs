@@ -12,10 +12,10 @@ const cabeca = `${marca}
     <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#dde4f6" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#03042c" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ededf5" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#272830" />
     <meta name="description" content="USPapo — assistente inteligente para navegar pela USP, do Turing USP." />
-    <style>html,body{background-color:#dde4f6}@media (prefers-color-scheme:dark){html,body{background-color:#03042c}}</style>`;
+    <style>html,body{background-color:#ededf5}@media (prefers-color-scheme:dark){html,body{background-color:#272830}}</style>`;
 
 html = html.replace('<html lang="en">', '<html lang="pt-BR">').replace(/<link rel="icon"[^>]*\/?>/g, '').replace('</head>', `  ${cabeca}\n  </head>`);
 writeFileSync(arquivo, html);

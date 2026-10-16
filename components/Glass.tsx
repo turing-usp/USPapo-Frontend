@@ -7,19 +7,29 @@
  * Android, a hardware RenderEffect blur of the nearest <CamadaDeVidro>
  * background (a BlurView can never sample a target it lives inside, so
  * floating panes are rendered as siblings of what they blur). Large panes (drawer,
- * announcements, toasts) are `opaco` instead: the same tint and edges over their own
- * copy of the scene, so they look like the glass over an empty backdrop and cost no
- * blur. Other panes (bubbles, cards, pills inside scrolling content) are a cheap
- * translucent tint.
+ * announcements, menus) are `opaco` instead: the same tint and edges over the canvas, so
+ * they look like the glass over the empty (flat) background and cost no blur. Other panes
+ * (bubbles, cards, pills inside scrolling content) are a cheap translucent tint.
+ *
+ * On Android each blurred pane re-renders the whole screen into an offscreen layer every frame
+ * anything moves, and the screen itself is re-drawn view by view: while the drawer slid over the
+ * chrome and the composer, that took ~10 ms of GPU a frame and missed every other 120 Hz vsync.
+ * While a large pane is in play (`useCongelarTela`: the drawer, the giant glass), the screen
+ * beneath sits still under the scrim, so it is frozen into one GPU texture: the blurs keep running
+ * over it (no visual change, ~5 ms a frame). Switching the blur off instead made the panes flicker.
  */
 import { BlurTargetView, BlurView } from 'expo-blur';
-import React, { createContext, useContext, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { Animated, PixelRatio, Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
+import React, {
+  createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject,
+} from 'react';
+import { Animated, PixelRatio, Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Backdrop } from './Cena';
 import { useTheme, type GlassVariant } from '../theme';
 
 const Alvo = createContext<RefObject<View | null> | null>(null);
+const Congelada = createContext(false);
+const Congelar = createContext<(motivo: string, ativo: boolean) => void>(() => undefined);
 /** Blur strength: one for every floating pane (a Gaussian sigma of INTENSIDADE / 2 dp). */
 const INTENSIDADE = 36;
 /**
@@ -31,24 +41,29 @@ const INTENSIDADE = 36;
  */
 const MARGEM_ANDROID = 56;
 /**
- * The Android BlurView multiplies its radius by 4. It also has no `saturate(150%)` like the web: a
- * color filter over it (a hardware layer) re-rasterized every frame and dropped scrolling to ~12 fps.
+ * The Android BlurView multiplies its radius by 4. (A color filter over it, a hardware layer,
+ * re-rasterized every frame and dropped scrolling to ~12 fps.)
  */
 const ESCALA_ANDROID = 4;
 
 /**
- * `fundo` (over the scene backdrop) is what the floating glass in `frente` blurs.
- * The backdrop lives inside the target so the blurred copy is opaque and fully
- * covers the sharp content underneath.
+ * `fundo` (over the canvas) is what the floating glass in `frente` blurs. The canvas
+ * lives inside the target so the blurred copy is opaque and fully covers the sharp
+ * content underneath.
  */
 export function CamadaDeVidro({ fundo, frente }: { fundo: ReactNode; frente: ReactNode }) {
   const alvo = useRef<View | null>(null);
+  // Frozen, the screen sits still under the scrim while a large pane slides over it: one GPU
+  // texture, drawn once, instead of re-issuing every icon, text and shadow of it each frame.
+  const congelada = useContext(Congelada);
   return (
     <View style={styles.flex}>
       {Platform.OS === 'android' ? (
         <BlurTargetView ref={alvo} style={styles.alvo}>
-          <Backdrop margem={MARGEM_ANDROID} />
-          <View style={styles.tela}>{fundo}</View>
+          <View style={StyleSheet.absoluteFill} renderToHardwareTextureAndroid={congelada}>
+            <Backdrop />
+            <View style={styles.tela}>{fundo}</View>
+          </View>
         </BlurTargetView>
       ) : (
         <View style={styles.flex}><Backdrop />{fundo}</View>
@@ -58,21 +73,49 @@ export function CamadaDeVidro({ fundo, frente }: { fundo: ReactNode; frente: Rea
   );
 }
 
+/** Lets large panes freeze the screen beneath them (see the header); wraps a screen group. */
+export function CongelamentoDaTela({ children }: { children: ReactNode }) {
+  const [motivos, setMotivos] = useState<ReadonlySet<string>>(() => new Set());
+  const congelar = useCallback((motivo: string, ativo: boolean) => setMotivos((atual) => {
+    if (atual.has(motivo) === ativo) return atual;
+    const novo = new Set(atual);
+    if (ativo) novo.add(motivo);
+    else novo.delete(motivo);
+    return novo;
+  }), []);
+  return (
+    <Congelar.Provider value={congelar}>
+      <Congelada.Provider value={motivos.size > 0}>{children}</Congelada.Provider>
+    </Congelar.Provider>
+  );
+}
+
+/** While `ativo`, the screen beneath is frozen into a GPU texture (Android). */
+export function useCongelarTela(motivo: string, ativo: boolean): void {
+  const congelar = useContext(Congelar);
+  useEffect(() => {
+    congelar(motivo, ativo);
+    return () => congelar(motivo, false);
+  }, [motivo, ativo, congelar]);
+}
+
 /** Native blur layer (web blurs through the pane's own style: see Glass). */
 function Desfoque({ intensidade }: { intensidade: number }) {
   const { escuro } = useTheme();
   const alvo = useContext(Alvo);
-  if (Platform.OS === 'android') {
-    if (!alvo) return null;
+  const raio = useMemo(() => {
     // The web's blur(intensidade * 0.5 dp) is a Gaussian sigma; RenderEffect takes a radius with
     // sigma = 0.57735 * radius + 0.5, in device px. The effect radius is intensity / reduction * 4,
     // and expo-blur paints a white overlay proportional to intensity, so intensity stays at 1
     // (~0.4% overlay) and the reduction factor carries the radius.
     const sigma = intensidade * 0.5 * (PixelRatio.get() || 1);
-    const raio = Math.max(1, (sigma - 0.5) / 0.57735);
+    return Math.max(1, (sigma - 0.5) / 0.57735);
+  }, [intensidade]);
+  if (Platform.OS === 'android') {
+    if (!alvo) return null;
     return (
-      <BlurView blurTarget={alvo} blurMethod="dimezisBlurViewSdk31Plus" intensity={1} blurReductionFactor={ESCALA_ANDROID / raio}
-        tint="default" style={StyleSheet.absoluteFill} />
+      <BlurView blurTarget={alvo} blurMethod="dimezisBlurViewSdk31Plus" intensity={1}
+        blurReductionFactor={ESCALA_ANDROID / raio} tint="default" style={StyleSheet.absoluteFill} />
     );
   }
   return <BlurView intensity={intensidade} tint={escuro ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />;
@@ -82,7 +125,7 @@ export type GlassProps = {
   children?: ReactNode;
   variante?: GlassVariant;
   desfoque?: boolean;
-  /** Opaque glass over its own copy of the scene (large panes), instead of a blur. */
+  /** Opaque glass over the canvas (large panes), instead of a blur. */
   opaco?: boolean;
   radius?: number;
   semBorda?: boolean;
@@ -105,43 +148,40 @@ export default function Glass({
   opacidade, onPress, onLongPress, disabled, accessibilityLabel, testID, pointerEvents,
 }: GlassProps) {
   const { colors, glass } = useTheme();
-  const [tamanho, setTamanho] = useState<{ width: number; height: number } | null>(null);
   const plano = StyleSheet.flatten(style) ?? {};
   const raio = radius ?? (plano.borderRadius as number | undefined) ?? 0;
   const sombra = semSombra ? null : glass.shadow;
   // Web: the blur is the pane's own backdrop-filter. An ancestor with opacity < 1 (a fade on a
   // wrapper) cuts a backdrop-filter off from what is behind it, and Chrome keeps it cut off after
-  // the fade ends; the pane's own opacity (`opacidade`) fades it with its blur.
+  // the fade ends; the pane's own opacity (`opacidade`) fades it with its blur. A plain blur, like
+  // Android's: saturating it would push the colors behind the glass off the palette.
   const filtro = desfoque && Platform.OS === 'web'
-    ? ({ backdropFilter: `blur(${Math.round(INTENSIDADE * 0.5)}px) saturate(150%)` } as ViewStyle) : null;
+    ? ({ backdropFilter: `blur(${Math.round(INTENSIDADE * 0.5)}px)` } as ViewStyle) : null;
   // zIndex 0 makes the pane its own stacking context so the layers (zIndex -1) sit behind every
   // child on web too, including static ones like <svg> and <input>.
   const base = [plano, sombra, filtro, { borderRadius: raio, zIndex: plano.zIndex ?? 0 }];
+  // The hairline colors each side, and a side's color beats `borderColor`: an edge color (the
+  // composer's orange, a focus ring) has to go on every side to show.
+  const cor = borda?.borderColor;
+  const contorno = cor ? { ...borda, borderTopColor: cor, borderRightColor: cor, borderBottomColor: cor, borderLeftColor: cor } : borda;
 
   const camadas = (
     <>
       <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.atras, { borderRadius: raio, overflow: 'hidden' }]}>
         {desfoque && Platform.OS !== 'web' ? <Desfoque intensidade={INTENSIDADE} /> : null}
         {opaco ? <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.canvas }]} /> : null}
-        {opaco && tamanho ? <Backdrop recorte={tamanho} /> : null}
         <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.tint[variante] }]} />
       </View>
       {semBorda ? null : (
-        <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.atras, { borderRadius: raio }, glass.hairline, borda]} />
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.atras, { borderRadius: raio }, glass.hairline, contorno]} />
       )}
       {children}
     </>
   );
 
-  const medir = opaco ? (e: LayoutChangeEvent) => {
-    const { width, height } = e.nativeEvent.layout;
-    if (width !== tamanho?.width || height !== tamanho?.height) setTamanho({ width, height });
-  } : undefined;
-
   if (onPress || onLongPress) {
     return (
       <Pressable
-        onLayout={medir}
         onPress={onPress}
         onLongPress={onLongPress}
         disabled={disabled}
@@ -156,7 +196,7 @@ export default function Glass({
   }
   return (
     <Animated.View style={[...base, opacidade ? { opacity: opacidade } : null]} testID={testID} pointerEvents={pointerEvents}
-      accessibilityLabel={accessibilityLabel} onLayout={medir}>
+      accessibilityLabel={accessibilityLabel}>
       {camadas}
     </Animated.View>
   );

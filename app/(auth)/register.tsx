@@ -3,7 +3,7 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 
 import { OlhoDaSenha, RegrasDeSenha } from '../../components/auth';
-import { Botao, Campo, ColunaCentral, Texto } from '../../components/ui';
+import { Botao, Campo, ColunaCentral, Erro, Texto } from '../../components/ui';
 import { mapAuthError, senhaValida, urlDeRetorno } from '../../lib/auth';
 import { haptics } from '../../lib/device';
 import { supabase } from '../../lib/supabase';
@@ -57,7 +57,7 @@ export default function Cadastro() {
       <RegrasDeSenha senha={senha} />
       <Campo icone="cadeado" value={confirma} onChangeText={setConfirma} placeholder="Confirme a senha" secureTextEntry={!ver}
         autoComplete="new-password" onSubmitEditing={() => void cadastrar()} />
-      {erro ? <Texto v="erro" centro role="alert">{erro}</Texto> : null}
+      {erro ? <Erro centro>{erro}</Erro> : null}
       <Botao rotulo="Cadastrar" carregando={carregando} onPress={() => void cadastrar()} />
       <Texto v="suave" centro>
         Já tem uma conta? <Texto v="link" onPress={() => router.replace('/login')}>Entrar</Texto>

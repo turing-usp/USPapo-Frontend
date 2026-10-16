@@ -7,7 +7,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 
-import { Botao, Campo, ColunaCentral, Texto } from '../../components/ui';
+import { Botao, Campo, ColunaCentral, Erro, Texto } from '../../components/ui';
 import { mapAuthError, senhaValida } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { RegrasDeSenha } from '../../components/auth';
@@ -62,7 +62,7 @@ export default function Redefinir() {
           <Texto v="suave" centro>Informe seu e-mail e enviaremos um link para redefinir a senha.</Texto>
           <Campo icone="envelope" value={email} onChangeText={setEmail} placeholder="E-mail" autoCapitalize="none" autoCorrect={false}
             keyboardType="email-address" autoComplete="email" onSubmitEditing={() => void enviarLink()} />
-          {erro ? <Texto v="erro" centro role="alert">{erro}</Texto> : null}
+          {erro ? <Erro centro>{erro}</Erro> : null}
           <Botao rotulo="Enviar link" carregando={carregando} onPress={() => void enviarLink()} />
         </>
       ) : etapa === 'enviado' ? (
@@ -75,7 +75,7 @@ export default function Redefinir() {
           <RegrasDeSenha senha={senha} />
           <Campo icone="cadeado" value={confirma} onChangeText={setConfirma} placeholder="Confirme a nova senha" secureTextEntry
             autoComplete="new-password" onSubmitEditing={() => void salvar()} />
-          {erro ? <Texto v="erro" centro role="alert">{erro}</Texto> : null}
+          {erro ? <Erro centro>{erro}</Erro> : null}
           <Botao rotulo="Salvar nova senha" carregando={carregando} onPress={() => void salvar()} />
         </>
       )}

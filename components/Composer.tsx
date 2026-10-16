@@ -7,9 +7,9 @@ import { Platform, Pressable, StyleSheet, TextInput, View, type NativeSyntheticE
 
 import Glass from './Glass';
 import { Icone } from './icons';
-import { Texto } from './ui';
+import { Erro, useTintaDeCampo } from './ui';
 import { useDitado } from '../lib/device';
-import { useTheme } from '../theme';
+import { alfa, useTheme } from '../theme';
 
 const ALVO = 44;
 const LINHA = 24;
@@ -29,6 +29,7 @@ export type ComposerProps = {
 
 export default function Composer({ value, onChange, onSubmit, placeholder = 'Pergunte sobre a USP', respondendo, onStop, desfoque }: ComposerProps) {
   const { colors, fonts, radius, typography } = useTheme();
+  const tinta = useTintaDeCampo();
   const [altura, setAltura] = useState(ALVO);
   const entrada = useRef<TextInput | null>(null);
   const ultimoEnvio = useRef(0);
@@ -61,10 +62,11 @@ export default function Composer({ value, onChange, onSubmit, placeholder = 'Per
     enviar();
   };
 
+  // Send is the brand orange; Parar is the text color (the palette has no red), each with its own ink.
   const acao = respondendo
-    ? { rotulo: 'Parar', icone: 'parar' as const, fundo: colors.danger }
+    ? { rotulo: 'Parar', icone: 'parar' as const, fundo: colors.foreground, tinta: colors.canvas }
     : temTexto
-      ? { rotulo: 'Enviar pergunta', icone: 'enviar' as const, fundo: colors.brand }
+      ? { rotulo: 'Enviar pergunta', icone: 'enviar' as const, fundo: colors.brand, tinta: colors.brandForeground }
       : null;
 
   return (
@@ -83,26 +85,25 @@ export default function Composer({ value, onChange, onSubmit, placeholder = 'Per
           multiline
           maxLength={4000}
           placeholder={ditado.ouvindo ? 'Ouvindo…' : placeholder}
-          placeholderTextColor={colors.mutedForeground}
-          selectionColor={colors.brand}
+          {...tinta}
           accessibilityLabel="Pergunta"
           style={[styles.entrada, { color: colors.foreground, fontFamily: fonts.body, fontSize: typography.base.fontSize, height: altura }]}
         />
         {ditado.disponivel && !respondendo ? (
           <Pressable accessibilityRole="button" accessibilityLabel={ditado.ouvindo ? 'Parar ditado' : 'Ditar pergunta'}
-            onPress={() => void ditado.alternar(value)} style={[styles.alvo, { borderRadius: radius.full, backgroundColor: ditado.ouvindo ? colors.brand + '26' : 'transparent' }]}>
+            onPress={() => void ditado.alternar(value)} style={[styles.alvo, { borderRadius: radius.full, backgroundColor: ditado.ouvindo ? alfa(colors.brand, 0.15) : 'transparent' }]}>
             <Icone nome="microfone" cor={ditado.ouvindo ? colors.brand : colors.mutedForeground} tamanho={22} traco={2} />
           </Pressable>
         ) : null}
         {acao ? (
           <Pressable accessibilityRole="button" accessibilityLabel={acao.rotulo} onPress={respondendo ? onStop : enviar} style={styles.alvo}>
             <View style={[styles.disco, { backgroundColor: acao.fundo, borderRadius: radius.full }]}>
-              <Icone nome={acao.icone} cor={colors.brandForeground} tamanho={20} traco={2.5} />
+              <Icone nome={acao.icone} cor={acao.tinta} tamanho={20} traco={2.5} />
             </View>
           </Pressable>
         ) : null}
       </Glass>
-      {ditado.erro ? <Texto v="erro" centro style={{ marginTop: 6 }}>{ditado.erro}</Texto> : null}
+      {ditado.erro ? <View style={{ marginTop: 6 }}><Erro centro>{ditado.erro}</Erro></View> : null}
     </View>
   );
 }

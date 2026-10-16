@@ -1,62 +1,18 @@
 /**
- * The still scene behind every screen (the old `--page-backdrop`: a 135deg
- * gradient + two radial glows, drawn in SVG so web and native match) and the
- * screen entrance (content rises and fades in on focus; the navigator itself
- * does not animate, so the backdrop never moves).
+ * The canvas behind every screen (flat: the manual's light, its graphite or, in OLED, black) and
+ * the screen entrance (content rises and fades in on focus; the navigator itself does not animate,
+ * so the canvas never moves).
  */
 import { useFocusEffect } from 'expo-router';
-import React, { useCallback, useId, useRef, useState, type ReactNode } from 'react';
-import { Animated, Easing, StyleSheet, useWindowDimensions, View } from 'react-native';
-import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop } from 'react-native-svg';
+import React, { useCallback, useRef, useState, type ReactNode } from 'react';
+import { Animated, Easing, StyleSheet, View } from 'react-native';
 
 import { useTheme } from '../theme';
 
-function rgba(value: string): { cor: string; opacidade: number } {
-  const m = /rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+))?\s*\)/.exec(value);
-  return m ? { cor: `rgb(${m[1]},${m[2]},${m[3]})`, opacidade: m[4] === undefined ? 1 : Number(m[4]) } : { cor: value, opacidade: 1 };
-}
-
-/**
- * `margem` extends the scene past the window on every side (the Android blur target overhang);
- * `recorte` draws only the window's top-left region of that size (an opaque pane's own copy).
- */
-export function Backdrop({ margem = 0, recorte }: { margem?: number; recorte?: { width: number; height: number } }) {
-  const { scene } = useTheme();
-  const { width, height } = useWindowDimensions();
-  const id = useId().replace(/:/g, '');
-  const a = rgba(scene.glowA);
-  const b = rgba(scene.glowB);
-  // The unit square is the window; the margin is drawn outside it, with the same gradient geometry.
-  const mx = margem / width;
-  const my = margem / height;
-  const fora = { x: -mx, y: -my, width: 1 + 2 * mx, height: 1 + 2 * my };
-  const tela = recorte ?? { width: width + 2 * margem, height: height + 2 * margem };
-  const vista = recorte ? { x: 0, y: 0, width: recorte.width / width, height: recorte.height / height } : fora;
-  return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      {/* Explicit numeric size: percentage props stop react-native-svg painting on web. */}
-      <Svg width={tela.width} height={tela.height} viewBox={`${vista.x} ${vista.y} ${vista.width} ${vista.height}`}
-        preserveAspectRatio="none" style={StyleSheet.absoluteFill}>
-        <Defs>
-          <LinearGradient id={`base${id}`} x1="0" y1="0" x2="1" y2="1" gradientUnits="userSpaceOnUse">
-            <Stop offset="0" stopColor={scene.backdropFrom} />
-            <Stop offset="1" stopColor={scene.backdropTo} />
-          </LinearGradient>
-          <RadialGradient id={`a${id}`} cx="0.9" cy="0.1" r="0.65" gradientUnits="userSpaceOnUse">
-            <Stop offset="0" stopColor={a.cor} stopOpacity={a.opacidade} />
-            <Stop offset="1" stopColor={a.cor} stopOpacity={0} />
-          </RadialGradient>
-          <RadialGradient id={`b${id}`} cx="0.1" cy="0.9" r="0.55" gradientUnits="userSpaceOnUse">
-            <Stop offset="0" stopColor={b.cor} stopOpacity={b.opacidade} />
-            <Stop offset="1" stopColor={b.cor} stopOpacity={0} />
-          </RadialGradient>
-        </Defs>
-        <Rect {...fora} fill={`url(#base${id})`} />
-        <Rect {...fora} fill={`url(#b${id})`} />
-        <Rect {...fora} fill={`url(#a${id})`} />
-      </Svg>
-    </View>
-  );
+/** The flat canvas, filling its parent (on Android, the blur target with its overhang). */
+export function Backdrop() {
+  const { colors } = useTheme();
+  return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.canvas }]} />;
 }
 
 /**

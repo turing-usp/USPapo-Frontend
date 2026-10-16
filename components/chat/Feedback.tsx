@@ -1,18 +1,21 @@
-/** Like/dislike under a finished answer; a dislike is saved at once and opens the reason/comment form. */
-import React, { useState } from 'react';
+/**
+ * Like/dislike under a finished answer, after its other actions (`acoes`); a dislike is saved at
+ * once and opens the reason/comment form.
+ */
+import React, { useState, type ReactNode } from 'react';
 import { Pressable, View } from 'react-native';
 
 import Glass from '../Glass';
 import { Icone } from '../icons';
-import { Botao, Campo, Texto } from '../ui';
+import { Botao, Campo, Erro, Texto } from '../ui';
 import { haptics } from '../../lib/device';
 import { removerFeedback, salvarFeedback, type Feedback as Salvo, type TipoFeedback } from '../../lib/feedback';
-import { useTheme } from '../../theme';
+import { alfa, useTheme } from '../../theme';
 
 const MOTIVOS = ['Informação incorreta', 'Resposta incompleta', 'Resposta confusa', 'Outro'];
 
-export default function Feedback({ userId, conversaId, ordem, inicial }: {
-  userId: string; conversaId: string; ordem: number; inicial?: Salvo | null;
+export default function Feedback({ userId, conversaId, ordem, inicial, acoes }: {
+  userId: string; conversaId: string; ordem: number; inicial?: Salvo | null; acoes?: ReactNode;
 }) {
   const { colors, radius, spacing } = useTheme();
   const [nota, setNota] = useState<TipoFeedback | null>(inicial?.tipo ?? null);
@@ -52,39 +55,40 @@ export default function Feedback({ userId, conversaId, ordem, inicial }: {
     void (ok ? haptics.like() : haptics.error());
   }
 
-  const polegar = (tipo: TipoFeedback, rotulo: string, cor: string) => (
+  // The chosen thumb takes the accent over a tint of it; both thumbs look alike otherwise.
+  const polegar = (tipo: TipoFeedback, rotulo: string) => (
     <Pressable accessibilityRole="button" accessibilityLabel={rotulo} accessibilityState={{ selected: nota === tipo }}
       onPress={() => void avaliar(tipo)} hitSlop={6}
       style={({ pressed }) => ({ width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md,
-        backgroundColor: nota === tipo ? colors.surface : 'transparent', opacity: pressed ? 0.7 : 1 })}>
-      <Icone nome={tipo} cor={nota === tipo ? cor : colors.mutedForeground} tamanho={17} />
+        backgroundColor: nota === tipo ? alfa(colors.accent, 0.14) : pressed ? alfa(colors.foreground, 0.08) : 'transparent' })}>
+      <Icone nome={tipo} cor={nota === tipo ? colors.accent : colors.mutedForeground} tamanho={17} />
     </Pressable>
   );
 
   return (
     <View style={{ marginTop: spacing.sm, gap: spacing.sm, maxWidth: 560 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
-        <Texto v="legenda" cor={colors.mutedForeground}>A resposta foi útil?</Texto>
-        {polegar('like', 'Resposta útil', colors.brand)}
-        {polegar('dislike', 'Resposta ruim', colors.danger)}
+        {acoes ? <>{acoes}<View style={{ width: 1, height: 18, marginHorizontal: spacing.xs, backgroundColor: alfa(colors.foreground, 0.12) }} /></> : null}
+        <Texto v="legenda">A resposta foi útil?</Texto>
+        {polegar('like', 'Resposta útil')}
+        {polegar('dislike', 'Resposta ruim')}
       </View>
       {form ? (
         <Glass radius={radius.lg} style={{ padding: spacing.md, gap: spacing.sm }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Texto v="suave" cor={colors.foreground} style={{ fontFamily: 'Roboto-Bold', flexShrink: 1 }}>Como podemos melhorar esta resposta?</Texto>
+            <Texto v="subtitulo" style={{ flexShrink: 1 }}>Como podemos melhorar esta resposta?</Texto>
             <Pressable accessibilityLabel="Fechar" onPress={() => setForm(false)} hitSlop={8}><Icone nome="fechar" cor={colors.mutedForeground} tamanho={16} /></Pressable>
           </View>
           {estado === 'enviado' ? (
             <View style={{ flexDirection: 'row', gap: spacing.xs, alignItems: 'center' }}>
-              <Icone nome="check" cor={colors.brand} tamanho={16} />
-              <Texto v="legenda" cor={colors.brand}>Obrigado pelo seu feedback! Ele nos ajuda a melhorar.</Texto>
+              <Icone nome="check" cor={colors.accent} tamanho={16} />
+              <Texto v="legenda" cor={colors.accent} style={{ flexShrink: 1 }}>Obrigado pelo seu feedback! Ele nos ajuda a melhorar.</Texto>
             </View>
           ) : (
             <>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                 {MOTIVOS.map((m) => (
-                  <Botao key={m} compacto v="secundario" rotulo={m} onPress={() => setMotivo(motivo === m ? '' : m)}
-                    style={motivo === m ? { borderColor: colors.brand, borderWidth: 1.5 } : undefined} />
+                  <Botao key={m} compacto v={motivo === m ? 'primario' : 'secundario'} rotulo={m} onPress={() => setMotivo(motivo === m ? '' : m)} />
                 ))}
               </View>
               <Campo multiline value={comentario} onChangeText={setComentario} maxLength={2000}
@@ -94,7 +98,7 @@ export default function Feedback({ userId, conversaId, ordem, inicial }: {
           )}
         </Glass>
       ) : null}
-      {estado === 'falhou' ? <Texto v="erro">Não foi possível salvar a avaliação.</Texto> : null}
+      {estado === 'falhou' ? <Erro>Não foi possível salvar a avaliação.</Erro> : null}
     </View>
   );
 }

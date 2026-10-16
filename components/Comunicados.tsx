@@ -10,12 +10,12 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import Resposta from './chat/Resposta';
-import Glass from './Glass';
+import Glass, { useCongelarTela } from './Glass';
 import { Icone } from './icons';
 import { Botao, Texto } from './ui';
 import { escolher, lerComunicados, lerVistos, marcarVisto, urlDaImagem, type Comunicado } from '../lib/comunicados';
 import { haptics } from '../lib/device';
-import { useTheme } from '../theme';
+import { alfa, useTheme } from '../theme';
 
 const RELER_AO_VOLTAR_MS = 30_000;
 const RELER_MS = 2 * 60_000;
@@ -136,7 +136,7 @@ function Imagem({ uri }: { uri: string }) {
 export function VidroGigante({ comunicado, aoFechar, aoOcultar }: {
   comunicado: Comunicado | null; aoFechar: () => void; aoOcultar: () => void;
 }) {
-  const { colors, fonts, radius, spacing, typography } = useTheme();
+  const { colors, radius, spacing } = useTheme();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const [entrada] = useState(() => new Animated.Value(0));
@@ -146,6 +146,8 @@ export function VidroGigante({ comunicado, aoFechar, aoOcultar }: {
   // The fade starts a frame after the content's first layout: mounting a page of Markdown (and the
   // blur's first draw) takes a few long frames, which would swallow the start of the fade.
   const [medido, setMedido] = useState(false);
+  // A pop-up over the whole screen: the screen beneath is frozen while it shows.
+  useCongelarTela('comunicado', !!atual);
 
   useEffect(() => {
     if (comunicado && !medido) return;
@@ -174,7 +176,7 @@ export function VidroGigante({ comunicado, aoFechar, aoOcultar }: {
   return (
     <View pointerEvents={comunicado ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, styles.camada]}>
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: entrada }]}>
-        <Pressable accessibilityLabel="Fechar" onPress={aoFechar} style={[StyleSheet.absoluteFill, { backgroundColor: colors.scrim + '59' }]} />
+        <Pressable accessibilityLabel="Fechar" onPress={aoFechar} style={[StyleSheet.absoluteFill, { backgroundColor: alfa(colors.scrim, 0.35) }]} />
       </Animated.View>
       <Animated.View pointerEvents="box-none" onLayout={() => !medido && requestAnimationFrame(() => setMedido(true))} style={[styles.centro, {
         paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.lg, paddingHorizontal: spacing.lg,
@@ -184,7 +186,7 @@ export function VidroGigante({ comunicado, aoFechar, aoOcultar }: {
           style={{ width: '100%', maxWidth: 560, maxHeight: height - insets.top - insets.bottom - 2 * spacing.lg }}>
           <ScrollView contentContainerStyle={{ gap: spacing.lg, padding: width >= 640 ? spacing['3xl'] : spacing.xl }}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md }}>
-              <Texto style={{ flex: 1, fontFamily: fonts.displayBold, ...typography['2xl'] }}>{atual.titulo}</Texto>
+              <Texto v="titulo" style={{ flex: 1 }}>{atual.titulo}</Texto>
               <Pressable accessibilityRole="button" accessibilityLabel="Fechar" hitSlop={10} onPress={aoFechar}>
                 <Icone nome="fechar" cor={colors.mutedForeground} tamanho={24} />
               </Pressable>

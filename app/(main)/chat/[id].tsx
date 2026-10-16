@@ -1,10 +1,14 @@
-/** A conversation: the thinking mark, streamed answers, sources, feedback, and the composer floating over the list. */
+/**
+ * A conversation: the thinking mark, streamed answers, sources, Copiar/Compartilhar and feedback, and
+ * the composer floating over the list.
+ */
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ALTURA_CHROME } from '../../../components/Chrome';
+import { BotoesDaMensagem, MenuDasMensagens } from '../../../components/chat/AcoesDaMensagem';
 import Andamento from '../../../components/chat/Andamento';
 import Feedback from '../../../components/chat/Feedback';
 import { BolhaAssistente, BolhaUsuario } from '../../../components/chat/Linhas';
@@ -70,7 +74,7 @@ export default function Chat() {
   if (chat.carregou && !chat.linhas.length && chat.status === 'idle') {
     return (
       <View style={{ flex: 1, justifyContent: 'center' }}>
-        <Estado titulo="Conversa" mensagem="Não encontrei esta conversa." acao="Nova conversa" aoAgir={() => router.replace('/')} />
+        <Estado titulo="Conversa" mensagem="Não encontrei esta conversa." acao="Novo chat" aoAgir={() => router.replace('/')} />
       </View>
     );
   }
@@ -86,9 +90,10 @@ export default function Chat() {
         if (item.ordem === vivo && aguardando) return null;
         return (
           <BolhaAssistente key={item.id} linha={item} escrevendo={respondendo && !item.completo} revelar={item.ordem === vivo}>
-            {item.completo && chat.userId ? (
-              <Feedback userId={chat.userId} conversaId={String(id)} ordem={item.ordem} inicial={feedbacks[item.ordem] ?? null} />
-            ) : null}
+            {!item.completo ? null : chat.userId ? (
+              <Feedback userId={chat.userId} conversaId={String(id)} ordem={item.ordem} inicial={feedbacks[item.ordem] ?? null}
+                acoes={<BotoesDaMensagem texto={item.texto} />} />
+            ) : <BotoesDaMensagem texto={item.texto} style={{ marginTop: spacing.sm }} />}
           </BolhaAssistente>
         );
       case 'erro':
@@ -108,41 +113,44 @@ export default function Chat() {
     );
   }
 
+  // The messages' long-press menu covers the screen, so it wraps everything.
   return (
-    <CamadaDeVidro
-      fundo={
-        // A ScrollView, not a FlatList: a conversation is short, and scrollToEnd must reach the real end
-        // (a virtualized list estimates the unmeasured rows and stops short).
-        <ScrollView
-          ref={lista}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
-          scrollEventThrottle={32}
-          onScroll={({ nativeEvent: n }) => {
-            const r = rolagem.current;
-            const perto = n.contentSize.height - n.contentOffset.y - n.layoutMeasurement.height < 80;
-            r.seguindo = perto || (r.seguindo && n.contentOffset.y >= r.y - 1);
-            r.y = n.contentOffset.y;
-          }}
-          onContentSizeChange={() => rolagem.current.seguindo && irAoFim()}
-          contentContainerStyle={{
-            alignSelf: 'center', width: '100%', maxWidth: layout.chatMaxWidth, gap: spacing.lg,
-            paddingHorizontal: spacing.lg, paddingTop: insets.top + ALTURA_CHROME + spacing.xl, paddingBottom: alturaComposer + spacing.lg,
-          }}
-        >
-          {itens}
-        </ScrollView>
-      }
-      frente={
-        // Only the composer floats: the messages scroll under it, blurred, and stay reachable around it.
-        <View onLayout={(e) => setAlturaComposer(e.nativeEvent.layout.height)} pointerEvents="box-none"
-          style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingTop: spacing.sm,
-            paddingBottom: insets.bottom + (teclado ? teclado + spacing.sm : spacing.md) }}>
-          <Coluna chat pointerEvents="box-none">
-            <Composer desfoque value={texto} onChange={setTexto} onSubmit={enviar} respondendo={respondendo} onStop={chat.stop} />
-          </Coluna>
-        </View>
-      }
-    />
+    <MenuDasMensagens>
+      <CamadaDeVidro
+        fundo={
+          // A ScrollView, not a FlatList: a conversation is short, and scrollToEnd must reach the real end
+          // (a virtualized list estimates the unmeasured rows and stops short).
+          <ScrollView
+            ref={lista}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            scrollEventThrottle={32}
+            onScroll={({ nativeEvent: n }) => {
+              const r = rolagem.current;
+              const perto = n.contentSize.height - n.contentOffset.y - n.layoutMeasurement.height < 80;
+              r.seguindo = perto || (r.seguindo && n.contentOffset.y >= r.y - 1);
+              r.y = n.contentOffset.y;
+            }}
+            onContentSizeChange={() => rolagem.current.seguindo && irAoFim()}
+            contentContainerStyle={{
+              alignSelf: 'center', width: '100%', maxWidth: layout.chatMaxWidth, gap: spacing.lg,
+              paddingHorizontal: spacing.lg, paddingTop: insets.top + ALTURA_CHROME + spacing.xl, paddingBottom: alturaComposer + spacing.lg,
+            }}
+          >
+            {itens}
+          </ScrollView>
+        }
+        frente={
+          // Only the composer floats: the messages scroll under it, blurred, and stay reachable around it.
+          <View onLayout={(e) => setAlturaComposer(e.nativeEvent.layout.height)} pointerEvents="box-none"
+            style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingTop: spacing.sm,
+              paddingBottom: insets.bottom + (teclado ? teclado + spacing.sm : spacing.md) }}>
+            <Coluna chat pointerEvents="box-none">
+              <Composer desfoque value={texto} onChange={setTexto} onSubmit={enviar} respondendo={respondendo} onStop={chat.stop} />
+            </Coluna>
+          </View>
+        }
+      />
+    </MenuDasMensagens>
   );
 }

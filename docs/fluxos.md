@@ -58,6 +58,27 @@ de debug: serve para testes internos, não para a Play Store.
 > `npm run apk:preview` ou apague
 > `android/app/build/generated/assets/createReleaseUpdatesResources/`.
 
+## Testar no iPhone (Mac com Xcode, sem conta paga)
+
+Sem o Apple Developer Program, o EAS não assina builds para aparelho; o Mac
+assina com um Apple ID gratuito ("Personal Team"). Esse tipo de assinatura
+não permite push, então o build sai sem ele (`IOS_SEM_PUSH=1`), vale 7 dias
+e só instala nos aparelhos ligados a esse Mac.
+
+```bash
+npm ci
+export EXPO_UPDATES_CHANNEL=preview IOS_SEM_PUSH=1
+npx expo prebuild -p ios --clean
+npx expo run:ios --device --configuration Release   # backend de produção (.env.production)
+```
+
+Na primeira vez, abra `ios/USPapo.xcworkspace` no Xcode, escolha o seu
+Apple ID em *Signing & Capabilities → Team* e, se o Xcode recusar o
+bundle id, troque-o só ali (ex.: `org.turingusp.uspapo.<nome>`). No iPhone:
+ative *Ajustes → Privacidade e Segurança → Modo de Desenvolvedor* e confie
+no certificado em *Ajustes → Geral → VPN e Gerenciamento de Dispositivos*.
+Sem aparelho, `npx expo run:ios` (sem `--device`) abre no Simulador.
+
 ## Notificações push (Firebase)
 
 O push do Android passa pelo FCM. Sem esta configuração o app funciona, mas
@@ -133,7 +154,7 @@ npm run update:production -- --message "o que mudou"   # quem instalou pela loja
 ```
 
 O app baixa o update na primeira abertura e passa a usá-lo na seguinte. Em
-**Ajustes** aparece o id do update em uso. Se o bundle novo quebrar na
+**Configurações** aparece o id do update em uso. Se o bundle novo quebrar na
 abertura, o `expo-updates` volta sozinho para a versão anterior.
 
 `scripts/update.sh` carrega o `.env.production` porque, com
@@ -196,5 +217,7 @@ lá.
   precisar, um item na gaveta em `components/Chrome.tsx`.
 - **Ferramenta nova no backend:** rótulo e descrição em `FERRAMENTAS`
   (`lib/api.ts`).
-- **Cores e vidro:** só em `theme/index.tsx`; componentes usam `useTheme()`.
+- **Cores e vidro:** só cores da paleta do manual (`theme/paleta.ts`) e,
+  para variar, só a opacidade (`alfa`); os papéis de cada tema ficam em
+  `theme/index.tsx`, e os componentes usam `useTheme()`.
 - **Antes de abrir PR:** `npm run typecheck && npm run lint && npm test`.

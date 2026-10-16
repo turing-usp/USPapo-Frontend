@@ -28,15 +28,28 @@ function sentir(canal: string, janela: number, efeito: () => Promise<void>): voi
   efeito().catch(() => undefined);
 }
 
-const { ImpactFeedbackStyle: I, NotificationFeedbackType: N } = Haptics;
+const { AndroidHaptics: A, ImpactFeedbackStyle: I, NotificationFeedbackType: N } = Haptics;
+
+/**
+ * Android plays the system's own short effects (tuned per device, at the user's touch-feedback
+ * intensity): expo's waveforms there are 40-60 ms motor buzzes, and its notifications two or three
+ * of them, which felt heavy. Effects newer than the device fall back to one every version has.
+ */
+function efeito(ios: () => Promise<void>, android: Haptics.AndroidHaptics, reserva = A.Clock_Tick): () => Promise<void> {
+  if (Platform.OS !== 'android') return ios;
+  return () => Haptics.performAndroidHapticsAsync(android).catch(() => Haptics.performAndroidHapticsAsync(reserva));
+}
+
 export const haptics = {
-  selection: () => sentir('selection', 60, Haptics.selectionAsync),
-  send: () => sentir('impact', 90, () => Haptics.impactAsync(I.Light)),
-  press: () => sentir('impact', 90, () => Haptics.impactAsync(I.Medium)),
-  like: () => sentir('notification', 400, () => Haptics.notificationAsync(N.Success)),
-  dislike: () => sentir('notification', 400, () => Haptics.notificationAsync(N.Warning)),
-  error: () => sentir('notification', 400, () => Haptics.notificationAsync(N.Error)),
-  finished: () => sentir('notification', 400, () => Haptics.notificationAsync(N.Success)),
+  selection: () => sentir('selection', 60, efeito(Haptics.selectionAsync, A.Clock_Tick)),
+  send: () => sentir('impact', 90, efeito(() => Haptics.impactAsync(I.Light), A.Virtual_Key)),
+  press: () => sentir('impact', 90, efeito(() => Haptics.impactAsync(I.Light), A.Context_Click)),
+  /** A long press that opened a menu. */
+  segurar: () => sentir('impact', 90, efeito(() => Haptics.impactAsync(I.Light), A.Long_Press, A.Context_Click)),
+  like: () => sentir('notification', 400, efeito(() => Haptics.notificationAsync(N.Success), A.Confirm, A.Context_Click)),
+  dislike: () => sentir('notification', 400, efeito(() => Haptics.impactAsync(I.Light), A.Context_Click)),
+  error: () => sentir('notification', 400, efeito(() => Haptics.notificationAsync(N.Error), A.Reject, A.Context_Click)),
+  finished: () => sentir('notification', 400, efeito(() => Haptics.notificationAsync(N.Success), A.Confirm, A.Context_Click)),
 };
 
 /**

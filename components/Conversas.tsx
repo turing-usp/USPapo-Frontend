@@ -1,21 +1,23 @@
 /**
- * The conversations in the drawer: search, groups, favorite, rename and delete with a 6 s undo;
- * offline it shows the cached copy. The list reloads each time the drawer opens, and closing the
- * drawer commits a pending delete (an undo only lasts while the list is on screen).
+ * The conversations in the drawer: search, groups, favorite, rename and delete with a 6 s undo (from
+ * each row's kebab menu, or a long press on Android and iOS); offline it shows the cached copy. The list loads while the drawer is still closed and refreshes
+ * each time it has finished opening (a list changing mid-slide made the slide stutter), and only a
+ * changed list renders again. Closing the drawer commits a pending delete (an undo only lasts while
+ * the list is on screen).
  */
 import { usePathname, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, TextInput, View } from 'react-native';
+import { FlatList, Platform, Pressable, TextInput, View } from 'react-native';
 
 import { Icone } from './icons';
-import { BotaoAcoes, MenuConversa, type AcaoConversa, type Ancora } from './MenuConversa';
-import { Botao, Texto } from './ui';
+import { BotaoAcoes, MenuAncorado, ancoraDoToque, type Ancora, type MenuAberto } from './MenuAncorado';
+import { ANEL_DE_FOCO, Botao, Erro, Texto, useTintaDeCampo } from './ui';
 import { sessaoAtual } from '../lib/auth';
 import { guardarConversa, guardarHistorico, historicoEmCache } from '../lib/cache';
 import { favoritar, lerHistorico, renomear, rotuloDa, type Conversa } from '../lib/conversations';
 import { haptics } from '../lib/device';
 import { agendarExclusao, desfazerExclusao, efetivarExclusoes, exclusaoPendente } from '../lib/exclusoes';
-import { useTheme } from '../theme';
+import { alfa, useTheme } from '../theme';
 
 const GRUPOS = ['Favoritas', 'Hoje', 'Ontem', 'Últimos 7 dias', 'Últimos 30 dias', 'Anteriores'] as const;
 const DIA = 86_400_000;
@@ -31,8 +33,16 @@ function grupoDa(c: Conversa, hoje: number): (typeof GRUPOS)[number] {
 
 type Item = { tipo: 'grupo'; id: string } | { tipo: 'conversa'; id: string; c: Conversa };
 
-export default function Conversas({ aberta, aoAbrir }: { aberta: boolean; aoAbrir: (destino: string) => void }) {
+/** What the list shows of each conversation: equal signatures, nothing to render again. */
+const assinatura = (lista: Conversa[]) =>
+  lista.map((c) => `${c.id}|${c.titulo}|${c.atualizada_em}|${c.favorita}|${c.resposta === null}|${c.mensagens.length}`).join('\n');
+
+export default function Conversas({ aberta, assentada, aoAbrir }: {
+  aberta: boolean; assentada: boolean; aoAbrir: (destino: string) => void;
+}) {
   const { colors, fonts, radius, spacing, typography } = useTheme();
+  const tinta = useTintaDeCampo();
+  const [buscando, setBuscando] = useState(false);
   const router = useRouter();
   const caminho = usePathname();
   const [uid, setUid] = useState('');
@@ -46,14 +56,18 @@ export default function Conversas({ aberta, aoAbrir }: { aberta: boolean; aoAbri
 
   const carregar = useCallback(async (userId: string | null) => {
     setUid(userId ?? '');
-    if (!userId) return setConversas([]);
+    const aplicar = (lista: Conversa[]) => {
+      const nova = lista.filter((c) => !exclusaoPendente(c.id));
+      setConversas((atual) => (atual && assinatura(atual) === assinatura(nova) ? atual : nova));
+    };
+    if (!userId) return aplicar([]);
     try {
       const lista = await lerHistorico(userId);
-      setConversas(lista.filter((c) => !exclusaoPendente(c.id)));
+      aplicar(lista);
       setOffline(false);
       void guardarHistorico(userId, lista);
     } catch {
-      setConversas((await historicoEmCache(userId)).filter((c) => !exclusaoPendente(c.id)));
+      aplicar(await historicoEmCache(userId));
       setOffline(true);
     }
   }, []);
@@ -69,9 +83,14 @@ export default function Conversas({ aberta, aoAbrir }: { aberta: boolean; aoAbri
     }
   }
   useEffect(() => {
-    if (aberta) void sessaoAtual().then(({ userId }) => carregar(userId));
-    else void efetivarExclusoes();
-  }, [aberta, carregar]);
+    void sessaoAtual().then(({ userId }) => carregar(userId));
+  }, [carregar]);
+  useEffect(() => {
+    if (assentada) void sessaoAtual().then(({ userId }) => carregar(userId));
+  }, [assentada, carregar]);
+  useEffect(() => {
+    if (!aberta) void efetivarExclusoes();
+  }, [aberta]);
 
   function apagar(c: Conversa) {
     void efetivarExclusoes(); // only the latest delete keeps an undo
@@ -107,16 +126,16 @@ export default function Conversas({ aberta, aoAbrir }: { aberta: boolean; aoAbri
     }
   }
 
-  function escolher(acao: AcaoConversa) {
-    const c = acoes?.c;
-    setAcoes(null);
-    if (!c) return;
-    if (acao === 'favoritar') void atualizar(c, { favorita: !c.favorita }, () => favoritar(uid, c.id, !c.favorita));
-    else if (acao === 'renomear') setEditando({ id: c.id, titulo: rotuloDa(c) });
-    else apagar(c);
-  }
   const fecharAcoes = useCallback(() => setAcoes(null), []);
-  const menuAberto = useMemo(() => acoes && { favorita: acoes.c.favorita, ancora: acoes.ancora }, [acoes]);
+  const menu: MenuAberto | null = acoes && {
+    ancora: acoes.ancora,
+    itens: [
+      { icone: 'estrela', rotulo: acoes.c.favorita ? 'Remover dos favoritos' : 'Favoritar',
+        acao: () => void atualizar(acoes.c, { favorita: !acoes.c.favorita }, () => favoritar(uid, acoes.c.id, !acoes.c.favorita)) },
+      { icone: 'editar', rotulo: 'Renomear', acao: () => setEditando({ id: acoes.c.id, titulo: rotuloDa(acoes.c) }) },
+      { icone: 'lixo', rotulo: 'Apagar', acao: () => apagar(acoes.c) },
+    ],
+  };
 
   async function confirmarNome() {
     const alvo = editando;
@@ -138,21 +157,25 @@ export default function Conversas({ aberta, aoAbrir }: { aberta: boolean; aoAbri
     });
   }, [conversas, busca]);
 
-  const texto = { color: colors.foreground, fontFamily: fonts.body, fontSize: typography.sm.fontSize, padding: 0, position: 'relative', outlineStyle: 'none' } as object;
+  // minWidth 0: a web <input> is otherwise as wide as the font says 20 characters are, and pushes its row.
+  const texto = { minWidth: 0, color: colors.foreground, fontFamily: fonts.body, fontSize: typography.sm.fontSize, padding: 0, position: 'relative', outlineStyle: 'none' } as object;
 
   // A fragment: the menu must be a child of the drawer's panel, which sits at the window's origin
   // when open (the menu is placed in window coordinates).
   return (
     <>
     <View style={{ flex: 1, gap: spacing.sm }}>
+      {/* Focused, it lights its edge in the brand orange like every other field. */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, height: 40, paddingHorizontal: spacing.md,
-        borderRadius: radius.md, backgroundColor: colors.tint + '0f' }}>
-        <Icone nome="busca" cor={colors.mutedForeground} tamanho={16} />
-        <TextInput value={busca} onChangeText={setBusca} placeholder="Buscar nas conversas" placeholderTextColor={colors.faintForeground}
-          selectionColor={colors.brand} autoCapitalize="none" autoCorrect={false} accessibilityLabel="Buscar nas conversas" style={[{ flex: 1 }, texto]} />
+        borderRadius: radius.full, backgroundColor: alfa(colors.foreground, 0.06),
+        borderWidth: ANEL_DE_FOCO, borderColor: buscando ? colors.brand : 'transparent' }}>
+        <Icone nome="busca" cor={buscando ? colors.brand : colors.mutedForeground} tamanho={16} />
+        <TextInput value={busca} onChangeText={setBusca} placeholder="Buscar nas conversas" {...tinta}
+          onFocus={() => setBuscando(true)} onBlur={() => setBuscando(false)}
+          autoCapitalize="none" autoCorrect={false} accessibilityLabel="Buscar nas conversas" style={[{ flex: 1 }, texto]} />
       </View>
       {offline ? <Texto v="legenda">Sem conexão — mostrando a última cópia salva neste aparelho.</Texto> : null}
-      {aviso ? <Texto v="erro" onPress={() => setAviso(null)}>{aviso}</Texto> : null}
+      {aviso ? <Erro onPress={() => setAviso(null)}>{aviso}</Erro> : null}
       <FlatList
         data={itens}
         keyExtractor={(i) => i.id}
@@ -165,37 +188,42 @@ export default function Conversas({ aberta, aoAbrir }: { aberta: boolean; aoAbri
           </Texto>
         )}
         renderItem={({ item }) => item.tipo === 'grupo' ? (
-          <Texto v="secao" style={{ fontSize: 11, marginTop: spacing.md, marginBottom: spacing.xs, paddingHorizontal: spacing.sm }}>{item.id}</Texto>
+          <Texto v="secao" style={{ marginTop: spacing.md, marginBottom: spacing.xs, paddingHorizontal: spacing.sm }}>{item.id}</Texto>
         ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center', borderRadius: radius.md,
-            backgroundColor: caminho === `/chat/${item.id}` ? colors.brand + '1f' : 'transparent' }}>
+            borderWidth: ANEL_DE_FOCO, borderColor: editando?.id === item.id ? colors.brand : 'transparent',
+            backgroundColor: caminho === `/chat/${item.id}` ? alfa(colors.brand, 0.14) : 'transparent' }}>
             <Pressable accessibilityRole="link" accessibilityLabel={rotuloDa(item.c)} disabled={editando?.id === item.id}
-              onPress={() => aoAbrir(`/chat/${item.id}`)}
+              onPress={() => aoAbrir(`/chat/${item.id}`)} delayLongPress={400}
+              onLongPress={Platform.OS === 'web' ? undefined : (e) => {
+                void haptics.segurar();
+                setAcoes({ c: item.c, ancora: ancoraDoToque(e.nativeEvent.pageX, e.nativeEvent.pageY) });
+              }}
               style={({ pressed }) => ({ flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 40,
-                paddingVertical: spacing.sm, paddingLeft: spacing.sm, borderRadius: radius.md, backgroundColor: pressed ? colors.tint + '14' : 'transparent' })}>
+                paddingVertical: spacing.sm, paddingLeft: spacing.sm, borderRadius: radius.md, backgroundColor: pressed ? alfa(colors.foreground, 0.08) : 'transparent' })}>
               {item.c.favorita ? <Icone nome="estrela" cor={colors.brand} tamanho={14} /> : null}
               {editando?.id === item.id ? (
-                <TextInput value={editando.titulo} onChangeText={(t) => setEditando({ id: item.id, titulo: t })} autoFocus selectTextOnFocus
+                <TextInput value={editando.titulo} onChangeText={(t) => setEditando({ id: item.id, titulo: t })} autoFocus selectTextOnFocus {...tinta}
                   onBlur={() => void confirmarNome()} onSubmitEditing={() => void confirmarNome()} returnKeyType="done" maxLength={120}
                   style={[{ flex: 1 }, texto]} />
               ) : (
                 <Texto v="suave" cor={colors.foreground} numberOfLines={1} style={{ flex: 1 }}>{rotuloDa(item.c)}</Texto>
               )}
-              {item.c.resposta === null ? <Texto v="legenda" cor={colors.danger} style={{ fontFamily: fonts.bodyBold }}>PENDENTE</Texto> : null}
+              {item.c.resposta === null ? <Texto v="detalhe" cor={colors.accent}>pendente</Texto> : null}
             </Pressable>
-            <BotaoAcoes aoAbrir={(ancora) => setAcoes({ c: item.c, ancora })} />
+            <BotaoAcoes rotulo="Ações da conversa" aoAbrir={(ancora) => setAcoes({ c: item.c, ancora })} />
           </View>
         )}
       />
       {apagada ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingLeft: spacing.md, paddingRight: spacing.xs,
-          paddingVertical: spacing.xs, borderRadius: radius.md, backgroundColor: colors.tint + '14' }}>
+          paddingVertical: spacing.xs, borderRadius: radius.md, backgroundColor: alfa(colors.foreground, 0.08) }}>
           <Texto v="suave" cor={colors.foreground} style={{ flex: 1 }}>Conversa apagada</Texto>
           <Botao compacto v="secundario" rotulo="Desfazer" onPress={desfazer} />
         </View>
       ) : null}
     </View>
-    <MenuConversa aberto={menuAberto} aoFechar={fecharAcoes} aoEscolher={escolher} />
+    <MenuAncorado aberto={menu} aoFechar={fecharAcoes} />
     </>
   );
 }

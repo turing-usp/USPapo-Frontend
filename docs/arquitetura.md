@@ -6,11 +6,30 @@ estão em português (`Botao`, `Conversa`); termos técnicos, em inglês.
 
 ## Navegação (`app/`)
 
-- `_layout.tsx` carrega fontes e tema e faz a **porta de sessão**: sem
+- `_layout.tsx` carrega fontes, gestos (`GestureHandlerRootView`) e tema e faz a **porta de sessão**: sem
   sessão, qualquer rota fora de `(auth)` redireciona para `/login`.
 - `(auth)`: login (email/senha ou Google), cadastro com checklist de senha
   e redefinição de senha pelo link do email.
-- `(main)`: início (sugestões + composer), `chat/[id]`, histórico e ajustes.
+- `(main)`: início (novo chat: marca, composer, três perguntas frequentes e
+  a assinatura do Turing, numa tela que cabe sem rolar; o teclado não muda o
+  layout, só acrescenta a própria altura embaixo para dar para rolar até o
+  que ele cobre), `chat/[id]` e configurações. As conversas ficam na gaveta
+  (`components/Conversas.tsx`), que carrega a lista ainda fechada e só a
+  atualiza depois de terminar de abrir, para nada renderizar no meio do
+  deslize. O deslize da gaveta usa o Reanimated e começa no próprio toque:
+  o `Animated.timing` do React Native amostra a curva a 60 fps, e numa tela
+  de 120 Hz metade dos quadros repetia a posição.
+- **Gestos** (Android e iOS, `react-native-gesture-handler`): arrastar para
+  a direita em qualquer ponto abre a gaveta acompanhando o dedo, e arrastar
+  para a esquerda nela (ou no véu) a fecha; ao soltar, um movimento rápido
+  decide, senão vale a posição, e ela termina na velocidade do dedo. Só
+  arrastos quase horizontais contam, então listas rolam e tabelas largas
+  continuam rolando de lado. No iOS, a borda esquerda fica para o "voltar"
+  do sistema, e o "voltar" pela tela inteira do iOS 26 fica desligado
+  (`fullScreenGestureEnabled`). Segurar uma conversa abre o menu dela;
+  segurar uma pergunta ou resposta abre Copiar/Compartilhar. Todo gesto tem
+  um botão equivalente (menu, X, ⋮, ícones sob as mensagens), e a web usa
+  só os botões.
   O menu flutuante, a gaveta e os comunicados (pílula de aviso e vidro
   gigante) ficam em `components/Chrome.tsx`. Cada tela entra com um fade e
   uma subida curtos (`Tela`, em `components/Cena.tsx`); no app, a primeira
@@ -60,7 +79,7 @@ chega ao JS antes de o conteúdo nativo crescer.
 
 - **App:** push pelo Expo (`expo-notifications` + FCM). O token do aparelho
   vai para `dispositivos` pela função `registrar_dispositivo`; a permissão é
-  pedida na primeira pergunta ou em Ajustes. Com a conversa aberta na tela,
+  pedida na primeira pergunta ou em Configurações. Com a conversa aberta na tela,
   o banner dela não aparece. Tocar na notificação abre a conversa. Ao sair
   da conta, o aparelho é esquecido.
 - **Web:** sem push. Notificação local do navegador quando a resposta
@@ -102,16 +121,29 @@ relida ao abrir o app e ao voltar para ele depois de 5 minutos.
   `public/katex/` no `postinstall` (a CSP do site não permite CDN).
 - `Feedback.tsx`: útil / não útil, com motivo e comentário opcionais,
   gravados em `mensagem_feedbacks`.
+- `AcoesDaMensagem.tsx`: Copiar (`expo-clipboard`; o ícone vira um check por
+  um instante) e Compartilhar (a folha do sistema; na web só onde o
+  navegador tem `navigator.share`) sob cada pergunta e resposta, e os
+  mesmos dois num menu ao segurar a mensagem (`components/MenuAncorado.tsx`,
+  o mesmo menu das conversas). No app as mensagens não são selecionáveis,
+  para a seleção de texto não disputar o toque longo; na web continuam.
 
 ## Vidro fosco (`components/Glass.tsx`)
 
-Todo painel flutuante com blur usa o mesmo vidro do botão de menu (tinta
+Os controles flutuantes pequenos (botão de menu, pílula de aviso, menu da
+conta e o composer do chat) usam todos o mesmo vidro com blur (tinta
 `vidro`, um pouco mais densa que a dos cartões, para o texto passar no AA do
-WCAG no ponto mais movimentado de cada tema): gaveta, menu da conta, pílula
-de aviso, vidro gigante, menu de ações do histórico, "Desfazer" e o composer
-do chat. O composer tem só a borda laranja a mais.
+WCAG no ponto mais movimentado de cada tema). Os painéis grandes (gaveta,
+vidro gigante, menu de ações da conversa) são `opaco`: a mesma tinta e as
+mesmas bordas sobre a cor de fundo, sem blur. O composer tem só a borda
+laranja a mais. As tintas são cores da paleta com opacidade (branco no
+claro, o cinza `#494c56` no escuro e no OLED), e o blur é puro, sem
+saturação, igual nas plataformas: saturar o que está atrás tiraria as cores
+da paleta. Uma cor de borda passada em `borda` (a laranja do composer, o
+anel de foco dos campos) vai para os quatro lados, porque a cor por lado do
+filete venceria um `borderColor`.
 
-- **Web:** `backdrop-filter: blur() saturate()` no próprio painel. Um
+- **Web:** `backdrop-filter: blur()` no próprio painel. Um
   ancestral com `opacity < 1` isola o painel do que está atrás; o Chrome
   mantém o painel sem blur mesmo depois que o fade termina. Por isso o fade
   de entrada/saída vai no próprio vidro (`opacidade`), nunca num embrulho.
@@ -121,9 +153,7 @@ do chat. O composer tem só a borda laranja a mais.
   Um `BlurView` não consegue borrar o que está dentro dele mesmo; por isso
   `CamadaDeVidro` separa o `fundo` (conteúdo que rola, dentro de um
   `BlurTargetView`) da `frente` (menu, composer), que fica por cima como
-  irmã e borra o alvo. O chat (composer) e o histórico (menu de ações e
-  "Desfazer") têm a sua própria camada; o menu de ações não é um `Modal`,
-  que abriria outra janela, fora do alcance do blur.
+  irmã e borra o alvo. O chat (composer) tem a sua própria camada.
 - Superfícies dentro do conteúdo (balões, cartões) usam só uma tinta
   translúcida, que é barata.
 
@@ -135,8 +165,8 @@ Detalhes do Android, sem alterar o `expo-blur`:
 - O desfoque replica os pixels da borda do alvo (`CLAMP`). Se o alvo
   terminasse na borda da tela, o texto que passa por ali pulsaria na
   status bar e no composer ao rolar. Por isso o alvo transborda a tela em
-  56dp (pouco mais de 3σ do blur), preenchidos pelo próprio fundo
-  (`Backdrop` com `margem`).
+  56dp (pouco mais de 3σ do blur), preenchidos pela própria cor de fundo
+  (`Backdrop`).
 - **Cada vidro com blur renderiza o alvo inteiro (a tela mais a sobra)
   numa camada fora da tela e refaz o blur a cada quadro, seja qual for o
   tamanho do vidro** (medido: camadas de 1530×2790 px no Galaxy S22). O custo
@@ -149,8 +179,16 @@ Detalhes do Android, sem alterar o `expo-blur`:
   entra com fade e subida, sem zoom. Um `filter` (saturação, contraste)
   sobre o blur criava uma camada re-rasterizada a cada quadro e derrubava a
   rolagem para ~12 fps: não use.
-- O Android não tem o `saturate(150%)` do web, e a BlurView aplica um ruído
-  leve por cima (não configurável sem mexer na biblioteca).
+- A BlurView aplica um ruído leve por cima (não configurável sem mexer na
+  biblioteca).
+- **Tela congelada:** enquanto um painel grande está em cena (a gaveta ou o
+  vidro gigante, via `useCongelarTela`), a tela por baixo fica parada sob o
+  véu e vira uma textura de GPU (`renderToHardwareTextureAndroid`), e a
+  gaveta também enquanto desliza. Sem isso o Android redesenhava cada ícone,
+  texto e sombra da tela a cada quadro, e cada blur re-renderizava tudo isso
+  (medido no S22: GPU de ~10,6 para ~5 ms por quadro, com os blurs ligados).
+  Desligar o blur durante a gaveta também baixava o custo, mas fazia os
+  vidros piscarem ao trocar de aparência: não faça.
 
 **Sombras:** no Android, a elevação pinta uma caixa escura sob o vidro
 translúcido. Por isso o tema converte a sombra em `boxShadow` (a mesma do
@@ -165,24 +203,47 @@ web, recortada fora do painel).
 | `conversations.ts` | `conversas`/`mensagens`: histórico, abrir, anexar turno (idempotente), renomear, favoritar (máx. 5, regra no banco), excluir |
 | `cache.ts` | cache **só de leitura** das conversas, por usuário; sem rede, o histórico abre mas não dá para perguntar |
 | `feedback.ts` | avaliações das respostas |
-| `exclusoes.ts` | exclusões com "desfazer": pendentes no módulo (não na tela), efetivadas ao sair do histórico ou mandar o app para segundo plano |
-| `device.ts` | háptica (desligável), altura do teclado (no Android o RN já desconta as barras do sistema), ditado |
-| `markdown.ts` | blocos e selagem do streaming, `<br>`, larguras das colunas das tabelas, HTML do KaTeX |
+| `exclusoes.ts` | exclusões com "desfazer": pendentes no módulo (não na tela), efetivadas ao fechar a gaveta ou mandar o app para segundo plano |
+| `device.ts` | háptica (desligável; no Android, os efeitos curtos do sistema, que seguem a intensidade de toque do aparelho, em vez dos pulsos de 40-60 ms do `expo-haptics`), altura do teclado (no Android o RN já desconta as barras do sistema), ditado |
+| `markdown.ts` | blocos e selagem do streaming, `<br>`, larguras das colunas das tabelas, HTML e CSS do KaTeX |
 | `notificacoes.ts` / `.web.ts` | push (app) ou notificação local (web) quando a resposta termina |
 | `comunicados.ts` | leitura dos comunicados em vigor, escolha do que mostrar, ids vistos no aparelho |
 | `admin.ts` | tipos e formatação do resumo do painel |
 
-## Tema (`theme/index.tsx`)
+## Identidade visual e tema (`theme/`)
 
-Cores (claro, escuro e escuro OLED), espaçamento, raios, tipografia e
-tokens do vidro. O laranja da marca é o mesmo em todos. A escolha (sistema,
-claro, escuro, OLED) fica salva no aparelho; `escuro` vale para o escuro e
-para o OLED.
+O app segue o manual de identidade visual do Turing USP (2021).
 
-Os brilhos do fundo mantêm o mesmo contraste (WCAG) contra a base em todos
-os temas: ~1,16 e ~1,12, como os laranjas do claro. O escuro usa azul, e o
-OLED usa, sobre preto puro, uma brasa laranja e um índigo fraco, com vidro
-grafite e filete superior âmbar.
+- **Cores:** só as da paleta do manual (`theme/paleta.ts`: laranja
+  `#f1863d`, azul `#0660a2` e as de apoio), e a única variação é baixar a
+  opacidade (`alfa`). Fora da paleta, só o preto puro: o fundo do OLED e as
+  sombras dos temas escuros. Não há vermelho nem verde: erros têm o ícone
+  de alerta laranja ao lado do texto (`Erro`), "Parar" é um disco na cor do
+  texto e os checks da senha usam o destaque.
+- **Papéis por tema** (`theme/index.tsx`): fundo `#ededf5` com texto
+  grafite `#272830` (claro), grafite com texto branco (escuro), preto com
+  texto branco (OLED). O laranja é o preenchimento da marca (botões, a
+  marca do USPapo, bordas), e sobre ele texto e ícones são grafite (5,7:1;
+  branco daria 2,6:1). Texto e gráficos que precisam de cor usam o
+  `accent`: azul no claro e laranja nos escuros (laranja sobre o fundo
+  claro daria 2,2:1). Texto secundário é a cor do texto a 72%, que passa no
+  AA até sobre o vidro com conteúdo atrás.
+- **Fundo:** liso, só a cor do tema (`Backdrop`), como os fundos dos
+  padrões do manual; o ícone do app é a marca laranja sobre o azul
+  escuro `#2b4e72` liso (3,4:1).
+- **Fontes** (`assets/fonts/LEIAME.md`): Changa Medium em títulos, botões e
+  navegação; M PLUS 1p em texto; Roboto Mono em código e detalhes
+  (endereços, versão, "pendente"). Changa nunca em texto corrido, M PLUS 1p
+  e Roboto Mono nunca em títulos. A Orbitron é só do logotipo do Turing,
+  desenhado em SVG.
+- **Marcas:** `Marca` (o símbolo laranja do USPapo e o nome em Changa, no
+  `accent`) abre a tela inicial, a gaveta e as telas de entrada;
+  `Assinatura` ("Desenvolvido por" e o imagotipo do Turing: nas cores do
+  manual no claro, na forma branca nos escuros) fecha a tela inicial, as
+  telas de entrada e Configurações.
+
+A escolha do tema (sistema, claro, escuro, OLED) fica salva no aparelho;
+`escuro` vale para o escuro e para o OLED.
 
 ## Web
 

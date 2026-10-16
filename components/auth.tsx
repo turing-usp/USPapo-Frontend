@@ -5,11 +5,11 @@ import { Pressable, View } from 'react-native';
 import { Icone } from './icons';
 import { Texto } from './ui';
 import { REGRAS_DE_SENHA } from '../lib/auth';
-import { useTheme } from '../theme';
+import { alfa, useTheme } from '../theme';
 
 export function Divisor() {
   const { colors, spacing } = useTheme();
-  const linha = { flex: 1, height: 1, backgroundColor: colors.line, opacity: 0.15 };
+  const linha = { flex: 1, height: 1, backgroundColor: alfa(colors.foreground, 0.15) };
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
       <View style={linha} /><Texto v="suave">OU</Texto><View style={linha} />
@@ -32,7 +32,7 @@ export function RegrasDeSenha({ senha }: { senha: string }) {
     <View style={{ gap: 4, paddingHorizontal: 8 }}>
       {REGRAS_DE_SENHA.map(([rotulo, ok]) => (
         <View key={rotulo} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Icone nome={ok(senha) ? 'check' : 'fechar'} cor={ok(senha) ? colors.success : colors.faintForeground} tamanho={14} traco={2.2} />
+          <Icone nome={ok(senha) ? 'check' : 'fechar'} cor={ok(senha) ? colors.accent : colors.mutedForeground} tamanho={14} traco={2.2} />
           <Texto v="legenda" cor={ok(senha) ? colors.foreground : undefined}>{rotulo}</Texto>
         </View>
       ))}

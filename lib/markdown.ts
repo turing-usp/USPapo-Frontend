@@ -6,6 +6,8 @@ import katex from 'katex';
 import MarkdownIt from 'markdown-it';
 import texmath from 'markdown-it-texmath';
 
+import { alfa } from '../theme/paleta';
+
 export const KATEX_VERSAO = '0.18.7';
 
 // Single `$` is money in pt-BR ("R$ 10"): only the unambiguous delimiters count.
@@ -52,22 +54,48 @@ export function htmlDaResposta(texto: string): string {
   return md.render(texto.replace(/\$\$([\s\S]+?)\$\$/g, (_m, corpo: string) => `\\[${corpo}\\]`));
 }
 
-/** Table ink per scheme, shared by the native table and the KaTeX HTML one. */
-export function tintasDaTabela(escuro: boolean) {
-  return escuro
-    ? { linha: 'rgba(255,255,255,0.14)', cabecalho: 'rgba(255,255,255,0.08)', listra: 'rgba(255,255,255,0.035)' }
-    : { linha: 'rgba(11,16,48,0.14)', cabecalho: 'rgba(11,16,48,0.06)', listra: 'rgba(11,16,48,0.03)' };
+/** Table ink: the scheme's text color at low opacities, shared by the native table and the KaTeX HTML one. */
+export function tintasDaTabela(texto: string) {
+  return { linha: alfa(texto, 0.14), cabecalho: alfa(texto, 0.07), listra: alfa(texto, 0.035) };
 }
 
 /** Stylesheet for tables in answer HTML (KaTeX path). */
-export function cssDaTabela(escuro: boolean): string {
-  const cor = tintasDaTabela(escuro);
+export function cssDaTabela(texto: string): string {
+  const cor = tintasDaTabela(texto);
   return `.tabela{overflow-x:auto;margin:0 0 12px;border:1px solid ${cor.linha};border-radius:12px}`
     + `.tabela table{border-collapse:collapse;min-width:100%;font-size:14px;line-height:20px}`
     + `.tabela th,.tabela td{padding:8px 12px;text-align:left;vertical-align:top;min-width:56px;max-width:280px;border:0;border-left:1px solid ${cor.linha}}`
     + `.tabela th:first-child,.tabela td:first-child{border-left:0}`
     + `.tabela tr{border-bottom:1px solid ${cor.linha}}.tabela tbody tr:last-child{border-bottom:0}`
     + `.tabela thead{background:${cor.cabecalho}}.tabela tbody tr:nth-child(even){background:${cor.listra}}`;
+}
+
+/** The manual's faces as CSS: the app's own families (web, loaded by expo-font) or Google Fonts' (native WebView). */
+export type FontesCss = { corpo: string; negrito: string; pesoNegrito: number; titulo: string; pesoTitulo: number; mono: string };
+export const FONTES_APP: FontesCss = {
+  corpo: 'MPLUS1p-Regular', negrito: 'MPLUS1p-Bold', pesoNegrito: 400, titulo: 'Changa-Medium', pesoTitulo: 400, mono: 'RobotoMono-Regular',
+};
+export const FONTES_WEB: FontesCss = {
+  corpo: "'M PLUS 1p'", negrito: "'M PLUS 1p'", pesoNegrito: 700, titulo: 'Changa', pesoTitulo: 500, mono: "'Roboto Mono'",
+};
+
+/**
+ * Stylesheet for answer HTML (KaTeX path), inside `raiz`: the same type and colors as the native
+ * answer (text in M PLUS 1p, headings and table headers in Changa, code in Roboto Mono framed in orange).
+ */
+export function cssDaResposta(
+  cores: { foreground: string; mutedForeground: string; accent: string; brand: string }, f: FontesCss, raiz: string,
+): string {
+  const { cabecalho } = tintasDaTabela(cores.foreground);
+  return `${raiz}{color:${cores.foreground};font:18px/26px ${f.corpo},sans-serif}`
+    + `${raiz} a{color:${cores.accent}}${raiz} strong,${raiz} b{font-family:${f.negrito},sans-serif;font-weight:${f.pesoNegrito}}`
+    + `${raiz} h1,${raiz} h2,${raiz} h3,${raiz} h4,${raiz} h5,${raiz} h6,${raiz} th{font-family:${f.titulo},sans-serif;font-weight:${f.pesoTitulo}}`
+    + `${raiz} h1{font-size:24px;line-height:32px}${raiz} h2{font-size:20px;line-height:28px}${raiz} h3{font-size:18px;line-height:26px}`
+    + `${raiz} h4{font-size:16px;line-height:24px}${raiz} h5,${raiz} h6{font-size:14px;line-height:20px;color:${cores.mutedForeground}}`
+    + `${raiz} code,${raiz} pre{font-family:${f.mono},monospace;font-size:14px;line-height:20px}`
+    + `${raiz} code{background:${cabecalho};border-radius:8px;padding:0 5px}${raiz} pre code{background:none;padding:0}`
+    + `${raiz} pre{border:1px solid ${cores.brand};border-radius:12px;padding:12px;overflow-x:auto}`
+    + `${raiz} blockquote{margin:0 0 12px;padding-left:12px;border-left:2px solid ${cores.brand}}${raiz} li::marker{color:${cores.brand}}`;
 }
 
 /** Per column, in characters: the longest line and the longest word of any cell. */

@@ -1,14 +1,15 @@
 /**
  * Small, dependency-free charts for the admin panel (react-native-svg):
  * a single-series column chart with a hover/tap tooltip and a table toggle,
- * and a ranked horizontal bar list. One series = one color, no dual axes.
+ * and a ranked horizontal bar list. One series = one color (the accent, legible
+ * on every scheme), no dual axes.
  */
 import React, { useState } from 'react';
 import { Pressable, View, useWindowDimensions } from 'react-native';
 import Svg, { Line, Path } from 'react-native-svg';
 
 import { Texto } from './ui';
-import { useTheme } from '../theme';
+import { alfa, useTheme } from '../theme';
 
 const ALTURA = 140;
 const ESQUERDA = 36;
@@ -64,17 +65,17 @@ export function Colunas({ titulo, dados, formatar = String, rotuloX }: {
             <Svg width={largura} height={ALTURA} style={{ position: 'absolute' }}>
               {[0, 1, 2, 3].map((i) => {
                 const y = ALTURA - (i * ALTURA) / 3 + (i === 0 ? -0.5 : 0.5);
-                return <Line key={i} x1={ESQUERDA} x2={largura} y1={y} y2={y} stroke={colors.line} strokeOpacity={i ? 0.08 : 0.2} strokeWidth={1} />;
+                return <Line key={i} x1={ESQUERDA} x2={largura} y1={y} y2={y} stroke={colors.foreground} strokeOpacity={i ? 0.08 : 0.2} strokeWidth={1} />;
               })}
               {dados.map((d, i) => {
                 const h = topo ? (d.valor / topo) * (ALTURA - 1) : 0;
                 const x = ESQUERDA + i * faixa + (faixa - barra) / 2;
-                return h > 0 ? <Path key={d.chave} d={coluna(x, ALTURA - 1 - h, barra, h)} fill={colors.chart[0]}
+                return h > 0 ? <Path key={d.chave} d={coluna(x, ALTURA - 1 - h, barra, h)} fill={colors.accent}
                   fillOpacity={foco === null || foco === i ? 1 : 0.45} /> : null;
               })}
             </Svg>
             {[1, 2, 3].map((i) => (
-              <Texto key={i} v="legenda" style={{ position: 'absolute', left: 0, width: ESQUERDA - 6, textAlign: 'right', top: ALTURA - (i * ALTURA) / 3 - 8 }}>
+              <Texto key={i} v="detalhe" style={{ position: 'absolute', left: 0, width: ESQUERDA - 6, textAlign: 'right', top: ALTURA - (i * ALTURA) / 3 - 8 }}>
                 {formatar(passo * i)}
               </Texto>
             ))}
@@ -86,7 +87,7 @@ export function Colunas({ titulo, dados, formatar = String, rotuloX }: {
               ))}
             </View>
             <View style={{ position: 'absolute', left: ESQUERDA, right: 0, top: ALTURA + 2, flexDirection: 'row', justifyContent: 'space-between' }}>
-              {[dados[0], dados[dados.length - 1]].filter(Boolean).map((d, i) => <Texto key={i} v="legenda">{rotuloX(d.chave)}</Texto>)}
+              {[dados[0], dados[dados.length - 1]].filter(Boolean).map((d, i) => <Texto key={i} v="detalhe">{rotuloX(d.chave)}</Texto>)}
             </View>
           </View>
         </>
@@ -110,8 +111,8 @@ export function Ranking({ titulo, itens, vazio = 'Sem dados no período.' }: {
             <Texto v="suave" cor={colors.foreground} numberOfLines={1} style={{ flex: 1 }}>{item.nome}</Texto>
             <Texto v="suave" style={{ fontVariant: ['tabular-nums'] }}>{item.valor.toLocaleString('pt-BR')}</Texto>
           </View>
-          <View style={{ height: 8, borderRadius: 4, backgroundColor: colors.line + '14' }}>
-            <View style={{ width: `${(item.valor / max) * 100}%`, height: 8, borderRadius: 4, backgroundColor: colors.chart[1] }} />
+          <View style={{ height: 8, borderRadius: 4, backgroundColor: alfa(colors.foreground, 0.08) }}>
+            <View style={{ width: `${(item.valor / max) * 100}%`, height: 8, borderRadius: 4, backgroundColor: colors.accent }} />
           </View>
         </View>
       )) : <Texto v="legenda">{vazio}</Texto>}

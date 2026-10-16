@@ -1,19 +1,29 @@
-/** Root: fonts, theme, and the session gate (no session outside (auth) -> /login). */
+/** Root: fonts, gestures, theme, and the session gate (no session outside (auth) -> /login). */
 import { useFonts } from 'expo-font';
 import { DarkTheme, DefaultTheme, Redirect, Stack, ThemeProvider as NavTheme, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState, type ReactNode } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, Platform, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { Backdrop } from '../components/Cena';
 import { LogoUSPapo } from '../components/icons';
 import { Botao, Texto } from '../components/ui';
 import { carregarHaptics } from '../lib/device';
 import { supabase } from '../lib/supabase';
-import { ThemeProvider, useTheme } from '../theme';
+import { ThemeProvider, paleta, useTheme } from '../theme';
 
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
+
+// Web: keyboard focus rings every control in the brand orange instead of the browser's own color
+// (text fields light their own edge; see Campo).
+if (Platform.OS === 'web' && typeof document !== 'undefined' && !document.getElementById('uspapo-foco')) {
+  const estilo = Object.assign(document.createElement('style'), { id: 'uspapo-foco' });
+  estilo.textContent = `:focus-visible{outline:2px solid ${paleta.laranja};outline-offset:2px}`
+    + 'input:focus-visible,textarea:focus-visible{outline:none}';
+  document.head.appendChild(estilo);
+}
 
 function Centro({ children }: { children: ReactNode }) {
   const { spacing } = useTheme();
@@ -56,7 +66,7 @@ function PortaDeSessao({ children }: { children: ReactNode }) {
       <Centro>
         <Texto v="subtitulo" centro>Não foi possível carregar sua sessão</Texto>
         <Texto v="suave" centro>Verifique sua conexão e tente de novo.</Texto>
-        <Botao rotulo="Tentar novamente" onPress={() => { setEstado('carregando'); setTentativa((n) => n + 1); }} />
+        <Botao rotulo="Tentar de novo" onPress={() => { setEstado('carregando'); setTentativa((n) => n + 1); }} />
       </Centro>
     );
   }
@@ -67,7 +77,7 @@ function PortaDeSessao({ children }: { children: ReactNode }) {
 function Pilha() {
   const { colors, escuro } = useTheme();
   const base = escuro ? DarkTheme : DefaultTheme;
-  // Transparent navigator theme: the scene is painted by each group layout.
+  // Transparent navigator theme: the canvas is painted by each group layout.
   return (
     <NavTheme value={{ ...base, colors: { ...base.colors, background: 'transparent' } }}>
       <StatusBar style={escuro ? 'light' : 'dark'} />
@@ -77,12 +87,12 @@ function Pilha() {
 }
 
 export default function Raiz() {
+  // The manual's fonts, subset to Latin, Greek and symbols (anything else falls back to the system font).
   const [fontes, erro] = useFonts({
-    Roboto: require('../assets/fonts/Roboto-Regular.ttf'),
-    'Roboto-Bold': require('../assets/fonts/Roboto-Bold.ttf'),
-    Geom: require('../assets/fonts/Geom-Regular.ttf'),
-    'Geom-Bold': require('../assets/fonts/Geom-Bold.ttf'),
-    Orbitron: require('../assets/fonts/Orbitron-Regular.ttf'),
+    'Changa-Medium': require('../assets/fonts/Changa-Medium.ttf'),
+    'MPLUS1p-Regular': require('../assets/fonts/MPLUS1p-Regular.ttf'),
+    'MPLUS1p-Bold': require('../assets/fonts/MPLUS1p-Bold.ttf'),
+    'RobotoMono-Regular': require('../assets/fonts/RobotoMono-Regular.ttf'),
   });
   useEffect(() => {
     void carregarHaptics();
@@ -92,10 +102,12 @@ export default function Raiz() {
   }, [fontes, erro]);
   if (!fontes && !erro) return null;
   return (
-    <ThemeProvider>
-      <PortaDeSessao>
-        <Pilha />
-      </PortaDeSessao>
-    </ThemeProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider>
+        <PortaDeSessao>
+          <Pilha />
+        </PortaDeSessao>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }

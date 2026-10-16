@@ -1,4 +1,4 @@
-/** Settings: theme, haptics, memory, the offline cache and about. */
+/** Configurações: theme, haptics, notifications, memory, the offline cache and about. */
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import React, { useEffect, useState } from 'react';
@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ALTURA_CHROME } from '../../components/Chrome';
 import { Icone } from '../../components/icons';
-import { Botao, Cartao, Interruptor, Texto } from '../../components/ui';
+import { Assinatura, Botao, Cartao, Interruptor, Texto } from '../../components/ui';
 import { sessaoAtual } from '../../lib/auth';
 import { limparCache, tamanhoDoCache } from '../../lib/cache';
 import { carregarHaptics, definirHaptics, haptics } from '../../lib/device';
@@ -25,16 +25,17 @@ function formatarBytes(n: number): string {
   return n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
+/** A label and a technical value (a size, a version), the value in the detail face. */
 function Linha({ rotulo, valor }: { rotulo: string; valor: string }) {
   return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
       <Texto>{rotulo}</Texto>
-      <Texto v="suave">{valor}</Texto>
+      <Texto v="detalhe" style={{ flexShrink: 1, textAlign: 'right' }}>{valor}</Texto>
     </View>
   );
 }
 
-export default function Ajustes() {
+export default function Configuracoes() {
   const { colors, layout, spacing } = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -96,7 +97,7 @@ export default function Ajustes() {
   return (
     <ScrollView contentContainerStyle={{ alignSelf: 'center', width: '100%', maxWidth: layout.containerMaxWidth, gap: spacing.lg,
       paddingHorizontal: spacing.lg, paddingTop: insets.top + ALTURA_CHROME + spacing.md, paddingBottom: insets.bottom + spacing.xl }}>
-      <Texto v="titulo">Ajustes</Texto>
+      <Texto v="titulo">Configurações</Texto>
 
       <Cartao titulo="Tema">
         {/* Two by two on phones, one row when it fits. */}
@@ -156,8 +157,8 @@ export default function Ajustes() {
 
       <Cartao titulo="Sobre">
         <Linha rotulo="Versão" valor={versao} />
-        <Texto v="suave">Desenvolvido pelo Turing USP</Texto>
         <Texto v="link" accessibilityRole="link" onPress={() => void Linking.openURL(SITE)}>uspapo.turingusp.com</Texto>
+        <Assinatura inicio />
       </Cartao>
     </ScrollView>
   );

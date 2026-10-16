@@ -14,19 +14,19 @@ import {
   JANELAS, carregarResumo, dataHora, diaCurto, duracao, numero, porcento, resumoGuardado, segundos, type ItemFeedback, type Resumo,
 } from '../../lib/admin';
 import { ApiError } from '../../lib/api';
-import { useTheme } from '../../theme';
+import { alfa, useTheme } from '../../theme';
 
 /** A card in a wrapping row: `base` wide, growing to fill the line and shrinking to fit a phone. */
 const bloco = (base: number | `${number}%`) => ({ flexBasis: base, flexGrow: 1, flexShrink: 1, minWidth: 0 });
 
 function Kpi({ rotulo, valor, detalhe }: { rotulo: string; valor: string; detalhe: string }) {
-  const { spacing } = useTheme();
+  const { fonts, radius, spacing, typography } = useTheme();
   const { width } = useWindowDimensions();
   // Two per row on phones.
   return (
-    <Glass radius={16} style={{ ...bloco(width < 640 ? 140 : 170), gap: spacing.xs, padding: width < 640 ? spacing.md : spacing.lg }} testID="kpi">
+    <Glass radius={radius.lg} style={{ ...bloco(width < 640 ? 140 : 170), gap: spacing.xs, padding: width < 640 ? spacing.md : spacing.lg }} testID="kpi">
       <Texto v="suave">{rotulo}</Texto>
-      <Texto style={{ fontFamily: 'Roboto-Bold', fontSize: 28, lineHeight: 34 }}>{valor}</Texto>
+      <Texto style={{ fontFamily: fonts.title, ...typography['3xl'] }}>{valor}</Texto>
       <Texto v="legenda">{detalhe}</Texto>
     </Glass>
   );
@@ -41,9 +41,9 @@ function Tabela({ colunas, linhas }: { colunas: string[]; linhas: (string | numb
     <ScrollView horizontal>
       <View style={{ minWidth: '100%' }}>
         {[colunas, ...linhas].map((linha, i) => (
-          <View key={i} style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: colors.line + '14', paddingVertical: spacing.xs }}>
+          <View key={i} style={{ flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderColor: alfa(colors.foreground, 0.08), paddingVertical: spacing.xs }}>
             {linha.map((celula, j) => (
-              <Texto key={j} v={i ? 'suave' : 'secao'} cor={i && !j ? colors.foreground : undefined} numberOfLines={1}
+              <Texto key={j} v={!i ? 'secao' : j ? 'detalhe' : 'suave'} cor={i && !j ? colors.foreground : undefined} numberOfLines={1}
                 style={{ width: j ? 96 : primeira, textAlign: j ? 'right' : 'left', fontVariant: ['tabular-nums'] }}>{String(celula)}</Texto>
             ))}
           </View>
@@ -62,7 +62,7 @@ function ItemAvaliacao({ item }: { item: ItemFeedback }) {
     <Glass radius={radius.md} style={{ padding: spacing.md, gap: spacing.sm }}>
       <Pressable onPress={() => setAberto((a) => !a)} accessibilityRole="button" accessibilityState={{ expanded: aberto }}
         style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}>
-        <Icone nome={item.tipo} cor={item.tipo === 'like' ? colors.success : colors.danger} tamanho={18} />
+        <Icone nome={item.tipo} cor={item.tipo === 'like' ? colors.accent : colors.foreground} tamanho={18} />
         <View style={{ flex: 1 }}>
           <Texto v="suave" cor={colors.foreground} numberOfLines={aberto ? undefined : 1}>{item.pergunta ?? item.titulo ?? 'Conversa apagada'}</Texto>
           <Texto v="legenda">{[dataHora(item.created_at), item.usuario, item.motivo].filter(Boolean).join(' · ')}</Texto>
@@ -73,7 +73,7 @@ function ItemAvaliacao({ item }: { item: ItemFeedback }) {
       {aberto ? (
         <View style={{ gap: spacing.xs, borderLeftWidth: 2, borderColor: colors.brand, paddingLeft: spacing.md }}>
           <Texto v="suave" cor={colors.foreground} selectable>{item.resposta ?? 'Resposta indisponível (conversa apagada ou pendente).'}</Texto>
-          {item.fontes.map((f) => <Texto key={f} v="legenda" selectable>{f}</Texto>)}
+          {item.fontes.map((f) => <Texto key={f} v="detalhe" selectable>{f}</Texto>)}
         </View>
       ) : null}
     </Glass>
@@ -130,7 +130,7 @@ export default function Analytics() {
           <Pressable accessibilityLabel="Voltar" onPress={() => router.replace('/')} hitSlop={8}>
             <View style={{ transform: [{ rotate: '180deg' }] }}><Icone nome="seta" cor={colors.mutedForeground} /></View>
           </Pressable>
-          <Texto v="titulo">Painel do USPapo</Texto>
+          <Texto v="titulo">Painel de métricas</Texto>
         </View>
         {/* On phones the refresh is just its icon, so the whole row fits. */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }}>
@@ -138,7 +138,7 @@ export default function Analytics() {
             <Botao key={j} compacto v={dias === j ? 'primario' : 'secundario'} rotulo={j === 1 ? '24 h' : `${j} dias`} onPress={() => recarregar(j)} />
           ))}
           {estreito ? (
-            <Glass radius={radius.full} onPress={() => recarregar()} accessibilityLabel="Atualizar" semSombra
+            <Glass radius={radius.full} onPress={() => recarregar()} accessibilityLabel="Atualizar"
               style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
               <Icone nome="atualizar" cor={colors.foreground} tamanho={16} />
             </Glass>

@@ -2,9 +2,7 @@
 import React from 'react';
 import { Circle, Path, Svg } from 'react-native-svg';
 
-const BRAND = '#f1863d';
-/** The USPapo mark's own orange (also its animated form and the answer's cursor). */
-export const COR_LOGO = '#ff914c';
+import { paleta } from '../theme';
 
 const PATHS = {
   menu: 'M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5',
@@ -44,6 +42,13 @@ const PATHS = {
   externo: 'M13.5 6H18v4.5M18 6l-7.5 7.5M16.5 13.5V18H6V7.5h4.5',
   seta: 'm8.25 4.5 7.5 7.5-7.5 7.5',
   atualizar: 'M16 4v5h5M8 20v-5H3M5.6 9A7 7 0 0 1 18 7.5L21 9M3 15l3 1.5A7 7 0 0 0 18.4 15',
+  alerta: 'M12 8.25v4.5m0 3h.008M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
+  editar: 'm16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125',
+  copiar: 'M16.5 8.25V6a2.25 2.25 0 0 0-2.25-2.25H6A2.25 2.25 0 0 0 3.75 6v8.25A2.25 2.25 0 0 0 6 16.5h2.25m8.25-8.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-7.5A2.25 2.25 0 0 1 8.25 18v-1.5m8.25-8.25h-6a2.25 2.25 0 0 0-2.25 2.25v6',
+  /** Share as each system draws it: three linked nodes (Android, web), an arrow out of a box (iOS). */
+  compartilhar: 'M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z',
+  compartilharIos: 'M9 8.25H7.5a2.25 2.25 0 0 0-2.25 2.25v9a2.25 2.25 0 0 0 2.25 2.25h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25H15m0-3-3-3m0 0-3 3m3-3V15',
+  sair: 'M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75',
 } satisfies Record<string, string | string[]>;
 
 export type NomeIcone = keyof typeof PATHS | 'kebab';
@@ -66,28 +71,16 @@ export function Icone({ nome, cor, tamanho = 20, traco = 1.8 }: { nome: NomeIcon
   );
 }
 
-/** The USPapo mark (an open book/screen). */
+/** The USPapo mark (an open book/screen), always in the brand orange. */
 export function LogoUSPapo({ size = 40 }: { size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="131.297 24.502 249.939 453.875">
       <Path
         fill="none"
-        stroke={COR_LOGO}
+        stroke={paleta.laranja}
         strokeWidth={25}
         d="m 228.1516,306.48441 h -39.14196 m 39.1358,-77.8353 h -39.1358 m 39.12939,-77.92258 H 189.00964 M 227.99942,94.767333 143.79671,46.152882 V 374.86912 l 141.78215,81.85796 V 404.10032 M 228.13173,55.371627 368.70639,137.28661 367.44383,451.80426 228.15668,370.63953 Z"
       />
-    </Svg>
-  );
-}
-
-const TURING_T =
-  'M22.84,8.22V13.7H19.18v3.66H17.36V11.88H21V10.05H11.88v1.83h3.65V21H7.82A1.42,1.42,0,0,1,6.4,19.59v-15H25.07A1.43,1.43,0,0,1,26.49,6v13.6A1.43,1.43,0,0,1,25.07,21H19.18v1.83h7.31v5.48H24.66V24.66H18.78a1.42,1.42,0,0,1-1.42-1.42V19.18h7.3V6.4H8.22V19.18H13.7V13.7H10.05v-4a1.43,1.43,0,0,1,1.43-1.43Z';
-
-/** Turing's maze "T". */
-export function LogoTuring({ size = 32 }: { size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 32.89 32.89">
-      <Path d={TURING_T} fill={BRAND} />
     </Svg>
   );
 }
@@ -106,11 +99,16 @@ const TURING_WORDMARK = [
   'M122.78,26.49V12.91h7.64a2.24,2.24,0,0,1,2.23,2.25v5.23a2.25,2.25,0,0,1-2.23,2.25h-5.65v3.85Zm2.61-5.85h4.66a.92.92,0,0,0,.52-.09.86.86,0,0,0,.09-.51V15.51a.86.86,0,0,0-.09-.51.92.92,0,0,0-.52-.09h-4.66a.92.92,0,0,0-.52.09.83.83,0,0,0-.1.51V20a.83.83,0,0,0,.1.51A.92.92,0,0,0,125.39,20.64Z',
 ];
 
-/** Turing wordmark ("turing.usp"), brand orange. */
-export function TuringWordmark({ size = 56 }: { size?: number }) {
+/**
+ * The Turing imagotype (symbol + "turing.usp"), in the manual's forms: its colors (orange symbol,
+ * blue "turing", orange ".usp") on light backgrounds, and all white on dark or colored ones.
+ */
+export function TuringWordmark({ size = 56, branco = false }: { size?: number; branco?: boolean }) {
+  // Paths: the symbol, the six letters of "turing", then ".", "u", "s", "p".
+  const cor = (i: number) => (branco ? paleta.branco : i >= 1 && i <= 6 ? paleta.azul : paleta.laranja);
   return (
     <Svg width={size} height={size * (36.14 / 142.53)} viewBox="0 0 142.53 36.14">
-      {TURING_WORDMARK.map((d) => <Path key={d} d={d} fill={BRAND} />)}
+      {TURING_WORDMARK.map((d, i) => <Path key={d} d={d} fill={cor(i)} />)}
     </Svg>
   );
 }

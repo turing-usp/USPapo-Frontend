@@ -8,37 +8,76 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import Glass from './Glass';
-import { Icone, type NomeIcone } from './icons';
-import { useTheme } from '../theme';
+import { Icone, LogoUSPapo, TuringWordmark, type NomeIcone } from './icons';
+import { alfa, paleta, useTheme } from '../theme';
 
-type VarianteTexto = 'titulo' | 'subtitulo' | 'corpo' | 'secao' | 'suave' | 'legenda' | 'erro' | 'link';
+/**
+ * Titles, section labels (and buttons) are Changa; text is M PLUS 1p; details (addresses, versions,
+ * tags) are Roboto Mono. Secondary text is the text color at a lower opacity, links take the accent.
+ */
+type VarianteTexto = 'titulo' | 'subtitulo' | 'secao' | 'corpo' | 'suave' | 'legenda' | 'detalhe' | 'link';
 
 export function Texto({ v = 'corpo', cor, centro, style, ...props }: TextProps & {
   v?: VarianteTexto; cor?: string; centro?: boolean; style?: StyleProp<TextStyle>;
 }) {
   const { colors, fonts, typography } = useTheme();
   const base: Record<VarianteTexto, TextStyle> = {
-    titulo: { fontFamily: fonts.displayBold, ...typography['2xl'], color: colors.foreground },
-    subtitulo: { fontFamily: fonts.displayBold, ...typography.lg, color: colors.foreground },
+    titulo: { fontFamily: fonts.title, ...typography['2xl'], color: colors.foreground },
+    subtitulo: { fontFamily: fonts.title, ...typography.lg, color: colors.foreground },
+    secao: { fontFamily: fonts.title, ...typography.xs, color: colors.mutedForeground, textTransform: 'uppercase', letterSpacing: 0.8 },
     corpo: { fontFamily: fonts.body, ...typography.base, color: colors.foreground },
-    secao: { fontFamily: fonts.bodyBold, ...typography.sm, color: colors.mutedForeground, textTransform: 'uppercase', letterSpacing: 0.6 },
     suave: { fontFamily: fonts.body, ...typography.sm, color: colors.mutedForeground },
-    legenda: { fontFamily: fonts.body, ...typography.xs, color: colors.faintForeground },
-    erro: { fontFamily: fonts.body, ...typography.sm, color: colors.danger },
-    link: { fontFamily: fonts.body, ...typography.sm, color: colors.brand },
+    legenda: { fontFamily: fonts.body, ...typography.xs, color: colors.mutedForeground },
+    detalhe: { fontFamily: fonts.mono, ...typography.xs, color: colors.mutedForeground },
+    link: { fontFamily: fonts.body, ...typography.sm, color: colors.accent },
   };
   return <Text {...props} style={[base[v], cor ? { color: cor } : null, centro && { textAlign: 'center' }, style]} />;
 }
 
-type VarianteBotao = 'primario' | 'secundario' | 'perigo';
+/** An error or failure: the alert mark in the brand orange beside the text (the palette has no red). */
+export function Erro({ children, centro, onPress }: { children: ReactNode; centro?: boolean; onPress?: () => void }) {
+  const { colors, spacing } = useTheme();
+  return (
+    <View role="alert" style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, alignSelf: centro ? 'center' : 'stretch', maxWidth: '100%' }}>
+      <View style={{ paddingTop: 2 }}><Icone nome="alerta" cor={colors.brand} tamanho={16} traco={2} /></View>
+      <Texto v="suave" cor={colors.foreground} onPress={onPress} style={{ flexShrink: 1, textAlign: centro ? 'center' : 'left' }}>{children}</Texto>
+    </View>
+  );
+}
 
+/** The USPapo brand: its orange mark and its name in Changa, in the accent (the manual's two primaries on light). */
+export function Marca({ logo, fonte, coluna }: { logo: number; fonte: number; coluna?: boolean }) {
+  const { colors, fonts, spacing } = useTheme();
+  return (
+    <View style={{ alignItems: 'center', flexDirection: coluna ? 'column' : 'row', gap: coluna ? spacing.xs : spacing.sm }}>
+      <LogoUSPapo size={logo} />
+      <Text style={{ fontFamily: fonts.title, fontSize: fonte, lineHeight: Math.round(fonte * 1.25), color: colors.accent }}>USPapo</Text>
+    </View>
+  );
+}
+
+/** "Desenvolvido por" and the Turing imagotype (its colors on light, its white form on dark). */
+export function Assinatura({ inicio }: { inicio?: boolean }) {
+  const { escuro, spacing } = useTheme();
+  return (
+    <View accessibilityLabel="Desenvolvido pelo Turing USP"
+      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: inicio ? 'flex-start' : 'center', gap: spacing.sm }}>
+      <Texto v="suave">Desenvolvido por</Texto>
+      <TuringWordmark size={104} branco={escuro} />
+    </View>
+  );
+}
+
+type VarianteBotao = 'primario' | 'secundario';
+
+/** A pill button: orange with graphite text (primario) or glass (secundario), both with the glass lift. */
 export function Botao({ rotulo, onPress, v = 'primario', icone, carregando, desabilitado, compacto, style, accessibilityLabel }: {
   rotulo: string; onPress: () => void; v?: VarianteBotao; icone?: NomeIcone | ReactNode; carregando?: boolean;
   desabilitado?: boolean; compacto?: boolean; style?: StyleProp<ViewStyle>; accessibilityLabel?: string;
 }) {
   const { colors, fonts, glass, radius, typography } = useTheme();
   const inativo = desabilitado || carregando;
-  const cor = v === 'primario' ? colors.brandForeground : v === 'perigo' ? colors.danger : colors.foreground;
+  const cor = v === 'primario' ? colors.brandForeground : colors.foreground;
   const medidas: ViewStyle = {
     alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8,
     minHeight: compacto ? 36 : 48, paddingHorizontal: compacto ? 14 : 20, borderRadius: radius.full,
@@ -46,9 +85,7 @@ export function Botao({ rotulo, onPress, v = 'primario', icone, carregando, desa
   const conteudo = carregando ? <ActivityIndicator color={cor} /> : (
     <>
       {typeof icone === 'string' ? <Icone nome={icone as NomeIcone} cor={cor} tamanho={compacto ? 16 : 18} /> : icone}
-      <Text style={{ color: cor, fontFamily: fonts.bodyBold, fontSize: compacto ? typography.sm.fontSize : typography.base.fontSize }}>
-        {rotulo}
-      </Text>
+      <Text style={{ color: cor, fontFamily: fonts.title, ...(compacto ? typography.sm : typography.base) }}>{rotulo}</Text>
     </>
   );
   const a11y = { accessibilityRole: 'button' as const, accessibilityLabel: accessibilityLabel ?? rotulo, accessibilityState: { disabled: !!inativo } };
@@ -61,33 +98,51 @@ export function Botao({ rotulo, onPress, v = 'primario', icone, carregando, desa
     );
   }
   return (
-    <Glass onPress={inativo ? undefined : onPress} semSombra accessibilityLabel={a11y.accessibilityLabel}
-      borda={v === 'perigo' ? { borderColor: colors.danger } : undefined}
+    <Glass onPress={inativo ? undefined : onPress} accessibilityLabel={a11y.accessibilityLabel}
       style={[medidas, { opacity: inativo ? 0.55 : 1 }, style as ViewStyle]}>
       {conteudo}
     </Glass>
   );
 }
 
+/**
+ * The ink of every text field: placeholder, and the caret, selection handles and selection in the
+ * brand orange (Android would otherwise use the system's accent). Android paints `selectionColor`
+ * opaque over the text, so there it is a tint; elsewhere it also colors the caret.
+ */
+export function useTintaDeCampo() {
+  const { colors } = useTheme();
+  return {
+    placeholderTextColor: colors.mutedForeground,
+    selectionColor: Platform.OS === 'android' ? alfa(colors.brand, 0.35) : colors.brand,
+    cursorColor: colors.brand,
+    selectionHandleColor: colors.brand,
+  };
+}
+
+/** The ring a focused field shows: the brand orange on every edge. */
+export const ANEL_DE_FOCO = 2;
+
 /** The glass pill text field (focus lights the edge in the brand color). */
 export function Campo({ icone, final, style, multiline, ...props }: TextInputProps & {
   icone?: NomeIcone; final?: ReactNode; style?: StyleProp<ViewStyle>;
 }) {
   const { colors, fonts, radius, typography } = useTheme();
+  const tinta = useTintaDeCampo();
   const [focado, setFocado] = useState(false);
   return (
-    <Glass radius={multiline ? radius.lg : radius.full} borda={focado ? { borderColor: colors.brand, borderWidth: 2 } : undefined}
+    <Glass radius={multiline ? radius.lg : radius.full} borda={focado ? { borderColor: colors.brand, borderWidth: ANEL_DE_FOCO } : undefined}
       style={[{ alignItems: multiline ? 'flex-start' : 'center', flexDirection: 'row', gap: 12, minHeight: 52, paddingHorizontal: 18, paddingVertical: multiline ? 12 : 0 }, style as ViewStyle]}>
       {icone ? <Icone nome={icone} cor={colors.mutedForeground} /> : null}
       <TextInput
-        placeholderTextColor={colors.faintForeground}
-        selectionColor={colors.brand}
+        {...tinta}
         multiline={multiline}
         {...props}
         onFocus={(e) => { setFocado(true); props.onFocus?.(e); }}
         onBlur={(e) => { setFocado(false); props.onBlur?.(e); }}
-        // position: relative lifts the web <input> above the glass layers; outlineStyle drops the browser ring.
-        style={{ flex: 1, color: colors.foreground, fontFamily: fonts.body, fontSize: typography.base.fontSize, minHeight: multiline ? 66 : 48,
+        // position: relative lifts the web <input> above the glass layers; outlineStyle drops the browser ring;
+        // minWidth 0 lets it shrink below the width the browser derives from the font (icons stay visible).
+        style={{ flex: 1, minWidth: 0, color: colors.foreground, fontFamily: fonts.body, fontSize: typography.base.fontSize, minHeight: multiline ? 66 : 48,
           textAlignVertical: multiline ? 'top' : 'center', position: 'relative', outlineStyle: 'none' } as object}
       />
       {final}
@@ -109,6 +164,19 @@ export function Coluna({ children, chat, style, pointerEvents }: {
   );
 }
 
+/** A row of a pop-up menu (the account menu, the conversation actions), with an optional icon. */
+export function ItemDeMenu({ rotulo, icone, onPress }: { rotulo: string; icone?: NomeIcone; onPress: () => void }) {
+  const { colors, radius, spacing } = useTheme();
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress}
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 44, paddingHorizontal: spacing.md,
+        borderRadius: radius.md, backgroundColor: pressed ? alfa(colors.foreground, 0.08) : 'transparent' })}>
+      {icone ? <Icone nome={icone} cor={colors.mutedForeground} tamanho={18} /> : null}
+      <Texto v="suave" cor={colors.foreground}>{rotulo}</Texto>
+    </Pressable>
+  );
+}
+
 /** A glass card with an optional section title (settings, admin panels). */
 export function Cartao({ titulo, children, style }: { titulo?: string; children: ReactNode; style?: StyleProp<ViewStyle> }) {
   const { radius, spacing } = useTheme();
@@ -120,15 +188,15 @@ export function Cartao({ titulo, children, style }: { titulo?: string; children:
   );
 }
 
-/** The on/off pill with its label (settings toggles). */
+/** The on/off pill with its label (settings toggles): orange when on, the text color at 25% when off. */
 export function Interruptor({ ligado, rotulo, onPress }: { ligado: boolean; rotulo: string; onPress: () => void }) {
   const { colors, radius, spacing } = useTheme();
   return (
     <Pressable accessibilityRole="switch" accessibilityState={{ checked: ligado }} onPress={onPress}
       style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
       <View style={{ width: 48, height: 28, padding: 3, borderRadius: radius.full, justifyContent: 'center',
-        alignItems: ligado ? 'flex-end' : 'flex-start', backgroundColor: ligado ? colors.brand : colors.line + '33' }}>
-        <View style={{ width: 22, height: 22, borderRadius: radius.full, backgroundColor: colors.brandForeground }} />
+        alignItems: ligado ? 'flex-end' : 'flex-start', backgroundColor: ligado ? colors.brand : alfa(colors.foreground, 0.25) }}>
+        <View style={{ width: 22, height: 22, borderRadius: radius.full, backgroundColor: paleta.branco }} />
       </View>
       <Texto style={{ flex: 1 }}>{rotulo}</Texto>
     </Pressable>
@@ -147,14 +215,21 @@ export function Estado({ titulo, mensagem, acao, aoAgir }: { titulo?: string; me
   );
 }
 
-/** Centered, keyboard-aware single column for the auth screens (the old `max-w-md` card). */
+/**
+ * Centered, keyboard-aware single column for the auth screens (the old `max-w-md` card), between
+ * the USPapo brand and the Turing signature, like the home.
+ */
 export function ColunaCentral({ children }: { children: ReactNode }) {
   const { spacing } = useTheme();
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl }}>
-        <SafeAreaView style={{ width: '100%', maxWidth: 448, gap: spacing.lg }}>{children}</SafeAreaView>
+        <SafeAreaView style={{ width: '100%', maxWidth: 448, gap: spacing.lg }}>
+          <View style={{ alignItems: 'center', marginBottom: spacing.sm }}><Marca logo={32} fonte={30} /></View>
+          {children}
+          <View style={{ marginTop: spacing.lg }}><Assinatura /></View>
+        </SafeAreaView>
       </ScrollView>
     </KeyboardAvoidingView>
   );

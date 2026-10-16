@@ -1,7 +1,8 @@
 /** Chat lines: question bubble and answer (+ sources); progress, errors and notes are in Andamento. */
 import React, { useEffect, useState, type ReactNode } from 'react';
-import { Animated, Easing, Linking, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, Linking, Platform, View, useWindowDimensions } from 'react-native';
 
+import { BotoesDaMensagem, Segurar } from './AcoesDaMensagem';
 import Resposta from './Resposta';
 import Glass from '../Glass';
 import { Icone } from '../icons';
@@ -32,13 +33,13 @@ function Fontes({ urls }: { urls: string[] }) {
   if (!seguras.length) return null;
   return (
     <View style={{ gap: spacing.xs, marginTop: spacing.xs }}>
-      <Texto v="secao" style={{ fontSize: 11 }}>Fontes consultadas</Texto>
+      <Texto v="secao">Fontes consultadas</Texto>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
         {seguras.map((url) => (
           <Glass key={url} radius={radius.full} accessibilityLabel={url} onPress={() => void Linking.openURL(url).catch(() => undefined)}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '100%', paddingVertical: 5, paddingHorizontal: spacing.sm }}>
-            <Icone nome="externo" cor={colors.brand} tamanho={13} traco={2} />
-            <Texto v="legenda" numberOfLines={1} cor={colors.mutedForeground} style={{ flexShrink: 1 }}>{rotuloDaFonte(url)}</Texto>
+            <Icone nome="externo" cor={colors.accent} tamanho={13} traco={2} />
+            <Texto v="detalhe" numberOfLines={1} style={{ flexShrink: 1 }}>{rotuloDaFonte(url)}</Texto>
           </Glass>
         ))}
       </View>
@@ -46,21 +47,28 @@ function Fontes({ urls }: { urls: string[] }) {
   );
 }
 
+/** The question, with Copiar and Compartilhar under it (and on a long press). */
 export function BolhaUsuario({ texto }: { texto: string }) {
+  const { radius, spacing, typography } = useTheme();
   const { width } = useWindowDimensions();
   const entrada = useEntrada();
   return (
-    <Animated.View style={{ alignSelf: 'flex-end', maxWidth: width >= 640 ? '75%' : '85%', opacity: entrada }}>
-      <Glass radius={24} style={{ paddingHorizontal: 20, paddingVertical: 12 }}>
-        <Texto style={{ fontSize: 18, lineHeight: 26 }} selectable>{texto}</Texto>
-      </Glass>
+    <Animated.View style={{ alignSelf: 'flex-end', alignItems: 'flex-end', maxWidth: width >= 640 ? '75%' : '85%', opacity: entrada }}>
+      <Segurar texto={texto}>
+        <Glass radius={radius.xl} style={{ paddingHorizontal: spacing.xl, paddingVertical: spacing.md }}>
+          {/* Selecting text would fight the long press on Android and iOS, whose menu copies it all. */}
+          <Texto style={typography.lg} selectable={Platform.OS === 'web'}>{texto}</Texto>
+        </Glass>
+      </Segurar>
+      <BotoesDaMensagem texto={texto} style={{ marginTop: spacing.xs }} />
     </Animated.View>
   );
 }
 
 /**
  * The answer. A live one (`revelar`) is written out from the cursor the thinking mark became, and
- * its sources and feedback fade in once all of it is on screen.
+ * its sources and footer (`children`: Copiar, Compartilhar and the feedback) fade in once all of it
+ * is on screen. Once complete, a long press opens Copiar and Compartilhar.
  */
 export function BolhaAssistente({ linha, escrevendo, revelar = false, children }: {
   linha: Extract<Linha, { autor: 'assistant' }>; escrevendo: boolean; revelar?: boolean; children?: ReactNode;
@@ -68,7 +76,9 @@ export function BolhaAssistente({ linha, escrevendo, revelar = false, children }
   const [revelada, setRevelada] = useState(!revelar);
   return (
     <View style={{ alignSelf: 'stretch' }}>
-      <Resposta texto={linha.texto} streaming={escrevendo} revelar={revelar} aoRevelar={() => setRevelada(true)} />
+      <Segurar texto={linha.completo ? linha.texto : null}>
+        <Resposta texto={linha.texto} streaming={escrevendo} revelar={revelar} aoRevelar={() => setRevelada(true)} />
+      </Segurar>
       {linha.completo && revelada ? <Rodape animar={revelar}><Fontes urls={linha.fontes} />{children}</Rodape> : null}
     </View>
   );
