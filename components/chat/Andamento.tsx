@@ -64,7 +64,11 @@ function Marca({ fase, repouso, colapso, tom, cor }: {
   );
 }
 
-/** One slice of the orange copy of the status, lit while the breath passes over it. */
+/**
+ * One slice of the orange copy of the status, lit while the breath passes over it. The copy keeps
+ * the whole status's width: on the web a single-line text is capped at its parent's width (here the
+ * 8 px slice), which cut every slice but the first.
+ */
 function Fatia({ i, largura, texto, estilo, onda }: { i: number; largura: number; texto: string; estilo: TextStyle; onda: SharedValue<number> }) {
   const centro = (i + 0.5) * FATIA;
   const brilho = useAnimatedStyle(() => {
@@ -74,7 +78,10 @@ function Fatia({ i, largura, texto, estilo, onda }: { i: number; largura: number
   }, [largura]);
   return (
     <Animated.View style={[{ position: 'absolute', top: 0, bottom: 0, left: i * FATIA, width: FATIA, overflow: 'hidden' }, brilho]}>
-      <Text numberOfLines={1} style={[estilo, { position: 'absolute', top: 0, left: -i * FATIA, width: largura + 1, color: LARANJA }]}>{texto}</Text>
+      <Text numberOfLines={1}
+        style={[estilo, { position: 'absolute', top: 0, left: -i * FATIA, width: largura + 1, maxWidth: largura + 1, color: LARANJA }]}>
+        {texto}
+      </Text>
     </Animated.View>
   );
 }
