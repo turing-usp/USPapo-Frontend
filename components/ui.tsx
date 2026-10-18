@@ -1,14 +1,15 @@
 /** Shared UI primitives: every screen uses these so type, buttons and fields look the same everywhere. */
-import React, { useState, type ReactNode } from 'react';
+import React, { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions,
   type StyleProp, type TextInputProps, type TextProps, type TextStyle, type ViewStyle,
 } from 'react-native';
-
+import Reanimated, { interpolateColor, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import Glass from './Glass';
 import { Icone, LogoUSPapo, TuringWordmark, type NomeIcone } from './icons';
+import { Pressionavel, Surgir, pulsar, type Movimento } from './Movimento';
 import { alfa, paleta, useTheme } from '../theme';
 
 /**
@@ -51,25 +52,32 @@ export function tintaDoToque({ pressed, hovered }: EstadoDoToque, cor: string): 
   return pressed ? alfa(cor, 0.1) : hovered ? alfa(cor, 0.06) : 'transparent';
 }
 
-/** A solid pressable (the orange button, the send disc, the avatar) only fades: the palette has no lighter orange. */
-export const opacidadeDoToque = ({ pressed, hovered }: EstadoDoToque): number => (pressed ? 0.85 : hovered ? 0.92 : 1);
-
 /**
  * An icon button with the tint behind it. `ativo` keeps the accent tint (a chosen thumb); `rente`
- * lets the tint spill past the icon without moving anything (a close button beside a title).
+ * lets the tint spill past the icon without moving anything (a close button beside a title). A new
+ * icon (Copiar's check) or a thumb just chosen pops in.
  */
 export function BotaoDeIcone({ icone, rotulo, onPress, cor, tamanho = 17, lado = 32, ativo, rente, desabilitado }: {
   icone: NomeIcone; rotulo: string; onPress: () => void; cor?: string; tamanho?: number; lado?: number;
   ativo?: boolean; rente?: boolean; desabilitado?: boolean;
 }) {
   const { colors, radius } = useTheme();
+  const chave = `${icone}:${!!ativo}`;
+  const [inicial] = useState({ chave, icone });
+  const [mudou, setMudou] = useState(false);
+  if (!mudou && chave !== inicial.chave) setMudou(true);
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={rotulo} accessibilityState={{ selected: ativo, disabled: desabilitado }}
       onPress={onPress} disabled={desabilitado} hitSlop={4}
       style={(estado) => ({ width: lado, height: lado, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md,
         margin: rente ? -(lado - tamanho) / 2 : 0, opacity: desabilitado ? 0.5 : 1,
         backgroundColor: ativo ? alfa(colors.accent, 0.14) : tintaDoToque(estado, colors.foreground) })}>
-      <Icone nome={icone} cor={cor ?? (ativo ? colors.accent : colors.mutedForeground)} tamanho={tamanho} />
+      {/* Plain until it first changes: a conversation has dozens of these. */}
+      {mudou ? (
+        <Surgir key={chave} animar={!!ativo || icone !== inicial.icone} de={0.5}>
+          <Icone nome={icone} cor={cor ?? (ativo ? colors.accent : colors.mutedForeground)} tamanho={tamanho} />
+        </Surgir>
+      ) : <Icone nome={icone} cor={cor ?? (ativo ? colors.accent : colors.mutedForeground)} tamanho={tamanho} />}
     </Pressable>
   );
 }
@@ -110,14 +118,27 @@ export function Assinatura({ inicio }: { inicio?: boolean }) {
 
 type VarianteBotao = 'primario' | 'secundario';
 
-/** A pill button: orange with graphite text (primario) or glass (secundario), both with the glass lift. */
+/**
+ * A pill button: orange with graphite text (primario) or glass (secundario), both with the glass
+ * lift; pressed, it gives and springs back. Both variants are the same pressable with a different
+ * fill, so a button that turns primario as it is pressed (a chosen theme) keeps its spring, and it
+ * pops as it turns.
+ */
 export function Botao({ rotulo, onPress, v = 'primario', icone, carregando, desabilitado, compacto, style, accessibilityLabel }: {
   rotulo: string; onPress: () => void; v?: VarianteBotao; icone?: NomeIcone | ReactNode; carregando?: boolean;
   desabilitado?: boolean; compacto?: boolean; style?: StyleProp<ViewStyle>; accessibilityLabel?: string;
 }) {
   const { colors, fonts, glass, radius, typography } = useTheme();
   const inativo = desabilitado || carregando;
-  const cor = v === 'primario' ? colors.brandForeground : colors.foreground;
+  const primario = v === 'primario';
+  const cor = primario ? colors.brandForeground : colors.foreground;
+  const escala = useSharedValue(1);
+  const [movimento] = useState<Movimento>(() => ({ escala }));
+  const montado = useRef(false);
+  useEffect(() => {
+    if (montado.current && primario) pulsar(escala, 1.06);
+    montado.current = true;
+  }, [primario, escala]);
   const medidas: ViewStyle = {
     alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8,
     minHeight: compacto ? 36 : 48, paddingHorizontal: compacto ? 14 : 20, borderRadius: radius.full,
@@ -128,20 +149,23 @@ export function Botao({ rotulo, onPress, v = 'primario', icone, carregando, desa
       <Text style={{ color: cor, fontFamily: fonts.title, ...(compacto ? typography.sm : typography.base) }}>{rotulo}</Text>
     </>
   );
-  const a11y = { accessibilityRole: 'button' as const, accessibilityLabel: accessibilityLabel ?? rotulo, accessibilityState: { disabled: !!inativo } };
-  if (v === 'primario') {
-    return (
-      <Pressable {...a11y} onPress={onPress} disabled={inativo}
-        style={(estado) => [medidas, glass.shadow, { backgroundColor: colors.brand, opacity: inativo ? 0.55 : opacidadeDoToque(estado) }, style]}>
-        {conteudo}
-      </Pressable>
-    );
-  }
+  // The fill sits behind the content (zIndex -1 inside the button's own stacking context, for the web).
+  const fundo = [StyleSheet.absoluteFill, { borderRadius: radius.full, zIndex: -1 }];
   return (
-    <Glass onPress={inativo ? undefined : onPress} accessibilityLabel={a11y.accessibilityLabel}
-      style={[medidas, { opacity: inativo ? 0.55 : 1 }, style as ViewStyle]}>
-      {conteudo}
-    </Glass>
+    <Pressionavel accessibilityRole="button" accessibilityLabel={accessibilityLabel ?? rotulo} accessibilityState={{ disabled: !!inativo }}
+      onPress={onPress} disabled={inativo} desbotar={primario} aperto={compacto ? 0.94 : 0.96} opacidade={inativo ? 0.55 : 1}
+      movimento={movimento} style={[medidas, glass.shadow, { zIndex: 0 }, style]}>
+      {(estado: EstadoDoToque) => (
+        <>
+          {primario ? <View pointerEvents="none" style={[fundo, { backgroundColor: colors.brand }]} />
+            : <Glass semSombra radius={radius.full} pointerEvents="none" style={fundo} />}
+          {!primario && (estado.pressed || estado.hovered) ? (
+            <View pointerEvents="none" style={[fundo, { backgroundColor: alfa(colors.foreground, estado.pressed ? 0.1 : 0.06) }]} />
+          ) : null}
+          {conteudo}
+        </>
+      )}
+    </Pressionavel>
   );
 }
 
@@ -228,18 +252,31 @@ export function Cartao({ titulo, children, style }: { titulo?: string; children:
   );
 }
 
-/** The on/off pill with its label (settings toggles): orange when on, the text color at 25% when off. */
+/** The knob's travel: a 48pt track, 3pt of padding and a 22pt knob. */
+const CURSO = 48 - 2 * 3 - 22;
+/** The knob's spring: bubbly, but its bounce stays inside the track's padding. */
+const MOLA_DO_BOTAO = { damping: 20, stiffness: 420, mass: 0.7 } as const;
+
+/** The on/off pill with its label (settings toggles): orange when on, the text color at 25% when off; the knob springs across. */
 export function Interruptor({ ligado, rotulo, onPress }: { ligado: boolean; rotulo: string; onPress: () => void }) {
   const { colors, radius, spacing } = useTheme();
+  const posicao = useSharedValue(ligado ? 1 : 0);
+  useEffect(() => {
+    posicao.set(withSpring(ligado ? 1 : 0, MOLA_DO_BOTAO));
+  }, [ligado, posicao]);
+  const desligado = alfa(colors.foreground, 0.25);
+  const trilho = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(Math.min(1, Math.max(0, posicao.value)), [0, 1], [desligado, colors.brand]),
+  }), [desligado, colors.brand]);
+  const botao = useAnimatedStyle(() => ({ transform: [{ translateX: posicao.value * CURSO }] }));
   return (
     // The tint spills past the row (negative margins), so the card's layout stays put.
     <Pressable accessibilityRole="switch" accessibilityState={{ checked: ligado }} onPress={onPress}
       style={(estado) => ({ flexDirection: 'row', alignItems: 'center', gap: spacing.md, margin: -spacing.sm, padding: spacing.sm,
         borderRadius: radius.md, backgroundColor: tintaDoToque(estado, colors.foreground) })}>
-      <View style={{ width: 48, height: 28, padding: 3, borderRadius: radius.full, justifyContent: 'center',
-        alignItems: ligado ? 'flex-end' : 'flex-start', backgroundColor: ligado ? colors.brand : alfa(colors.foreground, 0.25) }}>
-        <View style={{ width: 22, height: 22, borderRadius: radius.full, backgroundColor: paleta.branco }} />
-      </View>
+      <Reanimated.View style={[{ width: 48, height: 28, padding: 3, borderRadius: radius.full, justifyContent: 'center' }, trilho]}>
+        <Reanimated.View style={[{ width: 22, height: 22, borderRadius: radius.full, backgroundColor: paleta.branco }, botao]} />
+      </Reanimated.View>
       <Texto style={{ flex: 1 }}>{rotulo}</Texto>
     </Pressable>
   );

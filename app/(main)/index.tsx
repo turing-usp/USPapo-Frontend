@@ -1,7 +1,8 @@
 /**
- * Home (novo chat): brand, composer, 3 shuffled frequent questions and the Turing signature, all on
- * one screen without scrolling; short screens get a tighter layout. The keyboard changes nothing on
- * it: it only adds its own height below, so whatever it covers can be scrolled to.
+ * Home (novo chat): brand, composer, 3 shuffled frequent questions (they pop in one after another)
+ * and the Turing signature, all on one screen without scrolling; short screens get a tighter
+ * layout. The keyboard changes nothing on it: it only adds its own height below, so whatever it
+ * covers can be scrolled to.
  */
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
@@ -11,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ALTURA_CHROME } from '../../components/Chrome';
 import Composer from '../../components/Composer';
 import Glass from '../../components/Glass';
+import { useSurgimento } from '../../components/Movimento';
 import { Assinatura, Coluna, Marca, Texto } from '../../components/ui';
 import { guardarPendente, novoId } from '../../lib/chat';
 import { useAlturaDoTeclado } from '../../lib/device';
@@ -37,8 +39,23 @@ function sortear(): [string, string][] {
 /** Below this height (between the chrome and the bottom edge) the home tightens to fit. */
 const ALTURA_CONFORTAVEL = 640;
 
+/** A frequent question: a glass chip that pops in after the screen's entrance, the `ordem`-th of them. */
+function Pergunta({ trecho, ordem, compacto, largo, aoTocar }: {
+  trecho: string; ordem: number; compacto: boolean; largo: boolean; aoTocar: () => void;
+}) {
+  const { radius, spacing } = useTheme();
+  const { movimento } = useSurgimento(true, { atraso: 140 + ordem * 70 });
+  return (
+    <Glass radius={radius.full} onPress={aoTocar} accessibilityLabel={trecho} movimento={movimento}
+      style={{ alignItems: 'center', justifyContent: 'center', minHeight: compacto ? 44 : 52, paddingHorizontal: spacing.lg,
+        alignSelf: 'center', width: largo ? undefined : '100%', maxWidth: 288, flex: largo ? 1 : undefined }}>
+      <Texto centro numberOfLines={2}>{trecho}</Texto>
+    </Glass>
+  );
+}
+
 export default function Inicio() {
-  const { colors, radius, spacing, typography } = useTheme();
+  const { colors, spacing, typography } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
@@ -82,12 +99,8 @@ export default function Inicio() {
             <Texto v="secao">Perguntas frequentes</Texto>
             <View style={{ flexDirection: largo ? 'row' : 'column', gap: largo ? spacing.lg : compacto ? spacing.sm : spacing.md,
               width: '100%', justifyContent: 'center' }}>
-              {perguntas.map(([trecho, prompt]) => (
-                <Glass key={trecho} radius={radius.full} onPress={() => iniciar(prompt)} accessibilityLabel={trecho}
-                  style={{ alignItems: 'center', justifyContent: 'center', minHeight: compacto ? 44 : 52, paddingHorizontal: spacing.lg,
-                    alignSelf: 'center', width: largo ? undefined : '100%', maxWidth: 288, flex: largo ? 1 : undefined }}>
-                  <Texto centro numberOfLines={2}>{trecho}</Texto>
-                </Glass>
+              {perguntas.map(([trecho, prompt], i) => (
+                <Pergunta key={trecho} trecho={trecho} ordem={i} compacto={compacto} largo={largo} aoTocar={() => iniciar(prompt)} />
               ))}
             </View>
           </Coluna>

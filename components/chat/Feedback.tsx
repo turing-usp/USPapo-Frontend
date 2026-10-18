@@ -1,12 +1,13 @@
 /**
  * Like/dislike under a finished answer, after its other actions (`acoes`); a dislike is saved at
- * once and opens the reason/comment form.
+ * once and pops open the reason/comment form.
  */
 import React, { useState, type ReactNode } from 'react';
 import { View } from 'react-native';
 
 import Glass from '../Glass';
 import { Icone } from '../icons';
+import { Surgir } from '../Movimento';
 import { Botao, BotaoDeIcone, Campo, Erro, Texto } from '../ui';
 import { haptics } from '../../lib/device';
 import { removerFeedback, salvarFeedback, type Feedback as Salvo, type TipoFeedback } from '../../lib/feedback';
@@ -69,29 +70,31 @@ export default function Feedback({ userId, conversaId, ordem, inicial, acoes }: 
         {polegar('dislike', 'Resposta ruim')}
       </View>
       {form ? (
-        <Glass radius={radius.lg} style={{ padding: spacing.md, gap: spacing.sm }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Texto v="subtitulo" style={{ flexShrink: 1 }}>Como podemos melhorar esta resposta?</Texto>
-            <BotaoDeIcone icone="fechar" rotulo="Fechar" onPress={() => setForm(false)} tamanho={16} lado={28} rente />
-          </View>
-          {estado === 'enviado' ? (
-            <View style={{ flexDirection: 'row', gap: spacing.xs, alignItems: 'center' }}>
-              <Icone nome="check" cor={colors.accent} tamanho={16} />
-              <Texto v="legenda" cor={colors.accent} style={{ flexShrink: 1 }}>Obrigado pelo seu feedback! Ele nos ajuda a melhorar.</Texto>
+        <Surgir de={0.9} origem="left top">
+          <Glass radius={radius.lg} style={{ padding: spacing.md, gap: spacing.sm }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Texto v="subtitulo" style={{ flexShrink: 1 }}>Como podemos melhorar esta resposta?</Texto>
+              <BotaoDeIcone icone="fechar" rotulo="Fechar" onPress={() => setForm(false)} tamanho={16} lado={28} rente />
             </View>
-          ) : (
-            <>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                {MOTIVOS.map((m) => (
-                  <Botao key={m} compacto v={motivo === m ? 'primario' : 'secundario'} rotulo={m} onPress={() => setMotivo(motivo === m ? '' : m)} />
-                ))}
+            {estado === 'enviado' ? (
+              <View style={{ flexDirection: 'row', gap: spacing.xs, alignItems: 'center' }}>
+                <Icone nome="check" cor={colors.accent} tamanho={16} />
+                <Texto v="legenda" cor={colors.accent} style={{ flexShrink: 1 }}>Obrigado pelo seu feedback! Ele nos ajuda a melhorar.</Texto>
               </View>
-              <Campo multiline value={comentario} onChangeText={setComentario} maxLength={2000}
-                placeholder="Conte o que esteve errado (opcional)…" accessibilityLabel="Comentário" />
-              <Botao compacto rotulo="Enviar feedback" carregando={estado === 'salvando'} onPress={() => void enviar()} style={{ alignSelf: 'flex-end' }} />
-            </>
-          )}
-        </Glass>
+            ) : (
+              <>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {MOTIVOS.map((m) => (
+                    <Botao key={m} compacto v={motivo === m ? 'primario' : 'secundario'} rotulo={m} onPress={() => setMotivo(motivo === m ? '' : m)} />
+                  ))}
+                </View>
+                <Campo multiline value={comentario} onChangeText={setComentario} maxLength={2000}
+                  placeholder="Conte o que esteve errado (opcional)…" accessibilityLabel="Comentário" />
+                <Botao compacto rotulo="Enviar feedback" carregando={estado === 'salvando'} onPress={() => void enviar()} style={{ alignSelf: 'flex-end' }} />
+              </>
+            )}
+          </Glass>
+        </Surgir>
       ) : null}
       {estado === 'falhou' ? <Erro>Não foi possível salvar a avaliação.</Erro> : null}
     </View>

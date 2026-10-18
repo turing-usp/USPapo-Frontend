@@ -1,9 +1,9 @@
 /**
  * Floating chrome (the only navigation surface): a blurred glass menu button that
- * opens a sliding opaque-glass drawer (new chat, the conversations, settings), the
- * account avatar with its menu (Sair), which a tap anywhere else closes, and the
- * announcements (aviso pill and giant glass). On Android and iOS the drawer also
- * follows a drag; the buttons do everything the drag does.
+ * opens a sliding opaque-glass drawer (new chat, also from the USPapo brand at its top, the
+ * conversations, settings), the account avatar with its menu (Sair), which pops out of it
+ * and closes on a tap anywhere else, and the announcements (aviso pill and giant glass). On
+ * Android and iOS the drawer also follows a drag; the buttons do everything the drag does.
  */
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react';
@@ -18,7 +18,8 @@ import { PilulaAviso, VidroGigante, useComunicados } from './Comunicados';
 import Conversas from './Conversas';
 import Glass, { useCongelarTela } from './Glass';
 import { Icone, type NomeIcone } from './icons';
-import { BotaoDeIcone, ItemDeMenu, Marca, Texto, opacidadeDoToque, tintaDoToque } from './ui';
+import { Pressionavel, useSurgimento } from './Movimento';
+import { BotaoDeIcone, ItemDeMenu, Marca, Texto, tintaDoToque } from './ui';
 import { haptics } from '../lib/device';
 import { esquecerAparelho } from '../lib/notificacoes';
 import { supabase } from '../lib/supabase';
@@ -213,7 +214,10 @@ function Gaveta({ gaveta, admin }: { gaveta: ControleDaGaveta; admin: boolean })
           style={[styles.gaveta, { width: largura }, painel]}>
           <Glass opaco semSombra style={{ flex: 1, gap: spacing.md, paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.md, paddingHorizontal: spacing.lg }}>
             <View style={[styles.cabecalho, { borderBottomColor: alfa(colors.foreground, 0.1), paddingBottom: spacing.lg }]}>
-              <Marca logo={28} fonte={24} />
+              {/* The brand is a way home too: a new chat. */}
+              <Pressionavel accessibilityRole="link" accessibilityLabel="Novo chat" onPress={() => ir('/')} aperto={0.94} hitSlop={8}>
+                <Marca logo={28} fonte={24} />
+              </Pressionavel>
               <BotaoDeIcone icone="fechar" rotulo="Fechar menu lateral" onPress={fechar} tamanho={24} lado={36} rente />
             </View>
             <LinhaNav icone="novo" rotulo="Novo chat" aoTocar={() => ir('/')} />
@@ -236,6 +240,8 @@ export default function Chrome({ gaveta }: { gaveta: ControleDaGaveta }) {
   const router = useRouter();
   const conta = useConta();
   const [menu, setMenu] = useState(false);
+  // The account menu pops out of the avatar, its rows a beat after the glass.
+  const menuDaConta = useSurgimento(menu, { de: 0.8 });
   const comunicados = useComunicados();
 
   async function sair() {
@@ -247,16 +253,17 @@ export default function Chrome({ gaveta }: { gaveta: ControleDaGaveta }) {
 
   return (
     <>
-      {/* Content scrolling under the clock and icons stays legible: frosted glass, or on Android a fade
-          of the canvas (each Android blur redraws the whole screen every frame, and this one never stops). */}
-      {insets.top ? (Platform.OS === 'android' ? (
+      {/* Content scrolling under the clock and icons stays legible under a fade of the canvas, on
+          Android and iOS alike: a band of glass ended in a hard edge, and over the empty canvas it
+          showed as a stripe (and each Android blur redraws the whole screen every frame). */}
+      {insets.top ? (Platform.OS !== 'web' ? (
         <View pointerEvents="none" style={[styles.status, { height: insets.top + spacing.md,
           experimental_backgroundImage: `linear-gradient(to bottom, ${alfa(colors.canvas, 0.94)} 60%, ${alfa(colors.canvas, 0)})` }]} />
       ) : <Glass desfoque semBorda semSombra pointerEvents="none" style={[styles.status, { height: insets.top }]} />) : null}
       {menu ? <Pressable accessibilityLabel="Fechar menu do usuário" onPress={() => setMenu(false)} style={[StyleSheet.absoluteFill, styles.fora]} /> : null}
       <View pointerEvents="box-none" style={[styles.barra, { paddingTop: insets.top + spacing.md, paddingHorizontal: spacing.lg }]}>
         <Glass desfoque radius={radius.md} onPress={() => { gaveta.abrir(); void haptics.selection(); setMenu(false); }}
-          accessibilityLabel="Abrir menu lateral" style={styles.alvo}>
+          accessibilityLabel="Abrir menu lateral" aperto={0.9} style={styles.alvo}>
           <Icone nome="menu" cor={colors.mutedForeground} tamanho={24} traco={2} />
         </Glass>
         <View pointerEvents="box-none" style={[styles.meio, { paddingHorizontal: spacing.sm }]}>
@@ -264,21 +271,24 @@ export default function Chrome({ gaveta }: { gaveta: ControleDaGaveta }) {
         </View>
         <View>
           {/* The same lift as the glass beside it; the photo is clipped by an inner circle. */}
-          <Pressable accessibilityLabel="Menu do usuário" onPress={() => setMenu((v) => !v)}
-            style={(estado) => [styles.avatar, glass.shadow, { backgroundColor: colors.brand, borderRadius: radius.full, opacity: opacidadeDoToque(estado) }]}>
+          <Pressionavel accessibilityLabel="Menu do usuário" onPress={() => setMenu((v) => !v)} desbotar aperto={0.9}
+            style={[styles.avatar, glass.shadow, { backgroundColor: colors.brand, borderRadius: radius.full }]}>
             <View style={[styles.foto, { borderRadius: radius.full }]}>
               {conta.foto ? <Image source={{ uri: conta.foto }} style={StyleSheet.absoluteFill} />
                 : <Texto cor={colors.brandForeground} style={{ fontFamily: fonts.title, ...typography.lg }}>{(conta.nome || 'U')[0].toUpperCase()}</Texto>}
             </View>
-          </Pressable>
-          {menu ? (
-            <Glass desfoque radius={radius.lg} style={[styles.menu, { padding: spacing.xs }]}>
-              <View style={{ paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>
-                {conta.nome ? <Texto v="suave" cor={colors.foreground} numberOfLines={1}>{conta.nome}</Texto> : null}
-                <Texto v="legenda" numberOfLines={1}>{conta.email}</Texto>
-              </View>
-              <View style={{ borderTopColor: alfa(colors.foreground, 0.1), borderTopWidth: 1, marginVertical: spacing.xs }} />
-              <ItemDeMenu icone="sair" rotulo="Sair" onPress={() => void sair()} />
+          </Pressionavel>
+          {menuDaConta.montado ? (
+            <Glass desfoque radius={radius.lg} movimento={menuDaConta.movimento} origem="right top" pointerEvents={menu ? 'auto' : 'none'}
+              style={[styles.menu, { padding: spacing.xs }]}>
+              <Reanimated.View style={menuDaConta.conteudo}>
+                <View style={{ paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>
+                  {conta.nome ? <Texto v="suave" cor={colors.foreground} numberOfLines={1}>{conta.nome}</Texto> : null}
+                  <Texto v="legenda" numberOfLines={1}>{conta.email}</Texto>
+                </View>
+                <View style={{ borderTopColor: alfa(colors.foreground, 0.1), borderTopWidth: 1, marginVertical: spacing.xs }} />
+                <ItemDeMenu icone="sair" rotulo="Sair" onPress={() => void sair()} />
+              </Reanimated.View>
             </Glass>
           ) : null}
         </View>

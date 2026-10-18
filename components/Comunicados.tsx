@@ -5,12 +5,16 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Animated, AppState, BackHandler, Easing, Image, Pressable, ScrollView, StyleSheet, View, useWindowDimensions,
+  AppState, BackHandler, Image, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions,
 } from 'react-native';
+import Reanimated, {
+  Easing, cancelAnimation, runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue, withSequence, withSpring, withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import Resposta from './chat/Resposta';
 import Glass, { useCongelarTela } from './Glass';
+import { pulsar, useSurgimento, type Movimento } from './Movimento';
 import { Botao, BotaoDeIcone, Texto } from './ui';
 import { escolher, lerComunicados, lerVistos, marcarVisto, urlDaImagem, type Comunicado } from '../lib/comunicados';
 import { haptics } from '../lib/device';
@@ -80,39 +84,44 @@ export function useComunicados() {
 }
 
 const ENTRE_RESPIROS_MS = 20_000;
+const RESPIRO = { duration: 900, easing: Easing.inOut(Easing.ease) };
 
 /**
- * The aviso pill, in the same glass as the menu button beside it. Its dot breathes once when it
- * appears and then every 20 s, resting in between: each frame of the breath redraws every blurred
- * pane on Android, and a nonstop loop kept a still screen redrawing at ~60 fps.
+ * The aviso pill, in the same glass as the menu button beside it: it pops in when it appears. Its
+ * dot breathes once then and again every 20 s, and the pill swells and bounces back as the dot
+ * lights up again; it rests in between: each frame of the breath redraws every blurred pane on
+ * Android, and a nonstop loop kept a still screen redrawing at ~60 fps.
  */
 export function PilulaAviso({ aviso, aoAbrir }: { aviso: Comunicado; aoAbrir: () => void }) {
   const { colors, radius, spacing } = useTheme();
-  const [pulso] = useState(() => new Animated.Value(1));
+  const ponto = useSharedValue(1);
+  const inchaco = useSharedValue(1);
+  const surgimento = useSurgimento(true, { de: 0.7 });
+  const entrada = surgimento.movimento.escala;
+  const escala = useDerivedValue(() => (entrada?.value ?? 1) * inchaco.value);
+  const [movimento] = useState<Movimento>(() => ({ opacidade: surgimento.movimento.opacidade, escala }));
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const respiro = Animated.sequence([
-      Animated.timing(pulso, { toValue: 0.35, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      Animated.timing(pulso, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-    ]);
     const respirar = () => {
-      respiro.reset();
-      respiro.start(({ finished }) => {
-        if (finished) timer = setTimeout(respirar, ENTRE_RESPIROS_MS);
-      });
+      ponto.set(withSequence(withTiming(0.35, RESPIRO), withTiming(1, RESPIRO)));
+      pulsar(inchaco, 1.06, RESPIRO.duration);
+      timer = setTimeout(respirar, 2 * RESPIRO.duration + ENTRE_RESPIROS_MS);
     };
     respirar();
     return () => {
       clearTimeout(timer);
-      respiro.stop();
-      pulso.setValue(1);
+      cancelAnimation(ponto);
+      cancelAnimation(inchaco);
+      ponto.set(1);
+      inchaco.set(1);
     };
-  }, [pulso, aviso.id]);
+  }, [ponto, inchaco, aviso.id]);
+  const brilho = useAnimatedStyle(() => ({ opacity: ponto.value }));
   return (
-    <Glass desfoque radius={radius.full}
+    <Glass desfoque radius={radius.full} movimento={movimento} aperto={0.95}
       onPress={() => { void haptics.selection(); aoAbrir(); }} accessibilityLabel={`Aviso: ${aviso.pilula}. Toque para saber mais.`}
       style={[styles.pilula, { gap: spacing.sm, paddingHorizontal: spacing.md }]}>
-      <Animated.View style={[styles.ponto, { backgroundColor: colors.brand, opacity: pulso }]} />
+      <Reanimated.View style={[styles.ponto, { backgroundColor: colors.brand }, brilho]} />
       <Texto v="suave" cor={colors.foreground} numberOfLines={1} style={{ flexShrink: 1 }}>{aviso.pilula}</Texto>
     </Glass>
   );
@@ -131,6 +140,12 @@ function Imagem({ uri }: { uri: string }) {
   );
 }
 
+/** Room around the giant glass for its shadow, inside its Android texture (see below). */
+const SOMBRA = 16;
+/** The giant glass's pop: gentler than a menu's, ~1% past full size. */
+const MOLA_GRANDE = { damping: 16, stiffness: 380, mass: 0.8 } as const;
+const DE = 0.94;
+
 /** The giant glass pop-up: images, title and Markdown text; an aviso can also be hidden from here. */
 export function VidroGigante({ comunicado, aoFechar, aoOcultar }: {
   comunicado: Comunicado | null; aoFechar: () => void; aoOcultar: () => void;
@@ -138,27 +153,46 @@ export function VidroGigante({ comunicado, aoFechar, aoOcultar }: {
   const { colors, radius, spacing } = useTheme();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const [entrada] = useState(() => new Animated.Value(0));
-  // The last content stays on screen while it fades out.
+  const entrada = useSharedValue(0);
+  const escala = useSharedValue(DE);
+  // The last content stays on screen while it leaves.
   const [atual, setAtual] = useState<Comunicado | null>(comunicado);
   if (comunicado && comunicado !== atual) setAtual(comunicado);
-  // The fade starts a frame after the content's first layout: mounting a page of Markdown (and the
-  // blur's first draw) takes a few long frames, which would swallow the start of the fade.
+  // The pop starts a frame after the content's first layout: mounting a page of Markdown (and the
+  // blur's first draw) takes a few long frames, which would swallow its start.
   const [medido, setMedido] = useState(false);
+  // While it scales, Android draws it from one GPU texture (a page of text scaled every frame
+  // re-rasterized every glyph each frame); the texture has room for the shadow around the glass.
+  const [animando, setAnimando] = useState(false);
+  const [rumo, setRumo] = useState(comunicado);
+  if (comunicado !== rumo) {
+    setRumo(comunicado);
+    setAnimando(true);
+  }
   // A pop-up over the whole screen: the screen beneath is frozen while it shows.
   useCongelarTela('comunicado', !!atual);
 
   useEffect(() => {
     if (comunicado && !medido) return;
-    Animated.timing(entrada, {
-      toValue: comunicado ? 1 : 0, duration: comunicado ? 260 : 180, useNativeDriver: true,
-      easing: comunicado ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
-    }).start(({ finished }) => {
-      if (!finished || comunicado) return;
+    const fechou = () => {
       setAtual(null);
       setMedido(false);
-    });
-  }, [comunicado, medido, entrada]);
+      setAnimando(false);
+    };
+    if (comunicado) {
+      entrada.set(withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) }));
+      escala.set(withSpring(1, MOLA_GRANDE, (fim) => {
+        if (fim) runOnJS(setAnimando)(false);
+      }));
+      return;
+    }
+    entrada.set(withTiming(0, { duration: 180, easing: Easing.in(Easing.cubic) }, (fim) => {
+      if (fim) runOnJS(fechou)();
+    }));
+    escala.set(withTiming(0.97, { duration: 180, easing: Easing.in(Easing.cubic) }, (fim) => {
+      if (fim) escala.set(DE);
+    }));
+  }, [comunicado, medido, entrada, escala]);
 
   useEffect(() => {
     if (!comunicado) return;
@@ -169,34 +203,40 @@ export function VidroGigante({ comunicado, aoFechar, aoOcultar }: {
     return () => sub.remove();
   }, [comunicado, aoFechar]);
 
+  const veu = useAnimatedStyle(() => ({ opacity: entrada.value }));
+  // A rise with the pop: from 12 pt below, as the scale goes from DE to 1.
+  const cartao = useAnimatedStyle(() => ({
+    opacity: entrada.value,
+    transform: [{ translateY: ((1 - escala.value) / (1 - DE)) * 12 }, { scale: escala.value }],
+  }));
   if (!atual) return null;
-  // A rise, not a zoom: scaling a page of text re-rasterizes every glyph each frame on Android.
-  const subida = entrada.interpolate({ inputRange: [0, 1], outputRange: [12, 0] });
   return (
     <View pointerEvents={comunicado ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, styles.camada]}>
-      <Animated.View style={[StyleSheet.absoluteFill, { opacity: entrada }]}>
+      <Reanimated.View style={[StyleSheet.absoluteFill, veu]}>
         <Pressable accessibilityLabel="Fechar" onPress={aoFechar} style={[StyleSheet.absoluteFill, { backgroundColor: alfa(colors.scrim, 0.35) }]} />
-      </Animated.View>
-      <Animated.View pointerEvents="box-none" onLayout={() => !medido && requestAnimationFrame(() => setMedido(true))} style={[styles.centro, {
-        paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.lg, paddingHorizontal: spacing.lg,
-        transform: [{ translateY: subida }],
+      </Reanimated.View>
+      <View pointerEvents="box-none" style={[styles.centro, {
+        paddingTop: insets.top + spacing.lg - SOMBRA, paddingBottom: insets.bottom + spacing.lg - SOMBRA, paddingHorizontal: spacing.lg - SOMBRA,
       }]}>
-        <Glass opaco radius={radius.xl} opacidade={entrada}
-          style={{ width: '100%', maxWidth: 560, maxHeight: height - insets.top - insets.bottom - 2 * spacing.lg }}>
-          <ScrollView contentContainerStyle={{ gap: spacing.lg, padding: width >= 640 ? spacing['3xl'] : spacing.xl }}>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md }}>
-              <Texto v="titulo" style={{ flex: 1 }}>{atual.titulo}</Texto>
-              <BotaoDeIcone icone="fechar" rotulo="Fechar" onPress={aoFechar} tamanho={24} lado={36} rente />
-            </View>
-            {atual.imagens.map((caminho) => <Imagem key={caminho} uri={urlDaImagem(caminho)} />)}
-            {atual.texto.trim() ? <View><Resposta texto={atual.texto} streaming={false} /></View> : null}
-            <View style={{ gap: spacing.sm }}>
-              <Botao rotulo={atual.tipo === 'aviso' ? 'Fechar' : 'Entendi'} onPress={aoFechar} />
-              {atual.tipo === 'aviso' ? <Botao v="secundario" rotulo="Ocultar este aviso" onPress={aoOcultar} /> : null}
-            </View>
-          </ScrollView>
-        </Glass>
-      </Animated.View>
+        <Reanimated.View pointerEvents="box-none" onLayout={() => !medido && requestAnimationFrame(() => setMedido(true))}
+          renderToHardwareTextureAndroid={Platform.OS === 'android' && animando}
+          style={[{ width: '100%', maxWidth: 560 + 2 * SOMBRA, padding: SOMBRA }, cartao]}>
+          <Glass opaco radius={radius.xl} style={{ maxHeight: height - insets.top - insets.bottom - 2 * spacing.lg }}>
+            <ScrollView contentContainerStyle={{ gap: spacing.lg, padding: width >= 640 ? spacing['3xl'] : spacing.xl }}>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md }}>
+                <Texto v="titulo" style={{ flex: 1 }}>{atual.titulo}</Texto>
+                <BotaoDeIcone icone="fechar" rotulo="Fechar" onPress={aoFechar} tamanho={24} lado={36} rente />
+              </View>
+              {atual.imagens.map((caminho) => <Imagem key={caminho} uri={urlDaImagem(caminho)} />)}
+              {atual.texto.trim() ? <View><Resposta texto={atual.texto} streaming={false} /></View> : null}
+              <View style={{ gap: spacing.sm }}>
+                <Botao rotulo={atual.tipo === 'aviso' ? 'Fechar' : 'Entendi'} onPress={aoFechar} />
+                {atual.tipo === 'aviso' ? <Botao v="secundario" rotulo="Ocultar este aviso" onPress={aoOcultar} /> : null}
+              </View>
+            </ScrollView>
+          </Glass>
+        </Reanimated.View>
+      </View>
     </View>
   );
 }

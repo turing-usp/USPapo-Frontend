@@ -18,7 +18,7 @@ app/                 rotas (expo-router); só telas, sem lógica de dados
   (main)/            início (novo chat), chat/[id], configurações
   (admin)/           painel de métricas (só web, só admin)
 components/          interface: ui.tsx (Texto, Botao, Campo…), Glass (vidro fosco),
-                     Cena (fundo), Chrome (menu), Composer, charts, chat/
+                     Movimento (molas), Cena (fundo), Chrome (menu), Composer, charts, chat/
 lib/                 dados e regras: api (SSE), chat (estado da conversa), conversations,
                      cache (leitura offline), auth, device (háptica, teclado, ditado),
                      markdown (LaTeX), admin, supabase

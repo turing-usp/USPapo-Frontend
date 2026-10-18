@@ -11,6 +11,7 @@ import { FlatList, Platform, Pressable, TextInput, View } from 'react-native';
 
 import { Icone } from './icons';
 import { BotaoAcoes, MenuAncorado, ancoraDoToque, type Ancora, type MenuAberto } from './MenuAncorado';
+import { Surgir } from './Movimento';
 import { ANEL_DE_FOCO, Botao, Erro, Texto, tintaDoToque, useTintaDeCampo } from './ui';
 import { sessaoAtual } from '../lib/auth';
 import { guardarConversa, guardarHistorico, historicoEmCache } from '../lib/cache';
@@ -222,11 +223,12 @@ export default function Conversas({ aberta, assentada, aoAbrir }: {
         )}
       />
       {apagada ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingLeft: spacing.md, paddingRight: spacing.xs,
-          paddingVertical: spacing.xs, borderRadius: radius.md, backgroundColor: alfa(colors.foreground, 0.08) }}>
+        <Surgir key={apagada.id} de={0.9} deslocamento={8} origem="center bottom"
+          style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingLeft: spacing.md, paddingRight: spacing.xs,
+            paddingVertical: spacing.xs, borderRadius: radius.md, backgroundColor: alfa(colors.foreground, 0.08) }}>
           <Texto v="suave" cor={colors.foreground} style={{ flex: 1 }}>Conversa apagada</Texto>
           <Botao compacto v="secundario" rotulo="Desfazer" onPress={desfazer} />
-        </View>
+        </Surgir>
       ) : null}
     </View>
     <MenuAncorado aberto={menu} aoFechar={fecharAcoes} />

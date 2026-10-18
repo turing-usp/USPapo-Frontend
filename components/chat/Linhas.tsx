@@ -6,6 +6,7 @@ import { BotoesDaMensagem, Segurar } from './AcoesDaMensagem';
 import Resposta from './Resposta';
 import Glass from '../Glass';
 import { Icone } from '../icons';
+import { Surgir } from '../Movimento';
 import { Texto } from '../ui';
 import type { Linha } from '../../lib/chat';
 import { useTheme } from '../../theme';
@@ -27,7 +28,8 @@ function rotuloDaFonte(url: string): string {
   }
 }
 
-function Fontes({ urls }: { urls: string[] }) {
+/** The sources, as glass chips; under a live answer they pop in one after another. */
+function Fontes({ urls, animar }: { urls: string[]; animar: boolean }) {
   const { colors, radius, spacing } = useTheme();
   const seguras = urls.filter((u) => /^https?:\/\//i.test(u));
   if (!seguras.length) return null;
@@ -35,25 +37,30 @@ function Fontes({ urls }: { urls: string[] }) {
     <View style={{ gap: spacing.xs, marginTop: spacing.xs }}>
       <Texto v="secao">Fontes consultadas</Texto>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-        {seguras.map((url) => (
-          <Glass key={url} radius={radius.full} accessibilityLabel={url} onPress={() => void Linking.openURL(url).catch(() => undefined)}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '100%', paddingVertical: 5, paddingHorizontal: spacing.sm }}>
-            <Icone nome="externo" cor={colors.accent} tamanho={13} traco={2} />
-            <Texto v="detalhe" numberOfLines={1} style={{ flexShrink: 1 }}>{rotuloDaFonte(url)}</Texto>
-          </Glass>
+        {seguras.map((url, i) => (
+          <Surgir key={url} animar={animar} de={0.6} atraso={60 + i * 45} origem="left center" style={{ maxWidth: '100%' }}>
+            <Glass radius={radius.full} accessibilityLabel={url} aperto={0.92} onPress={() => void Linking.openURL(url).catch(() => undefined)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '100%', paddingVertical: 5, paddingHorizontal: spacing.sm }}>
+              <Icone nome="externo" cor={colors.accent} tamanho={13} traco={2} />
+              <Texto v="detalhe" numberOfLines={1} style={{ flexShrink: 1 }}>{rotuloDaFonte(url)}</Texto>
+            </Glass>
+          </Surgir>
         ))}
       </View>
     </View>
   );
 }
 
-/** The question, with Copiar and Compartilhar under it (and on a long press). */
-export function BolhaUsuario({ texto }: { texto: string }) {
+/**
+ * The question, with Copiar and Compartilhar under it (and on a long press). One just sent
+ * (`nova`) pops up from the composer; saved ones are just there.
+ */
+export function BolhaUsuario({ texto, nova = false }: { texto: string; nova?: boolean }) {
   const { radius, spacing, typography } = useTheme();
   const { width } = useWindowDimensions();
-  const entrada = useEntrada();
   return (
-    <Animated.View style={{ alignSelf: 'flex-end', alignItems: 'flex-end', maxWidth: width >= 640 ? '75%' : '85%', opacity: entrada }}>
+    <Surgir animar={nova} de={0.8} deslocamento={24} origem="right bottom"
+      style={{ alignSelf: 'flex-end', alignItems: 'flex-end', maxWidth: width >= 640 ? '75%' : '85%' }}>
       <Segurar texto={texto}>
         <Glass radius={radius.xl} style={{ paddingHorizontal: spacing.xl, paddingVertical: spacing.md }}>
           {/* Selecting text would fight the long press on Android and iOS, whose menu copies it all. */}
@@ -61,7 +68,7 @@ export function BolhaUsuario({ texto }: { texto: string }) {
         </Glass>
       </Segurar>
       <BotoesDaMensagem texto={texto} style={{ marginTop: spacing.xs }} />
-    </Animated.View>
+    </Surgir>
   );
 }
 
@@ -79,7 +86,7 @@ export function BolhaAssistente({ linha, escrevendo, revelar = false, children }
       <Segurar texto={linha.completo ? linha.texto : null}>
         <Resposta texto={linha.texto} streaming={escrevendo} revelar={revelar} aoRevelar={() => setRevelada(true)} />
       </Segurar>
-      {linha.completo && revelada ? <Rodape animar={revelar}><Fontes urls={linha.fontes} />{children}</Rodape> : null}
+      {linha.completo && revelada ? <Rodape animar={revelar}><Fontes urls={linha.fontes} animar={revelar} />{children}</Rodape> : null}
     </View>
   );
 }

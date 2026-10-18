@@ -14,7 +14,8 @@ estão em português (`Botao`, `Conversa`); termos técnicos, em inglês.
   a assinatura do Turing, numa tela que cabe sem rolar; o teclado não muda o
   layout, só acrescenta a própria altura embaixo para dar para rolar até o
   que ele cobre), `chat/[id]` e configurações. As conversas ficam na gaveta
-  (`components/Conversas.tsx`), que carrega a lista ainda fechada e só a
+  (`components/Conversas.tsx`; a marca do USPapo no topo dela também abre
+  um novo chat), que carrega a lista ainda fechada e só a
   atualiza depois de terminar de abrir, para nada renderizar no meio do
   deslize. O deslize da gaveta usa o Reanimated e começa no próprio toque:
   o `Animated.timing` do React Native amostra a curva a 60 fps, e numa tela
@@ -42,8 +43,8 @@ estão em português (`Botao`, `Conversa`); termos técnicos, em inglês.
 
 1. `Composer` envia o texto (ou o ditado do microfone, via
    `expo-speech-recognition`) para `send` do hook `useChat` (`lib/chat.ts`).
-2. O turno é salvo **pendente** em `mensagens` (resposta `NULL`) antes do
-   stream.
+2. A pergunta aparece na hora, e o turno é salvo **pendente** em
+   `mensagens` (resposta `NULL`) antes do stream.
 3. `streamChat` (`lib/api.ts`) faz `POST /api/chat` com `expo/fetch` (o
    `fetch` do React Native não tem corpo em streaming) e lê os frames SSE.
    O pedido leva `conversa_id` e `ordem`: o backend responde num job que
@@ -62,18 +63,27 @@ andamento (`retomarChat`, `GET /api/chat/retomar`, que repete os eventos
 desde o início). Sem job (backend reiniciado), relê o banco, porque a
 resposta pode ter acabado de ser gravada, e só então reenvia a pergunta.
 **Parar** chama `POST /api/chat/parar`: o servidor encerra o job e grava o
-que já foi escrito, com a marca *Resposta interrompida.* Sair da tela apenas
-desconecta, e a resposta continua no servidor.
+que já foi escrito, com a marca *Resposta interrompida.* Tocado antes de o
+stream começar (enquanto o turno pendente é salvo), o stream nem começa e o
+próprio app grava o turno com a marca. Sair da tela apenas desconecta, e a
+resposta continua no servidor.
 
 Erros viram mensagens em português (`traduzirFalha`): sessão expirada,
 limite de uso (com o tempo de espera do 429), rede ou falha genérica.
 
 A lista do chat é uma `ScrollView`, não uma `FlatList`: a conversa é curta
 e o `scrollToEnd` precisa chegar ao fim real (a lista virtualizada estima
-as linhas ainda não medidas e para antes). A tela segue o fim até o usuário
-rolar para cima, e volta a seguir quando ele retorna perto do fim. A
-rolagem é feita agora e de novo no quadro seguinte, porque o tamanho novo
-chega ao JS antes de o conteúdo nativo crescer.
+as linhas ainda não medidas e para antes). Cada turno (a pergunta e o que
+vem depois dela) é um grupo, e o último tem pelo menos a altura do espaço
+entre o menu e o composer: o fim da lista é a última pergunta no topo da
+tela, com espaço livre embaixo. A pergunta enviada sobe até lá e a resposta
+é escrita nesse espaço; enquanto cabe, nada se mexe, e uma resposta maior
+continua por baixo do composer, sem a tela correr atrás dela (dá para ler
+desde o começo). Com conteúdo abaixo da tela aparece uma seta de vidro que
+leva ao fim. A tela segue o fim só ao abrir uma conversa e depois que o
+usuário rola até ele (ou toca a seta); rolar para cima para de seguir. A
+rolagem até o fim é feita agora e de novo no quadro seguinte, porque o
+tamanho novo chega ao JS antes de o conteúdo nativo crescer.
 
 ## Notificações (`lib/notificacoes.ts` / `.web.ts`)
 
@@ -91,7 +101,9 @@ Escritos fora do app, na tabela `comunicados` do Supabase (veja
 `fluxos.md`). A **novidade** mais recente que o aparelho ainda não viu abre
 sozinha num vidro gigante (título, imagens, texto em Markdown). O **aviso**
 vira uma pílula entre o menu e a foto e abre o mesmo vidro; "Ocultar este
-aviso" some com ele neste aparelho. O RLS só devolve o que está ativo e
+aviso" some com ele neste aparelho. O ponto laranja da pílula respira ao
+aparecer e depois a cada 20 s, e a pílula incha e volta com a mola quando
+ele reacende. O RLS só devolve o que está ativo e
 dentro de `inicio`/`fim`, e os ids vistos ficam no aparelho. A lista é
 relida ao abrir o app e ao voltar para ele depois de 5 minutos.
 
@@ -145,8 +157,9 @@ filete venceria um `borderColor`.
 
 - **Web:** `backdrop-filter: blur()` no próprio painel. Um
   ancestral com `opacity < 1` isola o painel do que está atrás; o Chrome
-  mantém o painel sem blur mesmo depois que o fade termina. Por isso o fade
-  de entrada/saída vai no próprio vidro (`opacidade`), nunca num embrulho.
+  mantém o painel sem blur mesmo depois que o fade termina. Por isso a
+  entrada e a saída de um vidro com blur vão no próprio vidro (`movimento`),
+  nunca num embrulho.
 - **iOS:** `BlurView` nativo.
 - **Android 12+:** `BlurView` com `RenderEffect` (acelerado por hardware).
   Em versões anteriores, o painel fica só translúcido.
@@ -171,12 +184,15 @@ Detalhes do Android, sem alterar o `expo-blur`:
   numa camada fora da tela e refaz o blur a cada quadro, seja qual for o
   tamanho do vidro** (medido: camadas de 1530×2790 px no Galaxy S22). O custo
   cresce com o número de vidros na tela, não com a área deles; a sobra do
-  alvo é a mínima que evita o artefato da borda. Por isso, no Android, a faixa da
-  status bar é um degradê do fundo, e nada fica animando em loop com a tela
+  alvo é a mínima que evita o artefato da borda. Por isso a faixa da status
+  bar é um degradê do fundo (no iOS também: lá ela era um vidro de borda dura,
+  que aparecia como uma faixa sobre o fundo vazio), e nada fica animando em loop com a tela
   parada: o ponto da pílula respira uma vez ao aparecer e depois a cada 20 s
   (em loop contínuo, mantinha a tela redesenhando a ~60 fps). Escalar um bloco grande de texto também custa
-  caro (os glifos são rasterizados de novo a cada quadro): o vidro gigante
-  entra com fade e subida, sem zoom. Um `filter` (saturação, contraste)
+  caro (os glifos são rasterizados de novo a cada quadro): enquanto o vidro
+  gigante cresce, ele é desenhado de uma textura de GPU
+  (`renderToHardwareTextureAndroid`, com folga para a sombra), e só a
+  textura escala. Um `filter` (saturação, contraste)
   sobre o blur criava uma camada re-rasterizada a cada quadro e derrubava a
   rolagem para ~12 fps: não use.
 - A BlurView aplica um ruído leve por cima (não configurável sem mexer na
@@ -193,6 +209,30 @@ Detalhes do Android, sem alterar o `expo-blur`:
 **Sombras:** no Android, a elevação pinta uma caixa escura sob o vidro
 translúcido. Por isso o tema converte a sombra em `boxShadow` (a mesma do
 web, recortada fora do painel).
+
+## Movimento (`components/Movimento.tsx`)
+
+As animações "bubbly" rodam no Reanimated (na thread de UI, a cada quadro,
+desde o próprio toque) com uma mola rápida que passa um pouco do tamanho
+final e volta (`MOLA`, ~0,35 s):
+
+- **Surgir:** menus (ações da conversa, Copiar/Compartilhar, conta), a seta
+  "ir para o fim", a pílula de aviso e o vidro gigante crescem a partir de
+  onde nasceram (o ⋮, o dedo, o avatar), o vidro primeiro e o conteúdo um
+  instante depois, e saem mais rápido. A pergunta enviada sobe do composer;
+  as fontes consultadas, o formulário de feedback, o "Conversa apagada", as
+  perguntas frequentes e o botão de enviar/parar surgem com a mesma mola, e
+  o check de Copiar e o polegar escolhido saltam. O interruptor desliza com
+  mola. `useSurgimento` controla mostrar/esconder; `Surgir` anima uma vez,
+  ao montar. A animação começa um quadro depois de montar (os primeiros
+  quadros de uma montagem são longos e engoliriam o começo).
+- **Pressionar:** todo vidro tocável, o botão laranja, o disco de enviar e o
+  avatar cedem sob o dedo e voltam com a mola (`Pressionavel`); o laranja
+  também perde um pouco de opacidade, porque a paleta não tem laranja mais
+  claro.
+- Nada fica em loop com a tela parada (cada quadro redesenha os blurs no
+  Android), e com "reduzir movimento" ligado no sistema o Reanimated pula
+  direto para o fim de cada animação.
 
 ## Dados (`lib/`)
 
@@ -235,7 +275,9 @@ O app segue o manual de identidade visual do Turing USP (2021).
   navegação; M PLUS 1p em texto; Roboto Mono em código e detalhes
   (endereços, versão, "pendente"). Changa nunca em texto corrido, M PLUS 1p
   e Roboto Mono nunca em títulos. A Orbitron é só do logotipo do Turing,
-  desenhado em SVG.
+  desenhado em SVG. O iOS usa uma cópia da Changa com métricas verticais
+  latinas: com as originais (altas, do árabe), o iOS subia ~0,3 em todo
+  texto em Changa.
 - **Marcas:** `Marca` (o símbolo laranja do USPapo e o nome em Changa, no
   `accent`) abre a tela inicial, a gaveta e as telas de entrada;
   `Assinatura` ("Desenvolvido por" e o imagotipo do Turing: nas cores do
@@ -246,8 +288,8 @@ O app segue o manual de identidade visual do Turing USP (2021).
   toque, só que mais leve (`components/ui.tsx`): linhas e ícones ganham um
   tom da cor do texto (`tintaDoToque`: 6% sob o mouse, 10% pressionado;
   `BotaoDeIcone` para os ícones), o vidro tocável ganha o mesmo tom por
-  cima, o laranja só perde opacidade (`opacidadeDoToque`; a paleta não tem
-  laranja mais claro) e os links se sublinham. Uma conversa da gaveta fica
+  cima, o laranja só perde opacidade (`Pressionavel` com `desbotar`; a
+  paleta não tem laranja mais claro) e os links se sublinham. Uma conversa da gaveta fica
   acesa inteira enquanto o mouse está nela ou no seu ⋮. No app, onde não há
   mouse, os mesmos tons aparecem só ao pressionar.
 

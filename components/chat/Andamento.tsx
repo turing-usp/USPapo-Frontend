@@ -163,7 +163,13 @@ export default function Andamento({ estado, texto, aoTentar, aoConcluir }: {
 
   // A new status or message: the old one fades out, then the new one fades in.
   useEffect(() => {
-    if (estado === 'escrevendo' || (texto === mostrado.texto && estado === mostrado.estado)) return;
+    if (estado === 'escrevendo') return;
+    if (texto === mostrado.texto && estado === mostrado.estado) {
+      // Back to what is on screen before a swap finished (a retry that failed at once, offline): it
+      // stayed faded out, invisible, until now.
+      status.set(withTiming(1, { duration: 160 }));
+      return;
+    }
     status.set(withTiming(0, { duration: TROCA_MS }));
     const troca = setTimeout(() => {
       setMostrado({ texto, estado });

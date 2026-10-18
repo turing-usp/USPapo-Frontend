@@ -9,7 +9,9 @@
  * floating panes are rendered as siblings of what they blur). Large panes (drawer,
  * announcements, menus) are `opaco` instead: the same tint and edges over the canvas, so
  * they look like the glass over the empty (flat) background and cost no blur. Other panes
- * (bubbles, cards, pills inside scrolling content) are a cheap translucent tint.
+ * (bubbles, cards, pills inside scrolling content) are a cheap translucent tint. A pressable pane
+ * gives under the finger and springs back, and a pane with a `movimento` pops in and out with its
+ * blur (components/Movimento).
  *
  * On Android each blurred pane re-renders the whole screen into an offscreen layer every frame
  * anything moves, and the screen itself is re-drawn view by view: while the drawer slid over the
@@ -22,9 +24,11 @@ import { BlurTargetView, BlurView } from 'expo-blur';
 import React, {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject,
 } from 'react';
-import { Animated, PixelRatio, Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { PixelRatio, Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Reanimated from 'react-native-reanimated';
 
 import { Backdrop } from './Cena';
+import { Pressionavel, useEstiloDoMovimento, type Movimento } from './Movimento';
 import type { EstadoDoToque } from './ui';
 import { alfa, useTheme, type GlassVariant } from '../theme';
 
@@ -134,8 +138,12 @@ export type GlassProps = {
   /** Extra edge styling over the hairline (focus/brand rings). */
   borda?: ViewStyle;
   style?: StyleProp<ViewStyle>;
-  /** Fades the whole pane, its blur included (for entrances and exits; not with onPress). */
-  opacidade?: Animated.Value | Animated.AnimatedInterpolation<number>;
+  /** Moves the whole pane, its blur included: entrances, exits and pops (see Movimento). */
+  movimento?: Movimento;
+  /** Where its scale grows from (a transformOrigin, e.g. 'right top'). */
+  origem?: string;
+  /** How far a press squeezes a pressable pane (1: not at all). */
+  aperto?: number;
   onPress?: () => void;
   onLongPress?: () => void;
   disabled?: boolean;
@@ -144,9 +152,18 @@ export type GlassProps = {
   pointerEvents?: 'auto' | 'none' | 'box-none' | 'box-only';
 };
 
+/** A pane that moves (`movimento`): its own style animates, so on the web its blur fades and scales with it. */
+function PainelMovel({ movimento, base, style, children, ...props }: {
+  movimento: Movimento; base: number; style: StyleProp<ViewStyle>; children: ReactNode;
+  testID?: string; pointerEvents?: GlassProps['pointerEvents']; accessibilityLabel?: string;
+}) {
+  const estilo = useEstiloDoMovimento(movimento, undefined, base);
+  return <Reanimated.View {...props} style={[style, estilo]}>{children}</Reanimated.View>;
+}
+
 export default function Glass({
   children, desfoque = false, opaco = false, variante = desfoque || opaco ? 'vidro' : 'surface', radius, semBorda, semSombra, borda, style,
-  opacidade, onPress, onLongPress, disabled, accessibilityLabel, testID, pointerEvents,
+  movimento, origem, aperto, onPress, onLongPress, disabled, accessibilityLabel, testID, pointerEvents,
 }: GlassProps) {
   const { colors, glass } = useTheme();
   const plano = StyleSheet.flatten(style) ?? {};
@@ -154,26 +171,30 @@ export default function Glass({
   const sombra = semSombra ? null : glass.shadow;
   // Web: the blur is the pane's own backdrop-filter. An ancestor with opacity < 1 (a fade on a
   // wrapper) cuts a backdrop-filter off from what is behind it, and Chrome keeps it cut off after
-  // the fade ends; the pane's own opacity (`opacidade`) fades it with its blur. A plain blur, like
+  // the fade ends; the pane's own opacity (`movimento`) fades it with its blur. A plain blur, like
   // Android's: saturating it would push the colors behind the glass off the palette.
   const filtro = desfoque && Platform.OS === 'web'
     ? ({ backdropFilter: `blur(${Math.round(INTENSIDADE * 0.5)}px)` } as ViewStyle) : null;
   // zIndex 0 makes the pane its own stacking context so the layers (zIndex -1) sit behind every
   // child on web too, including static ones like <svg> and <input>.
-  const base = [plano, sombra, filtro, { borderRadius: raio, zIndex: plano.zIndex ?? 0 }];
+  const base = [plano, sombra, filtro, { borderRadius: raio, zIndex: plano.zIndex ?? 0 }, origem ? { transformOrigin: origem } : null];
+  // A moving pane's opacity is animated: the style's own opacity (a disabled button) rests under it.
+  const repouso = typeof plano.opacity === 'number' ? plano.opacity : 1;
   // The hairline colors each side, and a side's color beats `borderColor`: an edge color (the
   // composer's orange, a focus ring) has to go on every side to show.
   const cor = borda?.borderColor;
   const contorno = cor ? { ...borda, borderTopColor: cor, borderRightColor: cor, borderBottomColor: cor, borderLeftColor: cor } : borda;
 
-  // A pressable pane takes a tint of the text color under the mouse (web), as rows and icons do.
-  const camadas = (sobre = false) => (
+  // A pressable pane takes a tint of the text color under the mouse (web) and the finger, as rows and icons do.
+  const camadas = (estado?: EstadoDoToque) => (
     <>
       <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.atras, { borderRadius: raio, overflow: 'hidden' }]}>
         {desfoque && Platform.OS !== 'web' ? <Desfoque intensidade={INTENSIDADE} /> : null}
         {opaco ? <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.canvas }]} /> : null}
         <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.tint[variante] }]} />
-        {sobre ? <View style={[StyleSheet.absoluteFill, { backgroundColor: alfa(colors.foreground, 0.06) }]} /> : null}
+        {estado?.pressed || estado?.hovered ? (
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: alfa(colors.foreground, estado.pressed ? 0.1 : 0.06) }]} />
+        ) : null}
       </View>
       {semBorda ? null : (
         <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.atras, { borderRadius: raio }, glass.hairline, contorno]} />
@@ -182,26 +203,37 @@ export default function Glass({
     </>
   );
 
+  // Pressed, it gives under the finger and springs back (Movimento).
   if (onPress || onLongPress) {
     return (
-      <Pressable
+      <Pressionavel
         onPress={onPress}
         onLongPress={onLongPress}
         disabled={disabled}
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
         testID={testID}
-        style={({ pressed }) => [...base, pressed && { opacity: 0.85 }]}
+        aperto={aperto}
+        movimento={movimento}
+        opacidade={repouso}
+        style={base}
       >
-        {(estado: EstadoDoToque) => camadas(estado.hovered)}
-      </Pressable>
+        {(estado: EstadoDoToque) => camadas(estado)}
+      </Pressionavel>
+    );
+  }
+  if (movimento) {
+    return (
+      <PainelMovel movimento={movimento} base={repouso} style={base} testID={testID}
+        pointerEvents={pointerEvents} accessibilityLabel={accessibilityLabel}>
+        {camadas()}
+      </PainelMovel>
     );
   }
   return (
-    <Animated.View style={[...base, opacidade ? { opacity: opacidade } : null]} testID={testID} pointerEvents={pointerEvents}
-      accessibilityLabel={accessibilityLabel}>
+    <View style={base} testID={testID} pointerEvents={pointerEvents} accessibilityLabel={accessibilityLabel}>
       {camadas()}
-    </Animated.View>
+    </View>
   );
 }
 

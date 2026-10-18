@@ -29,3 +29,24 @@ pyftsubset ORIGEM.ttf --layout-features='*' --recalc-average-width --output-file
 - No M PLUS 1p, as reticências (U+2026) são o glifo japonês, centralizado
   na altura; nos dois pesos ele foi trocado por três pontos de base (um
   glifo composto do ponto final), para o texto truncado terminar em "...".
+
+## Changa no iOS (`Changa-Medium-iOS.ttf`)
+
+A Changa traz métricas verticais altas (ascendente 1227, descendente 613
+em 1000), feitas para o árabe, que o subconjunto nem tem. Quando o
+`lineHeight` é menor que essa altura (1,84 em), o Android e a web
+centralizam o texto na linha, mas o iOS o encosta embaixo, e todo título,
+botão e item de navegação ficava ~0,3 em acima do centro (texto acima do
+ícone ao lado, rótulos altos nos botões). A cópia do iOS tem a mesma fonte
+com altura 1,24 em (ascendente 927, descendente 313), abaixo de todo
+`lineHeight` do app, e com o mesmo centro (ascendente − descendente = 614):
+o iOS então centraliza como os outros, e o texto fica onde fica no Android.
+`app/_layout.tsx` carrega essa cópia só no iOS. Gerada com o fontTools:
+
+```python
+from fontTools.ttLib import TTFont
+t = TTFont('Changa-Medium.ttf')
+t['hhea'].ascent, t['hhea'].descent, t['hhea'].lineGap = 927, -313, 0
+o = t['OS/2']; o.sTypoAscender, o.sTypoDescender, o.sTypoLineGap = 927, -313, 0
+t.save('Changa-Medium-iOS.ttf')
+```

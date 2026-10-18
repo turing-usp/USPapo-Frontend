@@ -1,13 +1,15 @@
 /**
  * The composer: a brand-edged glass pill with an auto-growing input, voice
- * dictation (mic) and send/stop. Enter sends on web (Shift+Enter breaks the line).
+ * dictation (mic) and send/stop, which pops in once there is something to send. Enter sends on
+ * web (Shift+Enter breaks the line).
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, TextInput, View, type NativeSyntheticEvent, type TextInputKeyPressEventData } from 'react-native';
 
 import Glass from './Glass';
 import { Icone } from './icons';
-import { Erro, opacidadeDoToque, tintaDoToque, useTintaDeCampo } from './ui';
+import { Pressionavel, Surgir } from './Movimento';
+import { Erro, tintaDoToque, useTintaDeCampo } from './ui';
 import { useDitado } from '../lib/device';
 import { alfa, useTheme } from '../theme';
 
@@ -77,7 +79,9 @@ export default function Composer({ value, onChange, onSubmit, placeholder = 'Per
           {...(Platform.OS === 'web' ? { rows: 1 } : null)}
           value={value}
           onChangeText={onChange}
-          onContentSizeChange={(e) => Platform.OS !== 'web' && setAltura(limitar(e.nativeEvent.contentSize.height + PADDING_V * 2))}
+          // iOS reports the content with its padding; Android without it (the web measures above).
+          onContentSizeChange={(e) => Platform.OS !== 'web'
+            && setAltura(limitar(e.nativeEvent.contentSize.height + (Platform.OS === 'ios' ? 0 : PADDING_V * 2)))}
           onKeyPress={aoTeclar}
           onSubmitEditing={enviar}
           submitBehavior="submit"
@@ -97,12 +101,14 @@ export default function Composer({ value, onChange, onSubmit, placeholder = 'Per
           </Pressable>
         ) : null}
         {acao ? (
-          <Pressable accessibilityRole="button" accessibilityLabel={acao.rotulo} onPress={respondendo ? onStop : enviar}
-            style={(estado) => [styles.alvo, { opacity: opacidadeDoToque(estado) }]}>
-            <View style={[styles.disco, { backgroundColor: acao.fundo, borderRadius: radius.full }]}>
-              <Icone nome={acao.icone} cor={acao.tinta} tamanho={20} traco={2.5} />
-            </View>
-          </Pressable>
+          <Surgir key={acao.icone} de={0.4}>
+            <Pressionavel accessibilityRole="button" accessibilityLabel={acao.rotulo} onPress={respondendo ? onStop : enviar}
+              desbotar aperto={0.86} style={styles.alvo}>
+              <View style={[styles.disco, { backgroundColor: acao.fundo, borderRadius: radius.full }]}>
+                <Icone nome={acao.icone} cor={acao.tinta} tamanho={20} traco={2.5} />
+              </View>
+            </Pressionavel>
+          </Surgir>
         ) : null}
       </Glass>
       {ditado.erro ? <View style={{ marginTop: 6 }}><Erro centro>{ditado.erro}</Erro></View> : null}

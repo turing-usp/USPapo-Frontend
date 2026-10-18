@@ -2,11 +2,12 @@
  * The chat state machine and the `useChat` hook.
  *
  * One conversation = one `conversas` row with ordered turns. A turn is saved
- * pending before the stream; the server keeps answering it when the app closes
- * and saves the answer (so does the app on a successful end, whichever is
- * first). Opening a conversation with a pending turn reattaches to the server's
- * answer, and only re-sends it when there is none. "Parar" stops it on the
- * server, which saves the partial answer. Of the tools the app only keeps the
+ * pending before the stream (the question shows at once); the server keeps
+ * answering it when the app closes and saves the answer (so does the app on a
+ * successful end, whichever is first). Opening a conversation with a pending
+ * turn reattaches to the server's answer, and only re-sends it when there is
+ * none. "Parar" stops it on the server, which saves the partial answer (pressed
+ * before the stream began, the app saves the turn as interrupted). Of the tools the app only keeps the
  * server's status for the last one used, shown beside the thinking mark.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -149,7 +150,10 @@ export function useChat(id: string, opts: { aoSessaoExpirada: () => void; pertoD
     const ctrl = new AbortController();
     controle.current = ctrl;
     turno.current = { conversaId: id, ordem };
-    parado.current = false;
+    // "Parar" while the pending turn was being saved: the server has no answer to stop, so the
+    // stream never starts and the turn is saved as interrupted here.
+    const paradoAntes = parado.current;
+    if (paradoAntes) ctrl.abort();
     const salvas = (conversa.current?.mensagens ?? []).filter((m) => m.resposta !== null && m.ordem < ordem);
     let local = iniciar(pergunta, ordem, linhasSalvas(salvas));
     setEstado(local);
@@ -171,6 +175,7 @@ export function useChat(id: string, opts: { aoSessaoExpirada: () => void; pertoD
         const encerradas = local.linhas.map((l): Linha => (l === aberta ? { ...aberta, completo: true } : l));
         setEstado({ ...local, status: 'idle', linhas: aberta || parado.current
           ? [...encerradas, { id: `nota:${local.linhas.length}`, autor: 'nota', texto: NOTA_INTERROMPIDA }] : encerradas });
+        if (paradoAntes) void anexarMensagem(uid, id, { ordem, pergunta, resposta: MARCA_INTERROMPIDA, fontes: [] }).catch(() => undefined);
         if (parado.current) {
           const texto = aberta?.texto.trim();
           const mensagens = [...salvas, { ordem, pergunta, resposta: texto ? `${texto}\n\n${MARCA_INTERROMPIDA}` : MARCA_INTERROMPIDA, fontes: [] }];
@@ -262,13 +267,20 @@ export function useChat(id: string, opts: { aoSessaoExpirada: () => void; pertoD
     void aoPerguntar();
     const respondidas = (conversa.current?.mensagens ?? []).filter((m) => m.resposta !== null).length;
     const repetir = estado.status === 'errou' && estado.pergunta === pergunta;
-    void enviarTurno(pergunta, repetir ? estado.ordem : respondidas, userId);
+    const ordem = repetir ? estado.ordem : respondidas;
+    // The question shows at once (it pops up from the composer); saving the pending turn first
+    // takes a round trip or two.
+    parado.current = false;
+    const salvas = (conversa.current?.mensagens ?? []).filter((m) => m.resposta !== null && m.ordem < ordem);
+    setEstado(iniciar(pergunta, ordem, linhasSalvas(salvas)));
+    void enviarTurno(pergunta, ordem, userId);
   }, [userId, estado.status, estado.pergunta, estado.ordem, enviarTurno]);
 
   const stop = useCallback(() => {
     void haptics.press();
     parado.current = true;
-    const atual = turno.current;
+    // Before the stream begins there is nothing on the server to stop (see `responder`).
+    const atual = controle.current ? turno.current : null;
     if (atual) void sessaoAtual().then(({ token }) => pararChat(atual, token));
     controle.current?.abort();
   }, []);

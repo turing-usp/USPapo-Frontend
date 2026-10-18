@@ -88,8 +88,10 @@ function Pilha() {
 
 export default function Raiz() {
   // The manual's fonts, subset to Latin, Greek and symbols (anything else falls back to the system font).
+  // iOS gets a Changa with Latin vertical metrics: with the original (tall, for Arabic) ones, every
+  // line shorter than them sat ~0.3 em high (assets/fonts/LEIAME.md).
   const [fontes, erro] = useFonts({
-    'Changa-Medium': require('../assets/fonts/Changa-Medium.ttf'),
+    'Changa-Medium': Platform.OS === 'ios' ? require('../assets/fonts/Changa-Medium-iOS.ttf') : require('../assets/fonts/Changa-Medium.ttf'),
     'MPLUS1p-Regular': require('../assets/fonts/MPLUS1p-Regular.ttf'),
     'MPLUS1p-Bold': require('../assets/fonts/MPLUS1p-Bold.ttf'),
     'RobotoMono-Regular': require('../assets/fonts/RobotoMono-Regular.ttf'),

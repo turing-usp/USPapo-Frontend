@@ -1,12 +1,14 @@
 /**
  * Small opaque-glass menus anchored to what opened them: the kebab button of a conversation in the
- * drawer, or a finger's long press (a conversation, a message).
+ * drawer, or a finger's long press (a conversation, a message). They pop out of that point.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, BackHandler, Easing, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { BackHandler, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import Reanimated from 'react-native-reanimated';
 
 import Glass from './Glass';
 import { Icone, type NomeIcone } from './icons';
+import { useSurgimento } from './Movimento';
 import { ItemDeMenu, tintaDoToque } from './ui';
 import { useTheme } from '../theme';
 
@@ -40,20 +42,15 @@ export function BotaoAcoes({ rotulo, aoAbrir, aoSobrevoar }: {
 
 /**
  * Its parent must start at the window's origin (the anchor is in window coordinates). A new menu is
- * a new anchor; while it fades out it stays where it was. Choosing an item closes it.
+ * a new anchor; while it leaves it stays where it was. Choosing an item closes it.
  */
 export function MenuAncorado({ aberto, aoFechar }: { aberto: MenuAberto | null; aoFechar: () => void }) {
   const { radius, spacing } = useTheme();
   const { width, height } = useWindowDimensions();
   const [ultimo, setUltimo] = useState(aberto);
   if (aberto && aberto.ancora !== ultimo?.ancora) setUltimo(aberto);
-  const [entrada] = useState(() => new Animated.Value(0));
   const visivel = !!aberto;
-
-  useEffect(() => {
-    Animated.timing(entrada, { toValue: visivel ? 1 : 0, duration: visivel ? 140 : 110, easing: Easing.out(Easing.cubic), useNativeDriver: true })
-      .start(({ finished }) => finished && !visivel && setUltimo(null));
-  }, [visivel, entrada]);
+  const { montado, movimento, conteudo } = useSurgimento(visivel, { de: 0.8 });
 
   // Back (Android) and Escape (web) close it, as they closed the Modal.
   useEffect(() => {
@@ -71,22 +68,28 @@ export function MenuAncorado({ aberto, aoFechar }: { aberto: MenuAberto | null; 
   }, [visivel, aoFechar]);
 
   const menu = aberto ?? ultimo;
-  if (!menu) return null;
+  if (!menu || !montado) return null;
   const { direita, topo, base } = menu.ancora;
   const altura = menu.itens.length * LINHA + 8;
   const left = Math.max(8, Math.min(direita - LARGURA, width - LARGURA - 8));
-  const top = base + altura + 8 < height ? base + 4 : Math.max(8, topo - altura - 4);
+  const abaixo = base + altura + 8 < height;
+  const top = abaixo ? base + 4 : Math.max(8, topo - altura - 4);
+  // It grows from the anchor: the kebab's right edge, or the finger (clamped to the menu).
+  const origem = `${Math.round(Math.min(LARGURA, Math.max(0, direita - left)))}px ${abaixo ? 0 : altura}px`;
 
   return (
     <View pointerEvents={visivel ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, { zIndex: 10 }]}>
       <Pressable accessibilityLabel="Fechar menu" onPress={aoFechar} style={StyleSheet.absoluteFill} />
-      <Glass opaco radius={radius.lg} opacidade={entrada} style={{ position: 'absolute', left, top, width: LARGURA, padding: spacing.xs }}>
-        {menu.itens.map((item) => (
-          <ItemDeMenu key={item.rotulo} icone={item.icone} rotulo={item.rotulo} onPress={() => {
-            aoFechar();
-            item.acao();
-          }} />
-        ))}
+      <Glass opaco radius={radius.lg} movimento={movimento} origem={origem}
+        style={{ position: 'absolute', left, top, width: LARGURA, padding: spacing.xs }}>
+        <Reanimated.View style={conteudo}>
+          {menu.itens.map((item) => (
+            <ItemDeMenu key={item.rotulo} icone={item.icone} rotulo={item.rotulo} onPress={() => {
+              aoFechar();
+              item.acao();
+            }} />
+          ))}
+        </Reanimated.View>
       </Glass>
     </View>
   );
