@@ -104,6 +104,21 @@ export function Marca({ logo, fonte, coluna }: { logo: number; fonte: number; co
   );
 }
 
+/**
+ * The watermark on a widget's image (its bottom left corner, in the chat, full screen and in the
+ * saved PNG): the mark and the name, quiet. Screen readers skip it.
+ */
+export function MarcaDagua() {
+  const { colors, fonts } = useTheme();
+  return (
+    <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start' }}>
+      <LogoUSPapo size={13} />
+      <Text style={{ fontFamily: fonts.title, fontSize: 12, lineHeight: 16, color: colors.mutedForeground }}>USPapo</Text>
+    </View>
+  );
+}
+
 /** "Desenvolvido por" and the Turing imagotype (its colors on light, its white form on dark). */
 export function Assinatura({ inicio }: { inicio?: boolean }) {
   const { escuro, spacing } = useTheme();

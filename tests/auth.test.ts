@@ -1,12 +1,12 @@
-import { contaDeLogin, googleAtivo, mapAuthError, senhaValida, trocarSenha } from '../lib/auth';
+import { concluirGoogle, contaDeLogin, googleAtivo, mapAuthError, pedirRedefinicao, senhaValida, trocarSenha } from '../lib/auth';
 import { supabase } from '../lib/supabase';
 
 jest.mock('../lib/supabase', () => ({
-  supabase: { auth: { signInWithPassword: jest.fn(), updateUser: jest.fn(), getUser: jest.fn() } },
+  supabase: { auth: { signInWithPassword: jest.fn(), updateUser: jest.fn(), getUser: jest.fn(), exchangeCodeForSession: jest.fn() } },
   SUPABASE_URL: 'http://supabase.test',
   SUPABASE_ANON_KEY: 'anon',
 }));
-const mockAuth = supabase.auth as unknown as Record<'signInWithPassword' | 'updateUser' | 'getUser', jest.Mock>;
+const mockAuth = supabase.auth as unknown as Record<'signInWithPassword' | 'updateUser' | 'getUser' | 'exchangeCodeForSession', jest.Mock>;
 
 beforeEach(() => Object.values(mockAuth).forEach((f) => f.mockReset()));
 
@@ -48,4 +48,28 @@ test('the Google button follows the project settings', async () => {
   expect(fetch).toHaveBeenCalledTimes(1);
   expect(fetch).toHaveBeenCalledWith('http://supabase.test/auth/v1/settings', { headers: { apikey: 'anon' } });
   fetch.mockRestore();
+});
+
+test('the recovery link goes to the website, with no PKCE challenge (any device can open it)', async () => {
+  const fetch = jest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }));
+  expect(await pedirRedefinicao('a@usp.br')).toBeNull();
+  const [url, init] = fetch.mock.calls[0] as [string, RequestInit];
+  expect(url).toBe('http://supabase.test/auth/v1/recover?redirect_to=https%3A%2F%2Fuspapo.turingusp.com');
+  expect(JSON.parse(String(init.body))).toEqual({ email: 'a@usp.br' });
+  expect((init.headers as Record<string, string>).apikey).toBe('anon');
+
+  fetch.mockResolvedValue(new Response(JSON.stringify({ error_code: 'over_email_send_rate_limit' }), { status: 429 }));
+  expect(await pedirRedefinicao('a@usp.br')).toBe('Muitas tentativas. Espere alguns minutos e tente de novo');
+  fetch.mockRejectedValue(new TypeError('fetch failed'));
+  expect(await pedirRedefinicao('a@usp.br')).toBe('Verifique sua conexão e tente de novo');
+  fetch.mockRestore();
+});
+
+test("Google's deep link as a route exchanges its code once", async () => {
+  mockAuth.exchangeCodeForSession.mockResolvedValue({ error: null });
+  expect(await concluirGoogle('uspapofe://auth/callback?code=abc')).toEqual({ ok: true });
+  // The same code again (the route re-rendered, or the login screen already used it): left alone.
+  expect(await concluirGoogle('uspapofe://auth/callback?code=abc')).toBeNull();
+  expect(mockAuth.exchangeCodeForSession).toHaveBeenCalledTimes(1);
+  expect(await concluirGoogle('uspapofe://auth/callback?error=access_denied')).toEqual({ ok: false, cancelado: true });
 });

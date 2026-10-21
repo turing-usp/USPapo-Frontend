@@ -17,8 +17,12 @@ import {
 import React, { createContext, memo, useContext, useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Animated, Easing, Linking, ScrollView, Text, View, useWindowDimensions, type ViewStyle } from 'react-native';
 
+import { Avaliacao } from './Avaliacao';
+import { Curriculo } from './Curriculo';
 import { Grade } from './Grade';
 import { Mapa } from './Mapa';
+import { Onibus } from './Onibus';
+import { Sala } from './Sala';
 import { Matematica } from './Matematica';
 import { blocos, distribuirColunas, medirColunas, quebras, selar, temMatematica, tintasDaTabela } from '../../lib/markdown';
 import { lerWidget, separarWidgets, type Widget } from '../../lib/widgets';
@@ -119,7 +123,11 @@ const BlocoCompleto = createContext(true);
 function WidgetDaResposta({ widget }: { widget: Widget }) {
   const completo = useContext(BlocoCompleto);
   if (widget.tipo === 'mapa') return <Mapa campos={widget.campos} pronto={completo} />;
+  if (widget.tipo === 'onibus') return <Onibus campos={widget.campos} pronto={completo} />;
   if (widget.tipo === 'grade') return <Grade campos={widget.campos} pronto={completo} />;
+  if (widget.tipo === 'curriculo') return <Curriculo campos={widget.campos} pronto={completo} />;
+  if (widget.tipo === 'sala') return <Sala campos={widget.campos} pronto={completo} />;
+  if (widget.tipo === 'avaliacao') return <Avaliacao campos={widget.campos} pronto={completo} />;
   return null;
 }
 

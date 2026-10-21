@@ -10,6 +10,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Backdrop } from '../components/Cena';
 import { LogoUSPapo } from '../components/icons';
 import { Botao, Texto } from '../components/ui';
+import { aplicarLinkDeRecuperacao } from '../lib/auth';
 import { carregarHaptics } from '../lib/device';
 import { supabase } from '../lib/supabase';
 import { ThemeProvider, paleta, useTheme } from '../theme';
@@ -23,6 +24,26 @@ if (Platform.OS === 'web' && typeof document !== 'undefined' && !document.getEle
   estilo.textContent = `:focus-visible{outline:2px solid ${paleta.laranja};outline-offset:2px}`
     + 'input:focus-visible,textarea:focus-visible{outline:none}';
   document.head.appendChild(estilo);
+}
+
+// Web on phones: to show a focused field above the keyboard the browser moves the whole page up,
+// and Chrome on Android may leave it there once the keyboard closes (its back gesture closes it
+// without a blur): the app sat shifted up, its top cut and the page's background below it. The app
+// never scrolls the page itself (its lists scroll inside), so with no keyboard up the page and the
+// visual viewport go back to the top (scrollTo moves both).
+if (Platform.OS === 'web' && typeof window !== 'undefined') {
+  const vv = window.visualViewport;
+  // A pinch-zoomed page is the reader's own doing: leave it alone.
+  const tecladoAberto = () => !!vv && (vv.scale > 1.01 || window.innerHeight - vv.height > 120);
+  const desrolar = () => {
+    const deslocada = window.scrollX || window.scrollY || (vv ? Math.abs(vv.offsetTop) + Math.abs(vv.offsetLeft) > 0.5 : false);
+    if (deslocada && !tecladoAberto()) window.scrollTo(0, 0);
+  };
+  const depois = () => setTimeout(desrolar, 80);
+  window.addEventListener('scroll', desrolar, { passive: true });
+  vv?.addEventListener('resize', depois);
+  vv?.addEventListener('scroll', depois);
+  document.addEventListener('focusout', depois);
 }
 
 function Centro({ children }: { children: ReactNode }) {
@@ -40,13 +61,18 @@ function PortaDeSessao({ children }: { children: ReactNode }) {
   const [estado, setEstado] = useState<'carregando' | 'falhou' | 'pronta'>('carregando');
   const [logado, setLogado] = useState(false);
   const [tentativa, setTentativa] = useState(0);
-  const publico = useSegments()[0] === '(auth)';
+  // A recovery link (web) opens its session first and goes straight to the new password.
+  const [recuperar, setRecuperar] = useState(false);
+  const segmentos = useSegments();
+  const publico = segmentos[0] === '(auth)';
 
   useEffect(() => {
     let ativo = true;
-    supabase.auth.getSession()
-      .then(({ data, error }) => {
+    aplicarLinkDeRecuperacao()
+      .then(async (recuperacao) => {
+        const { data, error } = await supabase.auth.getSession();
         if (!ativo) return;
+        setRecuperar(!!recuperacao);
         setLogado(!!data.session);
         setEstado(error ? 'falhou' : 'pronta');
       })
@@ -57,6 +83,9 @@ function PortaDeSessao({ children }: { children: ReactNode }) {
       data.subscription.unsubscribe();
     };
   }, [tentativa]);
+  // Once on /reset, the link has done its job: the gate stops redirecting.
+  const naRedefinicao = segmentos.at(-1) === 'reset';
+  if (recuperar && naRedefinicao) setRecuperar(false);
 
   if (estado === 'carregando') {
     return <Centro><LogoUSPapo size={64} /><ActivityIndicator color={colors.brand} /></Centro>;
@@ -70,6 +99,7 @@ function PortaDeSessao({ children }: { children: ReactNode }) {
       </Centro>
     );
   }
+  if (recuperar && !naRedefinicao) return <Redirect href="/reset" />;
   if (!logado && !publico) return <Redirect href="/login" />;
   return <>{children}</>;
 }

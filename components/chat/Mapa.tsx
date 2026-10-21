@@ -21,8 +21,28 @@ import { alfa, paleta, useTheme } from '../../theme';
 const ASPECTO = 1.5;
 const ALTURA_MAXIMA = 340;
 
-function Desenho({ dados, largura, altura }: { dados: Geometria; largura: number; altura: number }) {
+/**
+ * The campus base layer at `px` meters per screen pixel (inside an Svg whose viewBox is in the base
+ * layer's meters): the campus, water, buildings, streets and rails, in the palette by opacity.
+ * The room widget (Sala.tsx) draws its buildings over the same layer.
+ */
+export function BaseDoCampus({ px }: { px: number }) {
   const { colors, escuro } = useTheme();
+  const tinta = (opacidade: number) => alfa(colors.foreground, opacidade);
+  return (
+    <>
+      <Path d={BASE.campus} fill={tinta(0.035)} stroke={tinta(0.16)} strokeWidth={px} />
+      <Path d={BASE.agua} fill={alfa(paleta.azul, escuro ? 0.34 : 0.2)} />
+      <Path d={BASE.predios} fill={tinta(0.09)} />
+      <Path d={BASE.viasInternas} stroke={tinta(0.13)} strokeWidth={1.5 * px} fill="none" strokeLinejoin="round" />
+      <Path d={BASE.vias} stroke={tinta(0.2)} strokeWidth={2.5 * px} fill="none" strokeLinejoin="round" />
+      <Path d={BASE.trilhos} stroke={tinta(0.3)} strokeWidth={1.5 * px} strokeDasharray={[6 * px, 4 * px]} fill="none" />
+    </>
+  );
+}
+
+function Desenho({ dados, largura, altura }: { dados: Geometria; largura: number; altura: number }) {
+  const { colors } = useTheme();
   const desenho = useMemo(() => {
     const rota = decodificar(dados.rota).map(projetar);
     const [embarque, desembarque] = [projetar(dados.embarque), projetar(dados.desembarque)];
@@ -34,19 +54,13 @@ function Desenho({ dados, largura, altura }: { dados: Geometria; largura: number
   const { px } = desenho;
   // Sizes in screen pixels, converted to the viewBox's meters.
   const tamanho = (n: number) => n * px;
-  const tinta = (opacidade: number) => alfa(colors.foreground, opacidade);
   const pe = (de: Ponto | null, ate: Ponto): React.ReactNode => de && (
     <Path d={linha([de, ate])} stroke={colors.mutedForeground} strokeWidth={tamanho(2)} strokeLinecap="round"
       strokeDasharray={[tamanho(0.1), tamanho(5)]} fill="none" />
   );
   return (
     <Svg width={largura} height={altura} viewBox={desenho.caixa.join(' ')}>
-      <Path d={BASE.campus} fill={tinta(0.035)} stroke={tinta(0.16)} strokeWidth={tamanho(1)} />
-      <Path d={BASE.agua} fill={alfa(paleta.azul, escuro ? 0.34 : 0.2)} />
-      <Path d={BASE.predios} fill={tinta(0.09)} />
-      <Path d={BASE.viasInternas} stroke={tinta(0.13)} strokeWidth={tamanho(1.5)} fill="none" strokeLinejoin="round" />
-      <Path d={BASE.vias} stroke={tinta(0.2)} strokeWidth={tamanho(2.5)} fill="none" strokeLinejoin="round" />
-      <Path d={BASE.trilhos} stroke={tinta(0.3)} strokeWidth={tamanho(1.5)} strokeDasharray={[tamanho(6), tamanho(4)]} fill="none" />
+      <BaseDoCampus px={px} />
       {pe(desenho.origem, desenho.embarque)}
       {desenho.destino ? pe(desenho.desembarque, desenho.destino) : null}
       {/* A halo in the canvas color keeps the ride legible over streets and buildings. */}
@@ -84,6 +98,22 @@ function Legenda({ temDestino }: { temDestino: boolean }) {
 }
 
 /**
+ * Full screen, the map fills the room it has: as wide as the height allows on a wide screen, and
+ * squarer than in the chat on a phone (more of the campus around the ride). An SVG redrawn at that
+ * size, so nothing stretches.
+ */
+function MapaAmpliado({ dados, rotulo, largura, altura }: { dados: Geometria; rotulo: string; largura: number; altura: number }) {
+  const livre = altura - 44; // the legend
+  const l = Math.min(largura, livre * ASPECTO);
+  return (
+    <View accessible accessibilityRole="image" accessibilityLabel={rotulo} style={{ width: l }}>
+      <Desenho dados={dados} largura={l} altura={Math.max(l / ASPECTO, Math.min(l * 1.25, livre))} />
+      <Legenda temDestino={!!dados.destino} />
+    </View>
+  );
+}
+
+/**
  * `pronto`: the block is complete (an answer still streaming may hold half a reference). Until the
  * ride arrives the box keeps its final height, so the answer does not jump; a reference the
  * current timetable no longer has leaves no trace. Full screen, the map takes a squarer box: more
@@ -106,12 +136,7 @@ export const Mapa = memo(function Mapa({ campos, pronto }: { campos: Record<stri
   return (
     <Moldura titulo="Trajeto" detalhe={campos.linha ? `linha ${campos.linha}` : undefined}
       arquivo={campos.linha ? `uspapo-mapa-${campos.linha}` : 'uspapo-mapa'} pronto={!!dados && largura > 0}
-      ampliado={(l, livre) => dados ? (
-        <View accessible accessibilityRole="image" accessibilityLabel={rotulo}>
-          <Desenho dados={dados} largura={l} altura={Math.max(l / ASPECTO, Math.min(l * 1.25, livre - 40))} />
-          <Legenda temDestino={!!dados.destino} />
-        </View>
-      ) : null}>
+      ampliado={(l, livre) => dados ? <MapaAmpliado dados={dados} rotulo={rotulo} largura={l} altura={livre} /> : null}>
       <View accessible accessibilityRole="image" accessibilityLabel={rotulo} onLayout={(e) => setLargura(Math.floor(e.nativeEvent.layout.width))}
         style={{ width: '100%', height: altura || undefined, aspectRatio: altura ? undefined : ASPECTO, marginTop: spacing.sm,
           backgroundColor: alfa(colors.foreground, 0.03) }}>

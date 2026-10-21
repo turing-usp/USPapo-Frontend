@@ -162,8 +162,9 @@ function Legenda({ quadro, dados, largura }: { quadro: Quadro; dados: DadosDaGra
 }
 
 function Conteudo({ quadro, dados, largura }: { quadro: Quadro; dados: DadosDaGrade; largura: number }) {
+  // A fixed width: the legend's wrapping rows would otherwise take all the room the viewer offers.
   return (
-    <View>
+    <View style={{ width: largura }}>
       <Desenho quadro={quadro} largura={largura} />
       <Legenda quadro={quadro} dados={dados} largura={largura} />
     </View>
@@ -181,7 +182,7 @@ function arquivoDa(dados: DadosDaGrade | null): string {
  * leaves no trace; until the schedules arrive the box holds a placeholder height.
  */
 export const Grade = memo(function Grade({ campos, pronto }: { campos: Record<string, string>; pronto: boolean }) {
-  const { spacing } = useTheme();
+  const { layout, spacing } = useTheme();
   const estado = useDadosDoWidget(buscarGrade, campos, pronto);
   const dados = estado.tipo === 'pronto' ? estado.dados : null;
   const quadro = useMemo(() => (dados ? montarQuadro(dados) : null), [dados]);
@@ -196,7 +197,9 @@ export const Grade = memo(function Grade({ campos, pronto }: { campos: Record<st
   return (
     <Moldura titulo="Grade horária" detalhe={quadro ? `${duracao(quadro.minutosSemanais)} de aula por semana` : undefined}
       arquivo={arquivoDa(dados)} pronto={desenhado}
-      ampliado={(l) => (quadro && dados ? <Conteudo quadro={quadro} dados={dados} largura={l} /> : null)}>
+      // Full screen it keeps the chat's width (time runs at a fixed scale: wider would only stretch
+      // the blocks); the viewer scales it up evenly.
+      ampliado={(l) => (quadro && dados ? <Conteudo quadro={quadro} dados={dados} largura={Math.min(l, layout.chatMaxWidth)} /> : null)}>
       <View onLayout={(e) => setLargura(Math.floor(e.nativeEvent.layout.width))} style={{ minHeight: desenhado ? undefined : 160 }}>
         {desenhado && dados ? (
           <Animated.View style={{ opacity: entrada, paddingTop: spacing.xs }}><Conteudo quadro={quadro} dados={dados} largura={largura} /></Animated.View>

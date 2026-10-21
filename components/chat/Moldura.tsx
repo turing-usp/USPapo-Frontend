@@ -10,7 +10,7 @@ import { AccessibilityInfo, Platform, View } from 'react-native';
 
 import { ICONE_COMPARTILHAR } from './AcoesDaMensagem';
 import { Visualizador } from './Visualizador';
-import { BotaoDeIcone, Texto } from '../ui';
+import { BotaoDeIcone, MarcaDagua, Texto } from '../ui';
 import { haptics } from '../../lib/device';
 import { PODE_COMPARTILHAR_IMAGEM, compartilharImagem, salvarImagem, type ResultadoDaImagem } from '../../lib/imagem';
 import { alfa, useTheme } from '../../theme';
@@ -104,6 +104,7 @@ export function Moldura({ titulo, detalhe, arquivo, pronto, ampliado, children }
           {detalhe ? <Texto v="detalhe">{detalhe}</Texto> : null}
         </View>
         {children}
+        <View style={{ paddingHorizontal: spacing.md, paddingTop: spacing.xs, paddingBottom: spacing.sm }}><MarcaDagua /></View>
       </View>
       {aviso ? (
         <Texto v="legenda" accessibilityLiveRegion="polite" style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.sm }}>{aviso}</Texto>
@@ -112,7 +113,7 @@ export function Moldura({ titulo, detalhe, arquivo, pronto, ampliado, children }
         <BotaoDeIcone icone="expandir" rotulo={`Ampliar: ${titulo}`} lado={BOTAO} desabilitado={!pronto} onPress={() => setAberto(true)} />
         {acoes(BOTAO)}
       </View>
-      <Visualizador aberto={aberto} aoFechar={() => setAberto(false)} titulo={titulo} aviso={aviso} acoes={acoes(40)}>
+      <Visualizador aberto={aberto} aoFechar={() => setAberto(false)} titulo={titulo} detalhe={detalhe} aviso={aviso} acoes={acoes(36)}>
         {ampliado}
       </Visualizador>
     </View>

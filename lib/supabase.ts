@@ -20,7 +20,9 @@ export const supabase = createClient(url, anonKey, {
     storage: AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: Platform.OS === 'web', // native OAuth returns through a deep link instead
+    // Web: only Google's PKCE `?code=` (native OAuth returns through a deep link instead). A
+    // fragment session is a recovery link, which lib/auth opens itself.
+    detectSessionInUrl: Platform.OS === 'web' ? () => false : false,
     flowType: 'pkce',
   },
 });

@@ -238,14 +238,21 @@ com outros serviços do Turing.
   app não precisa de client Android/iOS nem de SHA-1: o login abre o
   navegador e volta pelo deep link `uspapofe://auth/callback`.
 - **Redirect URLs** (Authentication → URL Configuration):
-  `https://uspapo.turingusp.com`, `https://uspapo.turingusp.com/**` e
-  `uspapofe://**`. Não mude a Site URL.
-- **Esqueci a senha** depende de e-mail. O SMTP padrão do Supabase só
-  entrega para membros da equipe do projeto e com limite baixo: se o
-  cadastro já confirma e-mails de qualquer aluno, está pronto; senão,
-  configure Authentication → Emails → SMTP Settings (Resend, Brevo ou um
-  Gmail com senha de app) e traduza o template *Reset Password* mantendo
-  `{{ .ConfirmationURL }}`.
+  `https://uspapo.turingusp.com` (Google na web e o link de nova senha) e
+  `uspapofe://**` (Google no app). Sem o `uspapofe://**`, o Google no app
+  termina no site do Turing (`turingusp.com/?code=…`) e não entra. Não mude
+  a Site URL.
+- **Esqueci a senha** termina sempre no site, de qualquer aparelho: o app e
+  o site pedem o e-mail a `/auth/v1/recover` sem PKCE e com destino na
+  origem do site, então o link traz a sessão no fragmento da URL (que o
+  navegador não envia a ninguém). O site abre essa sessão antes de qualquer
+  rota (`app/_layout.tsx`), leva a `/reset` e lá se cria a nova senha; um
+  link vencido ou já usado cai em `/reset` pedindo outro. Se o link do
+  e-mail levar ao site do Turing mesmo assim, o template *Reset Password*
+  do projeto não usa `{{ .ConfirmationURL }}` (que respeita o destino). O
+  SMTP padrão do Supabase só entrega para a equipe do projeto e com limite
+  baixo; os e-mails do projeto próprio estão em
+  `USPapo-Backend/supabase/templates/`.
 - **Alterar senha** (Ajustes > Conta) não usa e-mail: confere a senha
   atual entrando de novo e troca em seguida. Uma conta que só entra com o
   Google cria a primeira senha ali.

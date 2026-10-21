@@ -8,7 +8,8 @@
  * The block travels inside the answer text (the chat stream did not change) and is saved with it,
  * so a reopened conversation draws it again. The backend sends only a short reference; the widget
  * fetches what it needs (the map: GET /api/mapa) and draws it. Copy, share and the KaTeX path drop
- * the blocks. Today: `mapa` and `grade`; images and videos will add their own `tipo`.
+ * the blocks. Today: `mapa`, `onibus` (live, refreshed), `grade`, `curriculo`, `sala` and
+ * `avaliacao`; images and videos will add their own `tipo`.
  */
 import { backendUrl } from './api';
 import { sessaoAtual } from './auth';

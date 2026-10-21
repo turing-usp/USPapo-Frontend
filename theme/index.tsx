@@ -175,6 +175,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return { scheme: s, escuro: s !== 'light', colors: palette[s], glass: comSombra(glass[s]), spacing, radius, typography, fonts, layout };
   }, [preference, system]);
 
+  // Web: the page under the app (and the browser's bars) takes the scheme's canvas, so no strip of
+  // another color shows past the app's edge (the HTML starts with the system's light or graphite).
+  const canvas = theme.colors.canvas;
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    document.documentElement.style.backgroundColor = canvas;
+    document.body.style.backgroundColor = canvas;
+    document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => meta.setAttribute('content', canvas));
+  }, [canvas]);
+
   return <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>;
 }
 

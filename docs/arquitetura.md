@@ -165,14 +165,39 @@ relida ao abrir o app e ao voltar para ele depois de 5 minutos.
   ≥ 4,5:1 na turma em todos os temas, conferido por script); choque leva
   contorno tracejado e uma linha com o alerta (sem vermelho). A legenda dá
   nome e professores; o dia de hoje fica no `accent`.
-- **Moldura dos widgets** (`Moldura.tsx`): a caixa comum do mapa e da grade
-  (e dos próximos): título em Changa e detalhe em Roboto Mono, com Ampliar,
-  Baixar e Compartilhar ao lado, fora da imagem. `useDadosDoWidget` busca os
-  dados da referência quando o bloco termina de chegar. Ampliar abre
-  `Visualizador.tsx`: tela cheia opaca (`Modal`), o widget desenhado de novo
-  na largura da tela (não uma imagem esticada), pinça com zoom em volta dos
-  dedos, arrastar com inércia, toque duplo, e os mesmos zooms em botões
-  (−, 100 %, +). `lib/imagem.ts` captura a caixa como PNG
+- **Próximos ônibus** (`Onibus.tsx`, `lib/onibus.ts`, tipo `onibus`): as
+  próximas passagens numa parada, contando os minutos. O app pede
+  `GET /api/onibus` com as linhas e as paradas do GTFS e recebe, por linha e
+  sentido, o instante de cada passagem (ao vivo pelo Olho Vivo, ou pela
+  programação, dito na tela: o ao vivo tem um ponto pulsando no `accent`, o
+  previsto não). Sem cache: conta os minutos a cada 15 s e pede de novo a
+  cada 30 s com o app na frente, por 15 min (Atualizar renova).
+- **Grade curricular** (`Curriculo.tsx`, `lib/curriculo.ts`, tipo
+  `curriculo`): as obrigatórias de um curso por semestre ideal, em cartões
+  (sigla; com espaço, o nome). `GET /api/curriculo` traz a grade e
+  `GET /api/curriculo/requisitos`, logo depois, os requisitos que o
+  JupiterWeb lista para aquele curso. Tocar num cartão acende o que ele pede
+  (borda cheia) e o que libera (tracejada), apaga o resto e desenha as
+  setas (`curva`, testada em `tests/widgets-novos.test.ts`).
+- **Onde é a aula** (`Sala.tsx`, `lib/sala.ts`, tipo `sala`): as aulas de
+  uma disciplina (USPolis) com sala e prédio, e os prédios da turma
+  escolhida sobre a mesma base do campus do mapa (`BaseDoCampus`).
+- **Avaliação de alunos** (`Avaliacao.tsx`, `lib/avaliacao.ts`, tipo
+  `avaliacao`): as médias de um professor no USP Avalia por disciplina e os
+  cinco quesitos da escolhida; Dificuldade na cor do texto (alta é matéria
+  puxada, não defeito), aviso de que é opinião de alunos e link para o site.
+- **Moldura dos widgets** (`Moldura.tsx`): a caixa comum de todos os widgets:
+  título em Changa e detalhe em Roboto Mono, com Ampliar, Baixar e
+  Compartilhar ao lado, fora da imagem, e a marca d'água do USPapo (logo e
+  nome, no canto inferior esquerdo, também na imagem salva).
+  `useDadosDoWidget` busca os dados da referência quando o bloco termina de
+  chegar. Ampliar abre `Visualizador.tsx`: tela cheia opaca (`Modal`), o
+  widget desenhado de novo na folha (não uma imagem esticada), com os
+  controles em pílulas. Pinça com zoom em volta dos dedos, arrastar com
+  inércia, toque duplo, elástico nas bordas e nos limites do zoom, e na web
+  a roda (Ctrl ou a pinça do trackpad dá zoom no cursor) e as teclas + − 0;
+  os mesmos zooms em botões (−, 100 %, +). A conta do zoom fica em
+  `lib/zoom.ts` (testada). `lib/imagem.ts` captura a caixa como PNG
   (`react-native-view-shot`), salva na galeria (`expo-media-library`: no iOS
   pede só para adicionar fotos; no Android 10+ não pede nada; no 9 ou
   anterior cai na folha de compartilhar), com o nome do arquivo limpo
