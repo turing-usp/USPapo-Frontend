@@ -25,7 +25,8 @@
       "blockedPermissions": [
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.SYSTEM_ALERT_WINDOW"
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
       ],
       "predictiveBackGestureEnabled": false,
       "allowBackup": false
@@ -58,6 +59,15 @@
         }
       ],
       "expo-updates",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": false,
+          "savePhotosPermission": "O USPapo salva na sua galeria as imagens que você baixa, como o mapa de uma rota ou a sua grade horária.",
+          "isAccessMediaLocationEnabled": false,
+          "granularPermissions": []
+        }
+      ],
       [
         "expo-notifications",
         {

@@ -3,8 +3,7 @@
  * campus base layer bundled with the app (assets/mapa/campus.json, from scripts/mapa-campus.mjs).
  * Everything is drawn in the base layer's local meters: x east, y south, as SVG expects.
  */
-import { backendUrl } from './api';
-import { sessaoAtual } from './auth';
+import { buscarDadosDoWidget } from './widgets';
 import base from '../assets/mapa/campus.json';
 
 export type Ponto = [number, number];
@@ -14,23 +13,11 @@ export type BaseDoMapa = typeof base;
 export const BASE: BaseDoMapa = base;
 
 const CAMPOS = ['linha', 'de', 'ate', 'origem', 'destino'] as const;
-const pedidos = new Map<string, Promise<Geometria | null>>();
 
 /** The ride's geometry, or null when the reference is gone (404) or cannot be read. Failures are not cached. */
 export function buscarMapa(campos: Record<string, string>): Promise<Geometria | null> {
   const consulta = CAMPOS.filter((c) => campos[c]).map((c) => `${c}=${encodeURIComponent(campos[c])}`).join('&');
-  const guardado = pedidos.get(consulta);
-  if (guardado) return guardado;
-  const pedido = (async () => {
-    const { token } = await sessaoAtual();
-    const res = await fetch(`${backendUrl()}/api/mapa?${consulta}`, { headers: { Authorization: `Bearer ${token}` } });
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error(`mapa ${res.status}`);
-    return (await res.json()) as Geometria;
-  })();
-  pedidos.set(consulta, pedido);
-  pedido.catch(() => pedidos.delete(consulta));
-  return pedido;
+  return buscarDadosDoWidget<Geometria>('/api/mapa', consulta);
 }
 
 /** Google's encoded polyline (precision 5) -> [lat, lon] points. */

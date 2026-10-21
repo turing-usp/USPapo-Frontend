@@ -8,7 +8,8 @@
  * A finished answer with formulas renders through KaTeX (components/chat/Matematica).
  * Tables size each column to its content and scroll sideways when they cannot fit.
  * A ```uspapo-<tipo>``` fence is a widget (lib/widgets.ts), drawn instead of printed: today the
- * map of a bus ride (components/chat/Mapa).
+ * map of a bus ride (components/chat/Mapa) and the week of chosen turmas (components/chat/Grade),
+ * both in the same frame (components/chat/Moldura: expand with zoom, save as an image).
  */
 import {
   createMarkdownIt, MarkdownStream, sealIncompleteMarkdown, type ASTNode, type MarkdownStyleMap, type RenderRules,
@@ -16,6 +17,7 @@ import {
 import React, { createContext, memo, useContext, useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Animated, Easing, Linking, ScrollView, Text, View, useWindowDimensions, type ViewStyle } from 'react-native';
 
+import { Grade } from './Grade';
 import { Mapa } from './Mapa';
 import { Matematica } from './Matematica';
 import { blocos, distribuirColunas, medirColunas, quebras, selar, temMatematica, tintasDaTabela } from '../../lib/markdown';
@@ -117,6 +119,7 @@ const BlocoCompleto = createContext(true);
 function WidgetDaResposta({ widget }: { widget: Widget }) {
   const completo = useContext(BlocoCompleto);
   if (widget.tipo === 'mapa') return <Mapa campos={widget.campos} pronto={completo} />;
+  if (widget.tipo === 'grade') return <Grade campos={widget.campos} pronto={completo} />;
   return null;
 }
 

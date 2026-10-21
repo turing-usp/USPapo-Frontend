@@ -152,6 +152,33 @@ relida ao abrir o app e ao voltar para ele depois de 5 minutos.
   opacidade, o trajeto em `accent` (azul no claro, laranja no escuro) com um
   halo da cor do fundo, caminhadas pontilhadas em linha reta (são
   estimativas), legenda e crédito "© OpenStreetMap" em Roboto Mono.
+- **Grade horária** (`Grade.tsx`, `lib/grade.ts`, tipo `grade`): a semana das
+  turmas escolhidas. O app pede `GET /api/grade` com a referência
+  (`turmas=SIGLA:código,...`) e recebe horários, nomes e professores.
+  `montarQuadro` (testado em `tests/grade.test.ts`) põe os dias úteis em
+  colunas (sábado só se usado), o tempo em proporção (0,7 px/min), dobra em
+  uma faixa fina os vãos de 90 min ou mais, escreve no eixo os horários
+  exatos de início e fim (sem sobrepor rótulos), junta numa caixa duas turmas
+  da mesma disciplina no mesmo horário ("T2 e T3", como o JupiterWeb) e
+  divide a coluna quando há choque. Cada disciplina tem uma cor da paleta com
+  opacidade (bordas no tom cheio; texto na cor do texto, ≥ 7:1 na sigla e
+  ≥ 4,5:1 na turma em todos os temas, conferido por script); choque leva
+  contorno tracejado e uma linha com o alerta (sem vermelho). A legenda dá
+  nome e professores; o dia de hoje fica no `accent`.
+- **Moldura dos widgets** (`Moldura.tsx`): a caixa comum do mapa e da grade
+  (e dos próximos): título em Changa e detalhe em Roboto Mono, com Ampliar,
+  Baixar e Compartilhar ao lado, fora da imagem. `useDadosDoWidget` busca os
+  dados da referência quando o bloco termina de chegar. Ampliar abre
+  `Visualizador.tsx`: tela cheia opaca (`Modal`), o widget desenhado de novo
+  na largura da tela (não uma imagem esticada), pinça com zoom em volta dos
+  dedos, arrastar com inércia, toque duplo, e os mesmos zooms em botões
+  (−, 100 %, +). `lib/imagem.ts` captura a caixa como PNG
+  (`react-native-view-shot`), salva na galeria (`expo-media-library`: no iOS
+  pede só para adicionar fotos; no Android 10+ não pede nada; no 9 ou
+  anterior cai na folha de compartilhar), com o nome do arquivo limpo
+  (`expo-file-system`; o view-shot põe dígitos aleatórios) ou compartilha (`expo-sharing`);
+  `lib/imagem.web.ts` baixa o PNG (html2canvas) e compartilha onde o
+  navegador compartilha arquivos.
 - `Feedback.tsx`: útil / não útil, com motivo e comentário opcionais,
   gravados em `mensagem_feedbacks`.
 - `AcoesDaMensagem.tsx`: Copiar (`expo-clipboard`; o ícone vira um check por
@@ -267,8 +294,10 @@ final e volta (`MOLA`, ~0,35 s):
 | `exclusoes.ts` | exclusões com "desfazer": pendentes no módulo (não na tela), efetivadas ao fechar a gaveta ou mandar o app para segundo plano |
 | `device.ts` | háptica (desligável; no Android, os efeitos curtos do sistema, que seguem a intensidade de toque do aparelho, em vez dos pulsos de 40-60 ms do `expo-haptics`), altura do teclado (no Android o RN já desconta as barras do sistema), ditado |
 | `markdown.ts` | blocos e selagem do streaming, `<br>`, larguras das colunas das tabelas, HTML e CSS do KaTeX |
-| `widgets.ts` | leitura dos blocos ```` ```uspapo-<tipo> ```` e remoção deles do texto copiado |
+| `widgets.ts` | leitura dos blocos ```` ```uspapo-<tipo> ````, remoção deles do texto copiado e o GET de cada widget (em cache por referência) |
 | `mapa.ts` | geometria do mapa (`GET /api/mapa`, uma vez por referência), polyline, projeção e enquadramento sobre a base embutida |
+| `grade.ts` | horários da grade (`GET /api/grade`) e o layout da semana (`montarQuadro`), rótulos T3, descrição para leitor de tela |
+| `imagem.ts` / `.web.ts` | widget como PNG: galeria e folha de compartilhar (app), download e `navigator.share` (web) |
 | `notificacoes.ts` / `.web.ts` | push (app) ou notificação local (web) quando a resposta termina |
 | `comunicados.ts` | leitura dos comunicados em vigor, escolha do que mostrar, ids vistos no aparelho |
 | `admin.ts` | tipos e formatação do resumo do painel |

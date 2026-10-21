@@ -17,7 +17,7 @@ import { useTheme } from '../../theme';
 
 /** The web shares only where the browser can; Android and iOS always can. */
 const PODE_COMPARTILHAR = Platform.OS !== 'web' || (typeof navigator !== 'undefined' && typeof navigator.share === 'function');
-const ICONE_COMPARTILHAR: NomeIcone = Platform.OS === 'ios' ? 'compartilharIos' : 'compartilhar';
+export const ICONE_COMPARTILHAR: NomeIcone = Platform.OS === 'ios' ? 'compartilharIos' : 'compartilhar';
 
 /** Widgets (a map) are drawn, not text: they are left out of what is copied or shared. */
 async function copiar(texto: string): Promise<boolean> {

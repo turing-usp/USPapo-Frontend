@@ -8,8 +8,11 @@
  * The block travels inside the answer text (the chat stream did not change) and is saved with it,
  * so a reopened conversation draws it again. The backend sends only a short reference; the widget
  * fetches what it needs (the map: GET /api/mapa) and draws it. Copy, share and the KaTeX path drop
- * the blocks. Today: `mapa`; images and videos will add their own `tipo`.
+ * the blocks. Today: `mapa` and `grade`; images and videos will add their own `tipo`.
  */
+import { backendUrl } from './api';
+import { sessaoAtual } from './auth';
+
 export const PREFIXO_WIDGET = 'uspapo-';
 
 export type Widget = { tipo: string; campos: Record<string, string> };
@@ -37,4 +40,26 @@ export function separarWidgets(texto: string): [string, string] {
 /** The text without its widget blocks (what is copied or shared). */
 export function semWidgets(texto: string): string {
   return separarWidgets(texto)[0];
+}
+
+const pedidos = new Map<string, Promise<unknown>>();
+
+/**
+ * What a widget's reference stands for, from the backend (`rota` + query), cached per reference:
+ * null when the reference is gone (404). Failures are not cached, so reopening tries again.
+ */
+export function buscarDadosDoWidget<T>(rota: string, consulta: string): Promise<T | null> {
+  const chave = `${rota}?${consulta}`;
+  const guardado = pedidos.get(chave);
+  if (guardado) return guardado as Promise<T | null>;
+  const pedido = (async () => {
+    const { token } = await sessaoAtual();
+    const res = await fetch(`${backendUrl()}${chave}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`${rota} ${res.status}`);
+    return (await res.json()) as T;
+  })();
+  pedidos.set(chave, pedido);
+  pedido.catch(() => pedidos.delete(chave));
+  return pedido;
 }
