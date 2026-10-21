@@ -12,7 +12,7 @@ import { Pressable, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
 import { BaseDoCampus } from './Mapa';
-import { Moldura, useDadosDoWidget } from './Moldura';
+import { Carregando, Moldura, useDadosDoWidget } from './Moldura';
 import { Texto, tintaDoToque } from '../ui';
 import { NOME_DO_DIA, rotuloDaTurma } from '../../lib/grade';
 import { buscarSala, enquadrarPredios, faixaDe, prediosDaTurma, type DadosDaSala, type PredioNoMapa } from '../../lib/sala';
@@ -100,10 +100,7 @@ function Conteudo({ dados, turma, aoEscolher, largura }: {
           </View>
         )) : <Texto v="legenda">Sem horário publicado no USPolis.</Texto>}
       </View>
-      <View style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.xs, gap: 2 }}>
-        <Texto v="legenda">A sala pode mudar durante o semestre: vale conferir no dia.</Texto>
-        <Texto v="detalhe" style={{ textAlign: 'right' }}>USPolis{dados.periodo ? ` · ${dados.periodo}` : ''}</Texto>
-      </View>
+      <Texto v="legenda" style={{ paddingHorizontal: spacing.md }}>A sala pode mudar durante o semestre: vale conferir no dia.</Texto>
     </View>
   );
 }
@@ -117,7 +114,8 @@ export const Sala = memo(function Sala({ campos, pronto }: { campos: Record<stri
   if (estado.tipo === 'sumiu') return null;
   const dados = estado.tipo === 'pronto' ? estado.dados : null;
   return (
-    <Moldura titulo="Onde é a aula" detalhe={dados?.sigla ?? campos.sigla} arquivo={`uspapo-sala-${dados?.sigla ?? campos.sigla ?? ''}`}
+    <Moldura titulo="Onde é a aula" detalhe={dados?.sigla ?? campos.sigla} fonte={`USPolis${dados?.periodo ? ` · ${dados.periodo}` : ''}`}
+      arquivo={`uspapo-sala-${dados?.sigla ?? campos.sigla ?? ''}`}
       pronto={!!dados && largura > 0}
       ampliado={(l) => (dados ? <Conteudo dados={dados} turma={turma} aoEscolher={setTurma} largura={Math.min(l, 640)} /> : null)}>
       <View onLayout={(e) => setLargura(Math.floor(e.nativeEvent.layout.width))} style={{ paddingTop: spacing.xs, minHeight: dados ? undefined : 120 }}>
@@ -126,7 +124,7 @@ export const Sala = memo(function Sala({ campos, pronto }: { campos: Record<stri
             <View style={{ flex: 1, minHeight: 120, alignItems: 'center', justifyContent: 'center' }}>
               <Texto v="legenda">Não consegui consultar o USPolis agora.</Texto>
             </View>
-          ) : null}
+          ) : <Carregando altura={120} />}
       </View>
     </Moldura>
   );

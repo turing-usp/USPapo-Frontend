@@ -12,7 +12,7 @@ import React, { memo, useEffect, useMemo, useState } from 'react';
 import { Animated, Easing, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
-import { Moldura, useDadosDoWidget } from './Moldura';
+import { Carregando, Moldura, useDadosDoWidget } from './Moldura';
 import { Texto } from '../ui';
 import { BASE, buscarMapa, decodificar, enquadrar, linha, projetar, type Geometria, type Ponto } from '../../lib/mapa';
 import { alfa, paleta, useTheme } from '../../theme';
@@ -78,7 +78,7 @@ function Desenho({ dados, largura, altura }: { dados: Geometria; largura: number
   );
 }
 
-/** The legend under the map: what each mark is, and the base layer's credit. */
+/** The legend under the map: what each mark is (the base layer's credit is the frame's footer). */
 function Legenda({ temDestino }: { temDestino: boolean }) {
   const { colors, spacing } = useTheme();
   const marca = (estilo: object) => <View style={[{ width: 10, height: 10, borderRadius: 5 }, estilo]} />;
@@ -92,7 +92,6 @@ function Legenda({ temDestino }: { temDestino: boolean }) {
       {item(marca({ borderWidth: 2.5, borderColor: colors.accent }), 'desembarque')}
       {temDestino ? item(marca({ backgroundColor: colors.foreground }), 'destino') : null}
       {item(<View style={{ width: 14, borderTopWidth: 2, borderStyle: 'dotted', borderColor: colors.mutedForeground }} />, 'a pé')}
-      <Texto v="detalhe" style={{ marginLeft: 'auto' }}>© OpenStreetMap</Texto>
     </View>
   );
 }
@@ -134,7 +133,7 @@ export const Mapa = memo(function Mapa({ campos, pronto }: { campos: Record<stri
   const altura = largura ? Math.min(ALTURA_MAXIMA, largura / ASPECTO) : 0;
   const rotulo = campos.linha ? `Mapa do trajeto na linha ${campos.linha}` : 'Mapa do trajeto';
   return (
-    <Moldura titulo="Trajeto" detalhe={campos.linha ? `linha ${campos.linha}` : undefined}
+    <Moldura titulo="Trajeto" detalhe={campos.linha ? `linha ${campos.linha}` : undefined} fonte="Mapa © OpenStreetMap"
       arquivo={campos.linha ? `uspapo-mapa-${campos.linha}` : 'uspapo-mapa'} pronto={!!dados && largura > 0}
       ampliado={(l, livre) => dados ? <MapaAmpliado dados={dados} rotulo={rotulo} largura={l} altura={livre} /> : null}>
       <View accessible accessibilityRole="image" accessibilityLabel={rotulo} onLayout={(e) => setLargura(Math.floor(e.nativeEvent.layout.width))}
@@ -144,7 +143,7 @@ export const Mapa = memo(function Mapa({ campos, pronto }: { campos: Record<stri
           <Animated.View style={{ opacity: entrada }}><Desenho dados={dados} largura={largura} altura={altura} /></Animated.View>
         ) : estado.tipo === 'falhou' ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Texto v="legenda">Não consegui carregar o mapa agora.</Texto></View>
-        ) : null}
+        ) : <Carregando />}
       </View>
       <Legenda temDestino={!!dados?.destino} />
     </Moldura>

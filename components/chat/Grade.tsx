@@ -12,7 +12,7 @@
 import React, { memo, useEffect, useMemo, useState } from 'react';
 import { Animated, Easing, View } from 'react-native';
 
-import { Moldura, useDadosDoWidget } from './Moldura';
+import { Carregando, Moldura, useDadosDoWidget } from './Moldura';
 import { Icone } from '../icons';
 import { Texto } from '../ui';
 import {
@@ -120,7 +120,7 @@ function Desenho({ quadro, largura }: { quadro: Quadro; largura: number }) {
   );
 }
 
-function Legenda({ quadro, dados, largura }: { quadro: Quadro; dados: DadosDaGrade; largura: number }) {
+function Legenda({ quadro, largura }: { quadro: Quadro; largura: number }) {
   const { colors, spacing } = useTheme();
   const tinta = useTintas();
   // Two columns where they fit (the web, a tablet, the full-screen viewer on a wide screen).
@@ -154,9 +154,6 @@ function Legenda({ quadro, dados, largura }: { quadro: Quadro; dados: DadosDaGra
           </Texto>
         </View>
       ))}
-      <Texto v="detalhe" style={{ textAlign: 'right' }}>
-        JupiterWeb{dados.periodo ? ` · ${dados.periodo.inicio} a ${dados.periodo.fim}` : ''}
-      </Texto>
     </View>
   );
 }
@@ -166,7 +163,7 @@ function Conteudo({ quadro, dados, largura }: { quadro: Quadro; dados: DadosDaGr
   return (
     <View style={{ width: largura }}>
       <Desenho quadro={quadro} largura={largura} />
-      <Legenda quadro={quadro} dados={dados} largura={largura} />
+      <Legenda quadro={quadro} largura={largura} />
     </View>
   );
 }
@@ -196,6 +193,7 @@ export const Grade = memo(function Grade({ campos, pronto }: { campos: Record<st
 
   return (
     <Moldura titulo="Grade horária" detalhe={quadro ? `${duracao(quadro.minutosSemanais)} de aula por semana` : undefined}
+      fonte={`JupiterWeb${dados?.periodo ? ` · ${dados.periodo.inicio} a ${dados.periodo.fim}` : ''}`}
       arquivo={arquivoDa(dados)} pronto={desenhado}
       // Full screen it keeps the chat's width (time runs at a fixed scale: wider would only stretch
       // the blocks); the viewer scales it up evenly.
@@ -207,7 +205,7 @@ export const Grade = memo(function Grade({ campos, pronto }: { campos: Record<st
           <View style={{ flex: 1, minHeight: 160, alignItems: 'center', justifyContent: 'center' }}>
             <Texto v="legenda">Não consegui carregar a grade agora.</Texto>
           </View>
-        ) : null}
+        ) : <Carregando altura={160} />}
       </View>
     </Moldura>
   );

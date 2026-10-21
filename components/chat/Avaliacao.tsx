@@ -11,7 +11,7 @@
 import React, { memo, useState } from 'react';
 import { Linking, Pressable, View } from 'react-native';
 
-import { Moldura, useDadosDoWidget } from './Moldura';
+import { Carregando, Moldura, useDadosDoWidget } from './Moldura';
 import { Texto, tintaDoToque } from '../ui';
 import {
   DIFICULDADE, buscarAvaliacao, fichaInicial, fragil, nota, separarSigla,
@@ -113,11 +113,12 @@ export const Avaliacao = memo(function Avaliacao({ campos, pronto }: { campos: R
   const dados = estado.tipo === 'pronto' ? estado.dados : null;
   const atual = ficha ?? (dados ? fichaInicial(dados, campos.ficha) : null);
   return (
-    <Moldura titulo="Avaliação de alunos" detalhe="USP Avalia" arquivo={`uspapo-avaliacao-${campos.professor ?? ''}`} pronto={!!dados}
+    <Moldura titulo="Avaliação de alunos" detalhe="USP Avalia" fonte="USP Avalia · opinião de alunos" arquivo={`uspapo-avaliacao-${campos.professor ?? ''}`}
+      pronto={!!dados}
       ampliado={(l) => (dados ? <Conteudo dados={dados} ficha={atual} aoEscolher={setFicha} largura={Math.min(l, 560)} /> : null)}>
       {dados ? <Conteudo dados={dados} ficha={atual} aoEscolher={setFicha} /> : (
         <View style={{ minHeight: 120, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.md }}>
-          {estado.tipo === 'falhou' ? <Texto v="legenda">Não consegui abrir o USP Avalia agora.</Texto> : null}
+          {estado.tipo === 'falhou' ? <Texto v="legenda">Não consegui abrir o USP Avalia agora.</Texto> : <Carregando />}
         </View>
       )}
     </Moldura>

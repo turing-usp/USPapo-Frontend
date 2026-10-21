@@ -105,8 +105,8 @@ export function Marca({ logo, fonte, coluna }: { logo: number; fonte: number; co
 }
 
 /**
- * The watermark on a widget's image (its bottom left corner, in the chat, full screen and in the
- * saved PNG): the mark and the name, quiet. Screen readers skip it.
+ * The USPapo mark on a widget (the right end of its footer, beside the data's source: in the chat,
+ * full screen and in the saved PNG): the mark and the name, quiet. Screen readers skip it.
  */
 export function MarcaDagua() {
   const { colors, fonts } = useTheme();

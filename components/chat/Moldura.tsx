@@ -1,16 +1,16 @@
 /**
  * The frame every inline widget sits in (the map, the timetable, whatever comes next): a hairline
- * box with a title row, then the widget. The title row and the widget become the image; the actions
- * beside the title stay out of it: Ampliar (components/chat/Visualizador draws the widget again full
+ * box with a title row, the widget, and a footer with the data's source and the USPapo mark. The
+ * three become the image; the actions beside the title stay out of it: Ampliar (components/chat/Visualizador draws the widget again full
  * screen, with zoom), Baixar (the gallery on Android and iOS, a download on the web) and Compartilhar
  * where the system shares images (lib/imagem). They wait until the widget is drawn.
  */
 import React, { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AccessibilityInfo, Platform, View } from 'react-native';
+import { AccessibilityInfo, ActivityIndicator, Platform, View } from 'react-native';
 
 import { ICONE_COMPARTILHAR } from './AcoesDaMensagem';
-import { Visualizador } from './Visualizador';
-import { BotaoDeIcone, MarcaDagua, Texto } from '../ui';
+import { RodapeDoWidget, Visualizador } from './Visualizador';
+import { BotaoDeIcone, Texto } from '../ui';
 import { haptics } from '../../lib/device';
 import { PODE_COMPARTILHAR_IMAGEM, compartilharImagem, salvarImagem, type ResultadoDaImagem } from '../../lib/imagem';
 import { alfa, useTheme } from '../../theme';
@@ -21,6 +21,19 @@ const AVISOS: Partial<Record<ResultadoDaImagem, string>> = {
   falhou: 'Não consegui gerar a imagem agora.',
 };
 const BOTAO = 32;
+
+/**
+ * A widget waiting for its data (the first room query after a deploy takes ~20 s while the backend
+ * loads USPolis' catalog): a spinner in the brand orange where it will be, never a blank box.
+ */
+export function Carregando({ altura }: { altura?: number }) {
+  const { colors } = useTheme();
+  return (
+    <View style={{ flex: 1, minHeight: altura, alignItems: 'center', justifyContent: 'center' }}>
+      <ActivityIndicator color={colors.brand} accessibilityLabel="Carregando" />
+    </View>
+  );
+}
 
 export type EstadoDoWidget<T> = { tipo: 'carregando' } | { tipo: 'pronto'; dados: T } | { tipo: 'sumiu' } | { tipo: 'falhou' };
 
@@ -46,10 +59,14 @@ export function useDadosDoWidget<T>(buscar: (campos: Record<string, string>) => 
   return estado;
 }
 
-export function Moldura({ titulo, detalhe, arquivo, pronto, ampliado, children }: {
+export function Moldura({ titulo, detalhe, fonte, extra, arquivo, pronto, ampliado, children }: {
   titulo: string;
   /** Beside the title, in Roboto Mono (a line, a weekly total). */
   detalhe?: string;
+  /** Where the data comes from ("JupiterWeb · 03/08/2026 a 12/12/2026"), in the footer beside the mark. */
+  fonte?: string;
+  /** A button of the widget's own before the frame's (the next buses' Atualizar), at a given size. */
+  extra?: (lado: number) => ReactNode;
   /** The image's file name, without the extension. */
   arquivo: string;
   /** The widget is drawn: it can be saved and expanded. */
@@ -92,7 +109,7 @@ export function Moldura({ titulo, detalhe, arquivo, pronto, ampliado, children }
       ) : null}
     </>
   );
-  const quantos = PODE_COMPARTILHAR_IMAGEM ? 3 : 2;
+  const quantos = (PODE_COMPARTILHAR_IMAGEM ? 3 : 2) + (extra ? 1 : 0);
 
   return (
     <View style={{ borderWidth: 1, borderColor: alfa(colors.foreground, 0.14), borderRadius: radius.md, overflow: 'hidden', marginBottom: spacing.md }}>
@@ -104,16 +121,18 @@ export function Moldura({ titulo, detalhe, arquivo, pronto, ampliado, children }
           {detalhe ? <Texto v="detalhe">{detalhe}</Texto> : null}
         </View>
         {children}
-        <View style={{ paddingHorizontal: spacing.md, paddingTop: spacing.xs, paddingBottom: spacing.sm }}><MarcaDagua /></View>
+        <View style={{ paddingHorizontal: spacing.md, paddingTop: spacing.xs, paddingBottom: spacing.sm }}><RodapeDoWidget fonte={fonte} /></View>
       </View>
       {aviso ? (
         <Texto v="legenda" accessibilityLiveRegion="polite" style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.sm }}>{aviso}</Texto>
       ) : null}
       <View style={{ position: 'absolute', top: 4, right: 4, flexDirection: 'row' }}>
+        {extra?.(BOTAO)}
         <BotaoDeIcone icone="expandir" rotulo={`Ampliar: ${titulo}`} lado={BOTAO} desabilitado={!pronto} onPress={() => setAberto(true)} />
         {acoes(BOTAO)}
       </View>
-      <Visualizador aberto={aberto} aoFechar={() => setAberto(false)} titulo={titulo} detalhe={detalhe} aviso={aviso} acoes={acoes(36)}>
+      <Visualizador aberto={aberto} aoFechar={() => setAberto(false)} titulo={titulo} detalhe={detalhe} fonte={fonte} aviso={aviso}
+        acoes={<>{extra?.(36)}{acoes(36)}</>}>
         {ampliado}
       </Visualizador>
     </View>

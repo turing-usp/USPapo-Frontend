@@ -188,16 +188,27 @@ relida ao abrir o app e ao voltar para ele depois de 5 minutos.
   puxada, não defeito), aviso de que é opinião de alunos e link para o site.
 - **Moldura dos widgets** (`Moldura.tsx`): a caixa comum de todos os widgets:
   título em Changa e detalhe em Roboto Mono, com Ampliar, Baixar e
-  Compartilhar ao lado, fora da imagem, e a marca d'água do USPapo (logo e
-  nome, no canto inferior esquerdo, também na imagem salva).
+  Compartilhar ao lado (e um botão do próprio widget, como o Atualizar dos
+  ônibus), fora da imagem. O rodapé (`RodapeDoWidget`) é uma linha só: a
+  fonte dos dados à esquerda e a marca do USPapo (logo e nome) à direita, no
+  chat, em tela cheia e na imagem salva.
   `useDadosDoWidget` busca os dados da referência quando o bloco termina de
-  chegar. Ampliar abre `Visualizador.tsx`: tela cheia opaca (`Modal`), o
-  widget desenhado de novo na folha (não uma imagem esticada), com os
-  controles em pílulas. Pinça com zoom em volta dos dedos, arrastar com
-  inércia, toque duplo, elástico nas bordas e nos limites do zoom, e na web
+  chegar. Ampliar abre `Visualizador.tsx`: tela cheia, o widget desenhado
+  de novo na folha (não uma imagem esticada), com os controles em pílulas
+  de vidro por cima. O zoom é simples de propósito: uma regra só, aplicada a
+  cada movimento e nunca corrigida depois (a folha não sai da área entre as
+  barras), e cada evento move a folha pela mudança desde o anterior, a
+  partir de onde ela está. Pinça com zoom em volta dos dedos (um dedo que
+  pousa ou levanta no meio da pinça muda o centro dos dedos, e esse evento
+  só registra o novo centro: no Android a pinça só termina quando o último
+  dedo sai), arrastar com inércia, toque duplo, e na web
   a roda (Ctrl ou a pinça do trackpad dá zoom no cursor) e as teclas + − 0;
-  os mesmos zooms em botões (−, 100 %, +). A conta do zoom fica em
-  `lib/zoom.ts` (testada). `lib/imagem.ts` captura a caixa como PNG
+  os mesmos zooms em botões (−, 100 %, +), em degraus fixos (100, 125, 150,
+  200, 300, 400 %, e "ver tudo" abaixo de 100 % numa folha mais alta que a
+  tela) que o − desce iguais; voltar a 100 % restaura a vista da abertura. A
+  medida, o encaixe e os botões rodam no UI thread (`runOnUI`): lido do JS
+  no Android, um valor recém-escrito ainda vinha zerado e a folha não
+  aparecia. A conta do zoom fica em `lib/zoom.ts` (testada). `lib/imagem.ts` captura a caixa como PNG
   (`react-native-view-shot`), salva na galeria (`expo-media-library`: no iOS
   pede só para adicionar fotos; no Android 10+ não pede nada; no 9 ou
   anterior cai na folha de compartilhar), com o nome do arquivo limpo

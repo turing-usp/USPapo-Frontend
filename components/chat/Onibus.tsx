@@ -12,7 +12,7 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, AppState, Easing, Platform, View } from 'react-native';
 
-import { Moldura, type EstadoDoWidget } from './Moldura';
+import { Carregando, Moldura, type EstadoDoWidget } from './Moldura';
 import { BotaoDeIcone, Texto } from '../ui';
 import {
   SITUACOES, aindaPorVir, buscarOnibus, descreverLinha, horaDe, minutosAte, rotuloDosMinutos,
@@ -81,11 +81,14 @@ function Linha({ linha, agora }: { linha: LinhaNaParada; agora: number }) {
   );
 }
 
-function Conteudo({ dados, agora, largura, buscando, aoAtualizar }: {
-  dados: DadosDoOnibus; agora: number; largura?: number; buscando: boolean; aoAtualizar?: () => void;
-}) {
+/** Where the times come from, and when: the frame's footer. */
+function fonteDe(dados: DadosDoOnibus): string {
+  const origem = dados.ao_vivo ? 'Ao vivo, Olho Vivo da SPTrans' : dados.api_falhou ? 'Pela programação (o ao vivo falhou)' : 'Pela programação da SPTrans';
+  return `${origem} · ${horaDe(dados.atualizado_em)}`;
+}
+
+function Conteudo({ dados, agora, largura }: { dados: DadosDoOnibus; agora: number; largura?: number }) {
   const { colors, spacing } = useTheme();
-  const fonte = dados.ao_vivo ? 'ao vivo, Olho Vivo da SPTrans' : dados.api_falhou ? 'pela programação (o ao vivo falhou)' : 'pela programação da SPTrans';
   return (
     <View style={{ width: largura, paddingHorizontal: spacing.md, paddingTop: spacing.xs, gap: spacing.xs }}>
       {dados.linhas.map((l, i) => (
@@ -93,12 +96,6 @@ function Conteudo({ dados, agora, largura, buscando, aoAtualizar }: {
           <Linha linha={l} agora={agora} />
         </View>
       ))}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, minHeight: 32 }}>
-        <Texto v="detalhe" style={{ flex: 1 }}>{fonte} · {horaDe(dados.atualizado_em)}</Texto>
-        {aoAtualizar ? (
-          <BotaoDeIcone icone="atualizar" rotulo="Atualizar os horários" lado={32} desabilitado={buscando} onPress={aoAtualizar} />
-        ) : null}
-      </View>
     </View>
   );
 }
@@ -154,13 +151,15 @@ export const Onibus = memo(function Onibus({ campos, pronto }: { campos: Record<
   const dados = estado.tipo === 'pronto' ? estado.dados : null;
   const linhas = (campos.linhas ?? '').split(',').filter(Boolean);
   return (
-    <Moldura titulo="Próximos ônibus" detalhe={dados?.parada} arquivo={`uspapo-onibus-${linhas[0] ?? 'parada'}`} pronto={!!dados}
-      ampliado={(l) => (dados ? <Conteudo dados={dados} agora={agora} largura={Math.min(l, 520)} buscando={buscando} aoAtualizar={atualizar} /> : null)}>
+    <Moldura titulo="Próximos ônibus" detalhe={dados?.parada} fonte={dados ? fonteDe(dados) : undefined}
+      extra={(lado) => <BotaoDeIcone icone="atualizar" rotulo="Atualizar os horários" lado={lado} desabilitado={buscando} onPress={atualizar} />}
+      arquivo={`uspapo-onibus-${linhas[0] ?? 'parada'}`} pronto={!!dados}
+      ampliado={(l) => (dados ? <Conteudo dados={dados} agora={agora} largura={Math.min(l, 520)} /> : null)}>
       {dados ? (
-        <Conteudo dados={dados} agora={agora} buscando={buscando} aoAtualizar={atualizar} />
+        <Conteudo dados={dados} agora={agora} />
       ) : (
         <View style={{ minHeight: 72, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.md }}>
-          {estado.tipo === 'falhou' ? <Texto v="legenda">Não consegui consultar os horários agora.</Texto> : null}
+          {estado.tipo === 'falhou' ? <Texto v="legenda">Não consegui consultar os horários agora.</Texto> : <Carregando />}
         </View>
       )}
     </Moldura>

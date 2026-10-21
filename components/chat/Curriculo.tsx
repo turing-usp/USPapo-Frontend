@@ -15,7 +15,7 @@ import React, { memo, useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
-import { Moldura, useDadosDoWidget } from './Moldura';
+import { Carregando, Moldura, useDadosDoWidget } from './Moldura';
 import { BotaoDeIcone, Texto } from '../ui';
 import {
   ROTULO, ROTULO_DO_TIPO, buscarCurriculo, buscarRequisitos, creditosDe, curva, montarCurriculo, ponta, relacoes,
@@ -145,7 +145,6 @@ function Conteudo({ dados, arestas, estadoRequisitos, largura, selecionada, aoSe
       <Grade dados={dados} arestas={arestas} largura={util} selecionada={selecionada} aoSelecionar={aoSelecionar} />
       <View style={{ gap: 2 }}>
         {notas.map((n) => <Texto key={n} v="legenda">{n}</Texto>)}
-        <Texto v="detalhe" style={{ textAlign: 'right' }}>JupiterWeb{dados.desde ? ` · currículo desde ${dados.desde}` : ''}</Texto>
       </View>
     </View>
   );
@@ -165,6 +164,7 @@ export const Curriculo = memo(function Curriculo({ campos, pronto }: { campos: R
     : requisitos.tipo === 'falhou' ? 'falhou' : 'carregando';
   return (
     <Moldura titulo="Grade curricular" detalhe={dados ? `${dados.semestres.length} semestres` : undefined}
+      fonte={`JupiterWeb${dados?.desde ? ` · currículo desde ${dados.desde}` : ''}`}
       arquivo={`uspapo-curriculo-${campos.curso ?? ''}`} pronto={!!dados && largura > 0}
       ampliado={(l) => (dados ? (
         <Conteudo dados={dados} arestas={arestas} estadoRequisitos={estadoRequisitos} largura={Math.min(l, layout.containerMaxWidth)}
@@ -178,7 +178,7 @@ export const Curriculo = memo(function Curriculo({ campos, pronto }: { campos: R
           <View style={{ flex: 1, minHeight: 160, alignItems: 'center', justifyContent: 'center' }}>
             <Texto v="legenda">Não consegui consultar o JupiterWeb agora.</Texto>
           </View>
-        ) : null}
+        ) : <Carregando altura={160} />}
       </View>
     </Moldura>
   );

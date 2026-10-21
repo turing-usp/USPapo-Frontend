@@ -1,244 +1,275 @@
 /**
  * A widget full screen: drawn again for the room (an SVG redrawn, never a stretched picture) on a
- * sheet with the USPapo watermark, the way its image is saved. 100% fits the sheet to the screen,
- * never below its own size (on a phone a tall timetable pans instead); a pinch out shows all of it.
+ * sheet whose footer has the data's source and the USPapo mark, the way its image is saved. 100%
+ * fits the sheet to the room between the bars, never below its own size (on a phone a tall
+ * timetable pans instead); a pinch out shows all of it.
  *
- * Gestures, all on the UI thread (lib/zoom has the math): a pinch zooms about the fingers (two
- * fingers also pan), one finger drags with momentum, a double tap zooms in or back to 100%. Past an
- * edge or a zoom limit the sheet gives like a rubber band and settles back. The web adds the wheel
- * (a trackpad pinch or Ctrl + wheel zooms about the cursor, the wheel alone pans) and the keys + - 0.
- * Every gesture has a button too (the zoom bar), and the system back, Escape (web) or the close
- * button leave. Opaque panes, so nothing blurs behind it; only the transform animates.
+ * The controls are the interface's floating glass (components/Glass): the close button with the
+ * title, the actions and the zoom bar blur the sheet as it passes under them. The sheet takes the
+ * whole screen; it is fitted to, and kept within, the room between the bars.
  *
- * The drag moves by the change since its own last event and stands still while a pinch runs, so a
- * finger landing or lifting mid-gesture never jumps the sheet (the old drag resumed from where its
- * first finger had started, and its fling took the speed of that jump: the sheet flew to a corner).
- * A fling only follows a drag that ended cleanly, and each gesture stops the animation it takes over.
+ * The zoom is deliberately plain (lib/zoom has the math). One rule, applied on every move and never
+ * corrected afterwards: the sheet never leaves the room. Every gesture moves the sheet by the change
+ * since its last event, from where the sheet is: a pinch scales about the fingers and follows them
+ * (when a finger lands or lifts, the fingers' center jumps, so that event only takes the new center
+ * in); one finger drags, with momentum; a double tap zooms in or back to 100%. Held at an edge, the
+ * sheet answers as soon as the fingers turn back. The zoom bar, the keys + - 0 and the web's wheel
+ * use the same zoom. Gestures run on the UI thread and nothing in React touches the sheet while they
+ * run: only the zoom bar re-renders.
  */
 import { StatusBar } from 'expo-status-bar';
-import React, { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Modal, Platform, View, type LayoutChangeEvent } from 'react-native';
+import React, { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Modal, Platform, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Reanimated, {
-  Easing, cancelAnimation, runOnJS, useAnimatedReaction, useAnimatedStyle, useSharedValue, withDecay, withTiming,
+  Easing, cancelAnimation, runOnJS, runOnUI, useAnimatedReaction, useAnimatedStyle, useSharedValue, withDecay, withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import Glass, { CamadaDeVidro } from '../Glass';
 import { BotaoDeIcone, MarcaDagua, Texto } from '../ui';
-import { elastico, escalaElastica, escalas, limite, manterFoco, preso, type Eixo, type Medidas } from '../../lib/zoom';
+import { escalas, limite, manterFoco, pincar, preso, proximoNivel, topoDaFolha, type Eixo, type Medidas } from '../../lib/zoom';
 import { alfa, useTheme } from '../../theme';
 
 const MAXIMO = 4;
-/** One press of a zoom button (or a key), and the double tap's zoom. */
-const PASSO = 1.6;
+/** The double tap's zoom (the buttons and keys climb lib/zoom's NIVEIS). */
 const DUPLO = 2.5;
 /** Fitting a small drawing to a big screen stops here. */
 const ENCAIXE_MAXIMO = 2.5;
 /** Room around the fitted sheet. */
 const MARGEM = 12;
 const ASSENTAR = { duration: 240, easing: Easing.out(Easing.cubic) };
-const ENTRADA = { duration: 260, easing: Easing.out(Easing.cubic) };
-/** The height the watermark row takes under the widget. */
-const ALTURA_DA_MARCA = 24;
+/** The height the footer row (source and mark) takes under the widget. */
+const ALTURA_DO_RODAPE = 24;
+/** A glass bar's height (a 40 px button and its padding), and the gap around the bars. */
+const BARRA = 50;
+const FOLGA = 8;
 
-type EstadoDoZoom = { percentual: number; noMinimo: boolean; noMaximo: boolean };
+type Limites = { base: number; minimo: number; maximo: number };
+/** The pinch: running or not, and its last event's scale, fingers' center (from the room's) and fingers. */
+type Pinca = { ativa: boolean; e: number; fx: number; fy: number; dedos: number };
+
+/**
+ * A widget's footer, the same in the chat, full screen and in the saved image: where the data comes
+ * from on the left and the USPapo mark on the right, in one row (the mark adds no row of its own).
+ */
+export function RodapeDoWidget({ fonte }: { fonte?: string }) {
+  const { spacing } = useTheme();
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: fonte ? 'space-between' : 'flex-end', gap: spacing.md }}>
+      {fonte ? <Texto v="detalhe" numberOfLines={2} style={{ flexShrink: 1 }}>{fonte}</Texto> : null}
+      <MarcaDagua />
+    </View>
+  );
+}
 
 function useZoom() {
-  const escala = useSharedValue(1);
-  /** Where the zoom is heading: quick button presses step from it, not from the scale mid-animation. */
-  const alvo = useSharedValue(1);
+  const s = useSharedValue(1);
   const x = useSharedValue(0);
   const y = useSharedValue(0);
-  /** 100% (`base`), and how far a pinch may go out and in. */
-  const limites = useSharedValue({ base: 1, minimo: 1, maximo: MAXIMO });
+  /** Where the zoom is heading: quick button presses step from it, not from the scale mid-animation. */
+  const alvo = useSharedValue(1);
+  /** 100% (`base`), and how far the zoom may go out and in. */
+  const limites = useSharedValue<Limites>({ base: 1, minimo: 1, maximo: MAXIMO });
+  /** The room between the bars, where it starts (gestures count from its center), and the sheet. */
   const area = useSharedValue<Medidas>({ largura: 0, altura: 0 });
+  const topo = useSharedValue(0);
   const conteudo = useSharedValue<Medidas>({ largura: 0, altura: 0 });
-  /** The sheet coming in on each opening (0 -> 1). */
-  const entrada = useSharedValue(0);
-  /** The pinch: running or not, where it started (focal point from the area's center) and its last focal point. */
-  const pinca = useSharedValue({ ativa: false, s: 1, x: 0, y: 0, fx: 0, fy: 0, ux: 0, uy: 0 });
-  /**
-   * The drag: its last translation and its own position before any rubber band. `retomar`: the sheet
-   * moved under it (a pinch, a zoom), so its next move starts from where the sheet is.
-   */
-  const arrasto = useSharedValue({ tx: 0, ty: 0, x: 0, y: 0, retomar: true });
-  const [estado, setEstado] = useState<EstadoDoZoom>({ percentual: 100, noMinimo: true, noMaximo: false });
+  /** The sheet shows once it is fitted (0 until its first fit on each opening). */
+  const visivel = useSharedValue(0);
+  const pinca = useSharedValue<Pinca>({ ativa: false, e: 1, fx: 0, fy: 0, dedos: 0 });
+  /** The drag's last translation: it moves the sheet by the change since then. */
+  const arrasto = useSharedValue({ tx: 0, ty: 0 });
 
-  const lim = useCallback((s: number, eixo: Eixo) => {
+  /** The one rule: at scale `escala`, a position on an axis kept so the sheet never leaves the room. */
+  const dentro = useCallback((v: number, escala: number, eixo: Eixo) => {
     'worklet';
-    return limite(s, conteudo.get(), area.get(), eixo);
+    const m = limite(escala, conteudo.get(), area.get(), eixo);
+    return preso(v, -m, m);
   }, [conteudo, area]);
 
   const parar = useCallback(() => {
     'worklet';
-    cancelAnimation(escala);
+    cancelAnimation(s);
     cancelAnimation(x);
     cancelAnimation(y);
-    arrasto.set({ ...arrasto.get(), retomar: true });
-  }, [escala, x, y, arrasto]);
+  }, [s, x, y]);
 
-  /**
-   * Zoom to `pedida` (kept within the limits) keeping the point (cx, cy), from the area's center,
-   * where it is on screen; the sheet ends within its edges. Also how every gesture settles.
-   */
+  /** Scale, position: animated, or at once. */
+  const ir = useCallback((nova: number, nx: number, ny: number, animar: boolean) => {
+    'worklet';
+    parar();
+    alvo.set(nova);
+    s.set(animar ? withTiming(nova, ASSENTAR) : nova);
+    x.set(animar ? withTiming(nx, ASSENTAR) : nx);
+    y.set(animar ? withTiming(ny, ASSENTAR) : ny);
+  }, [parar, alvo, s, x, y]);
+
+  /** Zoom to `pedida` (within the limits), the point (cx, cy) from the room's center staying put. */
   const zoomPara = useCallback((pedida: number, cx: number, cy: number, animar = true) => {
     'worklet';
     const { minimo, maximo } = limites.get();
     const nova = preso(pedida, minimo, maximo);
-    const k = nova / escala.get();
-    const [mx, my] = [lim(nova, 'largura'), lim(nova, 'altura')];
-    const nx = preso(manterFoco(cx, x.get(), k), -mx, mx);
-    const ny = preso(manterFoco(cy, y.get(), k), -my, my);
-    parar();
-    alvo.set(nova);
-    if (animar) {
-      escala.set(withTiming(nova, ASSENTAR));
-      x.set(withTiming(nx, ASSENTAR));
-      y.set(withTiming(ny, ASSENTAR));
-    } else {
-      escala.set(nova);
-      x.set(nx);
-      y.set(ny);
-    }
-  }, [limites, escala, alvo, x, y, lim, parar]);
+    const k = nova / s.get();
+    ir(nova, dentro(manterFoco(cx, x.get(), k), nova, 'largura'), dentro(manterFoco(cy, y.get(), k), nova, 'altura'), animar);
+  }, [limites, s, x, y, dentro, ir]);
 
-  /** Moves the sheet by (dx, dy) within its edges (the wheel). */
-  const moverPor = useCallback((dx: number, dy: number) => {
+  /** The opening's view: 100%, centered across, a tall sheet at its top. */
+  const restaurar = useCallback((animar = true) => {
     'worklet';
-    const s = escala.get();
-    parar();
-    x.set(preso(x.get() + dx, -lim(s, 'largura'), lim(s, 'largura')));
-    y.set(preso(y.get() + dy, -lim(s, 'altura'), lim(s, 'altura')));
-  }, [escala, x, y, lim, parar]);
+    const { base } = limites.get();
+    ir(base, 0, topoDaFolha(base, conteudo.get(), area.get()), animar);
+  }, [limites, conteudo, area, ir]);
 
-  /** Fitted (a tall sheet at its top), once both sizes are known; on an opening it also comes in. */
-  const encaixar = useCallback((entrar: boolean) => {
+  /**
+   * A size from onLayout, on the UI thread (a value written from JS reached it a moment later, and
+   * the fit read zeros on Android). A real change of size fits the sheet again; never mid-pinch.
+   */
+  const medir = useCallback((qual: 'area' | 'conteudo', largura: number, altura: number, inicio: number) => {
+    'worklet';
+    const antes = qual === 'area' ? area.get() : conteudo.get();
+    if (Math.abs(antes.largura - largura) < 1 && Math.abs(antes.altura - altura) < 1) return;
+    if (qual === 'area') {
+      area.set({ largura, altura });
+      topo.set(inicio);
+    } else {
+      conteudo.set({ largura, altura });
+    }
     const [a, c] = [area.get(), conteudo.get()];
-    if (!a.largura || !c.largura) return;
-    const novos = escalas(c, a, MARGEM, ENCAIXE_MAXIMO, MAXIMO);
-    parar();
-    limites.set(novos);
-    escala.set(novos.base);
-    alvo.set(novos.base);
-    x.set(0);
-    y.set(limite(novos.base, c, a, 'altura'));
-    if (entrar) {
-      entrada.set(0);
-      entrada.set(withTiming(1, ENTRADA));
-    }
-  }, [area, conteudo, limites, escala, alvo, x, y, entrada, parar]);
-
-  useAnimatedReaction(() => {
-    const { base, minimo, maximo } = limites.get();
-    const s = escala.get();
-    return { percentual: Math.round((s / base) * 10) * 10, noMinimo: s <= minimo * 1.01, noMaximo: s >= maximo * 0.99 };
-  }, (agora, antes) => {
-    if (!antes || agora.percentual !== antes.percentual || agora.noMinimo !== antes.noMinimo || agora.noMaximo !== antes.noMaximo) {
-      runOnJS(setEstado)(agora);
-    }
-  });
+    if (!a.largura || !c.largura || pinca.get().ativa) return;
+    limites.set(escalas(c, a, MARGEM, ENCAIXE_MAXIMO, MAXIMO));
+    restaurar(false);
+    visivel.set(1);
+  }, [area, topo, conteudo, pinca, limites, restaurar, visivel]);
 
   const gesto = useMemo(() => {
     const doCentro = (fx: number, fy: number) => {
       'worklet';
       const a = area.get();
-      return [fx - a.largura / 2, fy - a.altura / 2];
+      return [fx - a.largura / 2, fy - topo.get() - a.altura / 2];
     };
     const pinchar = Gesture.Pinch()
       .onStart((e) => {
         parar();
         const [fx, fy] = doCentro(e.focalX, e.focalY);
-        pinca.set({ ativa: true, s: escala.get(), x: x.get(), y: y.get(), fx, fy, ux: fx, uy: fy });
+        pinca.set({ ativa: true, e: e.scale || 1, fx, fy, dedos: e.numberOfPointers });
       })
       .onUpdate((e) => {
         const p = pinca.get();
-        if (!p.ativa) return;
-        const { minimo, maximo } = limites.get();
-        const s = escalaElastica(p.s * e.scale, minimo, maximo);
-        const k = s / p.s;
+        if (!p.ativa || !e.scale) return;
         const [fx, fy] = doCentro(e.focalX, e.focalY);
-        const a = area.get();
-        // The point that was under the fingers follows them.
-        escala.set(s);
-        x.set(elastico(fx - k * (p.fx - p.x), lim(s, 'largura'), a.largura));
-        y.set(elastico(fy - k * (p.fy - p.y), lim(s, 'altura'), a.altura));
-        pinca.set({ ...p, ux: fx, uy: fy });
+        pinca.set({ ativa: true, e: e.scale, fx, fy, dedos: e.numberOfPointers });
+        // A finger landed or lifted (the pinch goes on until the last one lifts): the fingers'
+        // center jumped with it, and the sheet must not.
+        if (e.numberOfPointers !== p.dedos) return;
+        const { minimo, maximo } = limites.get();
+        const v = pincar({ s: s.get(), x: x.get(), y: y.get() }, e.scale / p.e, { x: p.fx, y: p.fy }, { x: fx, y: fy },
+          minimo, maximo, conteudo.get(), area.get());
+        s.set(v.s);
+        x.set(v.x);
+        y.set(v.y);
       })
       .onFinalize(() => {
         const p = pinca.get();
         if (!p.ativa) return;
         pinca.set({ ...p, ativa: false });
-        zoomPara(escala.get(), p.ux, p.uy);
+        alvo.set(s.get());
       });
     const arrastar = Gesture.Pan().maxPointers(1)
       .onStart((e) => {
         cancelAnimation(x);
         cancelAnimation(y);
-        arrasto.set({ tx: e.translationX, ty: e.translationY, x: x.get(), y: y.get(), retomar: false });
+        arrasto.set({ tx: e.translationX, ty: e.translationY });
       })
       .onUpdate((e) => {
         const d = arrasto.get();
-        if (pinca.get().ativa) {
-          arrasto.set({ ...d, tx: e.translationX, ty: e.translationY, retomar: true });
-          return;
-        }
-        if (d.retomar) {
-          cancelAnimation(x);
-          cancelAnimation(y);
-        }
-        const nx = (d.retomar ? x.get() : d.x) + e.translationX - d.tx;
-        const ny = (d.retomar ? y.get() : d.y) + e.translationY - d.ty;
-        arrasto.set({ tx: e.translationX, ty: e.translationY, x: nx, y: ny, retomar: false });
-        const s = escala.get();
-        const a = area.get();
-        x.set(elastico(nx, lim(s, 'largura'), a.largura));
-        y.set(elastico(ny, lim(s, 'altura'), a.altura));
+        arrasto.set({ tx: e.translationX, ty: e.translationY });
+        if (pinca.get().ativa) return; // two fingers: the pinch moves the sheet
+        const escala = s.get();
+        x.set(dentro(x.get() + e.translationX - d.tx, escala, 'largura'));
+        y.set(dentro(y.get() + e.translationY - d.ty, escala, 'altura'));
       })
       .onEnd((e, limpo) => {
-        if (pinca.get().ativa) return; // the pinch settles it
-        const s = escala.get();
-        if (!limpo || arrasto.get().retomar) {
-          zoomPara(s, 0, 0);
-          return;
-        }
-        const [mx, my] = [lim(s, 'largura'), lim(s, 'altura')];
-        x.set(withDecay({ velocity: e.velocityX, clamp: [-mx, mx], rubberBandEffect: true, rubberBandFactor: 0.7 }));
-        y.set(withDecay({ velocity: e.velocityY, clamp: [-my, my], rubberBandEffect: true, rubberBandFactor: 0.7 }));
+        if (!limpo || pinca.get().ativa) return;
+        const escala = s.get();
+        const [mx, my] = [limite(escala, conteudo.get(), area.get(), 'largura'), limite(escala, conteudo.get(), area.get(), 'altura')];
+        x.set(withDecay({ velocity: e.velocityX, clamp: [-mx, mx] }));
+        y.set(withDecay({ velocity: e.velocityY, clamp: [-my, my] }));
       });
     const toqueDuplo = Gesture.Tap().numberOfTaps(2).maxDelay(260).onEnd((e, limpo) => {
       if (!limpo) return;
       const { base } = limites.get();
-      const [cx, cy] = doCentro(e.x, e.y);
-      zoomPara(Math.abs(alvo.get() - base) > base * 0.05 ? base : base * DUPLO, cx, cy);
+      if (alvo.get() > base * 1.05) {
+        restaurar();
+      } else {
+        const [cx, cy] = doCentro(e.x, e.y);
+        zoomPara(base * DUPLO, cx, cy);
+      }
     });
     return Gesture.Simultaneous(pinchar, arrastar, toqueDuplo);
-  }, [area, escala, alvo, x, y, limites, pinca, arrasto, lim, parar, zoomPara]);
+  }, [area, topo, conteudo, s, x, y, alvo, limites, pinca, arrasto, dentro, parar, zoomPara, restaurar]);
 
   const movimento = useAnimatedStyle(() => ({
-    opacity: entrada.get(),
-    transform: [{ translateX: x.get() }, { translateY: y.get() }, { scale: escala.get() * (0.96 + 0.04 * entrada.get()) }],
+    opacity: visivel.get(),
+    transform: [{ translateX: x.get() }, { translateY: y.get() }, { scale: s.get() }],
   }));
-  /** A new area (a rotation, a resized window) fits the sheet again. */
-  const medirArea = useCallback((e: LayoutChangeEvent) => {
-    area.set({ largura: e.nativeEvent.layout.width, altura: e.nativeEvent.layout.height });
-    encaixar(false);
-  }, [area, encaixar]);
-  /** The first measure of a sheet (each opening) places it and brings it in; a later change refits it. */
+  /** The screen less the bars is the room. */
+  const medirArea = useCallback((e: LayoutChangeEvent, acima: number, abaixo: number) => {
+    const { width, height } = e.nativeEvent.layout;
+    runOnUI(medir)('area', width, Math.max(1, height - acima - abaixo), acima);
+  }, [medir]);
   const medirConteudo = useCallback((e: LayoutChangeEvent) => {
-    const primeira = !conteudo.get().altura;
-    conteudo.set({ largura: e.nativeEvent.layout.width, altura: e.nativeEvent.layout.height });
-    encaixar(primeira);
-  }, [conteudo, encaixar]);
-  const esquecer = useCallback(() => conteudo.set({ largura: 0, altura: 0 }), [conteudo]);
-  /** A zoom button or key: a step from where the zoom is heading, about the center. */
-  const passo = useCallback((fator: number) => zoomPara(alvo.get() * fator, 0, 0), [zoomPara, alvo]);
-  const voltar = useCallback(() => zoomPara(limites.get().base, 0, 0), [zoomPara, limites]);
-  return { gesto, movimento, estado, zoomPara, moverPor, passo, voltar, medirArea, medirConteudo, esquecer, escala };
+    runOnUI(medir)('conteudo', e.nativeEvent.layout.width, e.nativeEvent.layout.height, 0);
+  }, [medir]);
+  /** Closed, the sheet leaves: the next opening measures and fits it again. */
+  const esquecer = useCallback(() => {
+    runOnUI(() => {
+      'worklet';
+      conteudo.set({ largura: 0, altura: 0 });
+      visivel.set(0);
+    })();
+  }, [conteudo, visivel]);
+  /** A zoom button or key: the next step up or down about the center; 100% is the opening's view. */
+  const passo = useCallback((direcao: 1 | -1) => {
+    runOnUI((d: 1 | -1) => {
+      'worklet';
+      const { base, minimo, maximo } = limites.get();
+      const nova = proximoNivel(alvo.get(), base, minimo, maximo, d);
+      if (Math.abs(nova - base) < base * 0.001) restaurar();
+      else zoomPara(nova, 0, 0);
+    })(direcao);
+  }, [limites, alvo, zoomPara, restaurar]);
+  const voltar = useCallback(() => {
+    runOnUI(() => {
+      'worklet';
+      restaurar();
+    })();
+  }, [restaurar]);
+  /** The wheel: zoom by a factor about (cx, cy) from the room's center, or move the sheet. */
+  const zoomPorFator = useCallback((fator: number, cx: number, cy: number) => {
+    runOnUI((f: number, px: number, py: number) => {
+      'worklet';
+      zoomPara(s.get() * f, px, py, false);
+    })(fator, cx, cy);
+  }, [zoomPara, s]);
+  const mover = useCallback((dx: number, dy: number) => {
+    runOnUI((ax: number, ay: number) => {
+      'worklet';
+      parar();
+      x.set(dentro(x.get() + ax, s.get(), 'largura'));
+      y.set(dentro(y.get() + ay, s.get(), 'altura'));
+    })(dx, dy);
+  }, [parar, dentro, s, x, y]);
+  return { gesto, movimento, s, limites, pinca, zoomPorFator, mover, passo, voltar, medirArea, medirConteudo, esquecer };
 }
 
-/** Web: the wheel (pinch on a trackpad, Ctrl + wheel: zoom about the cursor; alone: pan) and the keys + - 0. */
-function useRodaEteclas(no: HTMLElement | null, zoom: ReturnType<typeof useZoom>) {
-  const { zoomPara, moverPor, passo, voltar, escala } = zoom;
+/**
+ * Web: the wheel (pinch on a trackpad, Ctrl + wheel: zoom about the cursor; alone: pan) and the keys
+ * + - 0. `acima`/`abaixo`: the bars, so the cursor counts from the room's center.
+ */
+function useRodaEteclas(no: HTMLElement | null, zoom: ReturnType<typeof useZoom>, acima: number, abaixo: number) {
+  const { zoomPorFator, mover, passo, voltar } = zoom;
   useEffect(() => {
     if (Platform.OS !== 'web' || !no) return;
     const roda = (e: WheelEvent) => {
@@ -248,15 +279,16 @@ function useRodaEteclas(no: HTMLElement | null, zoom: ReturnType<typeof useZoom>
       if (e.ctrlKey || e.metaKey) {
         // A trackpad pinch sends small steps; a mouse wheel's notch (~100) stops at ~1.65x.
         const fator = Math.exp(-preso(e.deltaY * unidade, -50, 50) * 0.01);
-        zoomPara(escala.get() * fator, e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2, false);
+        const meio = acima + (r.height - acima - abaixo) / 2;
+        zoomPorFator(fator, e.clientX - r.left - r.width / 2, e.clientY - r.top - meio);
       } else {
-        moverPor(-e.deltaX * unidade, -e.deltaY * unidade);
+        mover(-e.deltaX * unidade, -e.deltaY * unidade);
       }
     };
     const tecla = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key === '+' || e.key === '=') passo(PASSO);
-      else if (e.key === '-' || e.key === '_') passo(1 / PASSO);
+      if (e.key === '+' || e.key === '=') passo(1);
+      else if (e.key === '-' || e.key === '_') passo(-1);
       else if (e.key === '0') voltar();
       else return;
       e.preventDefault();
@@ -267,13 +299,47 @@ function useRodaEteclas(no: HTMLElement | null, zoom: ReturnType<typeof useZoom>
       no.removeEventListener('wheel', roda);
       document.removeEventListener('keydown', tecla);
     };
-  }, [no, zoomPara, moverPor, passo, voltar, escala]);
+  }, [no, zoomPorFator, mover, passo, voltar, acima, abaixo]);
 }
 
-export function Visualizador({ aberto, aoFechar, titulo, detalhe, acoes, aviso, children }: {
+/**
+ * The zoom bar: −, the percentage (100% is the fitted sheet; pressed, it goes back there) and +.
+ * It follows the zoom once a pinch ends (to the nearest 5%), and only it re-renders.
+ */
+const BarraDeZoom = memo(function BarraDeZoom({ s, limites, pinca, passo, voltar }: {
+  s: SharedValue<number>; limites: SharedValue<Limites>; pinca: SharedValue<Pinca>;
+  passo: (d: 1 | -1) => void; voltar: () => void;
+}) {
+  const { radius, spacing } = useTheme();
+  const [estado, setEstado] = useState({ percentual: 100, noMinimo: true, noMaximo: false });
+  useAnimatedReaction(() => {
+    if (pinca.get().ativa) return null;
+    const { base, minimo, maximo } = limites.get();
+    const escala = s.get();
+    return { percentual: Math.round((escala / base) * 20) * 5, noMinimo: escala <= minimo * 1.01, noMaximo: escala >= maximo * 0.99 };
+  }, (agora, antes) => {
+    if (agora && (!antes || agora.percentual !== antes.percentual || agora.noMinimo !== antes.noMinimo || agora.noMaximo !== antes.noMaximo)) {
+      runOnJS(setEstado)(agora);
+    }
+  });
+  return (
+    <Glass desfoque radius={radius.full} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, padding: 4 }}>
+      <BotaoDeIcone icone="zoomMenos" rotulo="Diminuir o zoom" lado={40} tamanho={22} desabilitado={estado.noMinimo}
+        onPress={() => passo(-1)} />
+      <Texto v="detalhe" accessibilityRole="button" accessibilityLabel={`Zoom de ${estado.percentual}%: voltar a 100%`}
+        onPress={voltar} style={{ minWidth: 52, textAlign: 'center' }}>{estado.percentual}%</Texto>
+      <BotaoDeIcone icone="zoomMais" rotulo="Aumentar o zoom" lado={40} tamanho={22} desabilitado={estado.noMaximo}
+        onPress={() => passo(1)} />
+    </Glass>
+  );
+});
+
+export function Visualizador({ aberto, aoFechar, titulo, detalhe, fonte, acoes, aviso, children }: {
   aberto: boolean; aoFechar: () => void; titulo: string;
   /** Under the title, in Roboto Mono (a line, a weekly total). */
   detalhe?: string;
+  /** Where the data comes from, in the sheet's footer beside the mark. */
+  fonte?: string;
   /** Buttons beside the title (save, share), and what the last one did. */
   acoes?: ReactNode; aviso?: string | null;
   /**
@@ -282,75 +348,80 @@ export function Visualizador({ aberto, aoFechar, titulo, detalhe, acoes, aviso, 
    */
   children: (largura: number, altura: number) => ReactNode;
 }) {
-  const { colors, escuro, glass, radius, spacing } = useTheme();
+  const { colors, escuro, radius, spacing } = useTheme();
   const insets = useSafeAreaInsets();
   const [livre, setLivre] = useState({ largura: 0, altura: 0 });
   const [no, setNo] = useState<HTMLElement | null>(null);
+  // The bars float over the sheet: the room to fit it in starts under the top one and ends over the bottom one.
+  const acima = insets.top + FOLGA + BARRA + FOLGA;
+  const abaixo = insets.bottom + spacing.md + BARRA + FOLGA;
   const zoom = useZoom();
-  const { gesto, movimento, estado, passo, voltar, medirArea, medirConteudo, esquecer } = zoom;
-  useRodaEteclas(aberto ? no : null, zoom);
-  // Closed, the sheet leaves: the next opening measures, places and brings it in again.
+  const { gesto, movimento, s, limites, pinca, passo, voltar, medirArea, medirConteudo, esquecer } = zoom;
+  useRodaEteclas(aberto ? no : null, zoom, acima, abaixo);
   useEffect(() => {
     if (!aberto) esquecer();
   }, [aberto, esquecer]);
   const recuo = MARGEM + spacing.lg; // the margin, then the sheet's own padding
   const largura = livre.largura - 2 * recuo;
-  const linha = alfa(colors.foreground, 0.12);
-  const pilula = {
-    flexDirection: 'row' as const, alignItems: 'center' as const, gap: spacing.xs, padding: spacing.xs,
-    borderRadius: radius.full, borderWidth: 1, borderColor: linha, backgroundColor: colors.canvas, ...glass.shadow,
-  };
+  const alturaDoWidget = livre.altura - 2 * recuo - ALTURA_DO_RODAPE;
+  const folha = useMemo(() => (largura > 0 ? (
+    <Reanimated.View onLayout={medirConteudo} style={[{ padding: spacing.lg, gap: spacing.sm, borderRadius: radius.lg,
+      borderWidth: 1, borderColor: alfa(colors.foreground, 0.12), backgroundColor: colors.canvas }, movimento]}>
+      {children(largura, alturaDoWidget)}
+      <RodapeDoWidget fonte={fonte} />
+    </Reanimated.View>
+  ) : null), [largura, alturaDoWidget, children, fonte, medirConteudo, movimento, colors, radius, spacing]);
 
   return (
     <Modal visible={aberto} onRequestClose={aoFechar} animationType="fade" statusBarTranslucent navigationBarTranslucent>
       <StatusBar style={escuro ? 'light' : 'dark'} />
       <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.canvas }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md,
-          paddingTop: insets.top + spacing.sm, paddingBottom: spacing.xs }}>
-          <View style={pilula}>
-            <BotaoDeIcone icone="fechar" rotulo="Fechar" lado={36} tamanho={20} onPress={aoFechar} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Texto v="subtitulo" numberOfLines={1}>{titulo}</Texto>
-            {detalhe ? <Texto v="detalhe" numberOfLines={1}>{detalhe}</Texto> : null}
-          </View>
-          {acoes ? <View style={pilula}>{acoes}</View> : null}
-        </View>
-        <GestureDetector gesture={gesto}>
-          <View ref={Platform.OS === 'web' ? (n) => setNo(n as unknown as HTMLElement | null) : undefined} collapsable={false}
-            accessibilityHint="Pince ou toque duas vezes para ampliar; arraste para mover"
-            style={{ flex: 1, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }} onLayout={(e) => {
-              medirArea(e);
-              setLivre({ largura: Math.floor(e.nativeEvent.layout.width), altura: Math.floor(e.nativeEvent.layout.height) });
-            }}>
-            {largura > 0 ? (
-              <Reanimated.View onLayout={medirConteudo} style={[{ padding: spacing.lg, gap: spacing.sm, borderRadius: radius.lg,
-                borderWidth: 1, borderColor: linha, backgroundColor: colors.canvas }, movimento]}>
-                {children(largura, livre.altura - 2 * recuo - ALTURA_DA_MARCA)}
-                <MarcaDagua />
-              </Reanimated.View>
-            ) : null}
-          </View>
-        </GestureDetector>
-        <View style={{ alignItems: 'center', paddingTop: spacing.xs, paddingBottom: insets.bottom + spacing.md }}>
-          <View style={pilula}>
-            <BotaoDeIcone icone="zoomMenos" rotulo="Diminuir o zoom" lado={40} tamanho={22} desabilitado={estado.noMinimo}
-              onPress={() => passo(1 / PASSO)} />
-            <Texto v="detalhe" accessibilityRole="button" accessibilityLabel={`Zoom de ${estado.percentual}%: voltar a 100%`}
-              onPress={voltar} style={{ minWidth: 52, textAlign: 'center' }}>{estado.percentual}%</Texto>
-            <BotaoDeIcone icone="zoomMais" rotulo="Aumentar o zoom" lado={40} tamanho={22} desabilitado={estado.noMaximo}
-              onPress={() => passo(PASSO)} />
-          </View>
-        </View>
-        {/* Over the sheet, so the area keeps its size (a resize would fit the sheet again). */}
-        {aviso ? (
-          <View pointerEvents="none" style={{ position: 'absolute', left: spacing.lg, right: spacing.lg,
-            bottom: insets.bottom + spacing.md + 56, alignItems: 'center' }}>
-            <View style={[pilula, { paddingHorizontal: spacing.md, paddingVertical: spacing.sm }]}>
-              <Texto v="legenda" cor={colors.foreground} accessibilityLiveRegion="polite">{aviso}</Texto>
+        <CamadaDeVidro
+          fundo={
+            <GestureDetector gesture={gesto}>
+              <View ref={Platform.OS === 'web' ? (n) => setNo(n as unknown as HTMLElement | null) : undefined} collapsable={false}
+                accessibilityHint="Pince ou toque duas vezes para ampliar; arraste para mover"
+                style={{ flex: 1, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', paddingTop: acima, paddingBottom: abaixo }}
+                onLayout={(e) => {
+                  medirArea(e, acima, abaixo);
+                  const { width, height } = e.nativeEvent.layout;
+                  setLivre({ largura: Math.floor(width), altura: Math.floor(height - acima - abaixo) });
+                }}>
+                {folha}
+              </View>
+            </GestureDetector>
+          }
+          frente={
+            <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+              <View pointerEvents="box-none" style={{ position: 'absolute', top: insets.top + FOLGA, left: spacing.md, right: spacing.md,
+                flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                <Glass desfoque radius={radius.full} style={{ flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+                  padding: 4, paddingRight: spacing.lg, minHeight: BARRA }}>
+                  <BotaoDeIcone icone="fechar" rotulo="Fechar" lado={40} tamanho={20} onPress={aoFechar} />
+                  <View style={{ flexShrink: 1 }}>
+                    <Texto v="subtitulo" numberOfLines={1}>{titulo}</Texto>
+                    {detalhe ? <Texto v="detalhe" numberOfLines={1}>{detalhe}</Texto> : null}
+                  </View>
+                </Glass>
+                <View style={{ flex: 1 }} />
+                {acoes ? (
+                  <Glass desfoque radius={radius.full} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, padding: 4, minHeight: BARRA }}>
+                    {acoes}
+                  </Glass>
+                ) : null}
+              </View>
+              <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom + spacing.md,
+                alignItems: 'center', gap: spacing.sm }}>
+                {aviso ? (
+                  <Glass desfoque radius={radius.full} pointerEvents="none" style={{ paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>
+                    <Texto v="legenda" cor={colors.foreground} accessibilityLiveRegion="polite">{aviso}</Texto>
+                  </Glass>
+                ) : null}
+                <BarraDeZoom s={s} limites={limites} pinca={pinca} passo={passo} voltar={voltar} />
+              </View>
             </View>
-          </View>
-        ) : null}
+          }
+        />
       </GestureHandlerRootView>
     </Modal>
   );
