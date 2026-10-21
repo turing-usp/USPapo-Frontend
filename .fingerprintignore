@@ -1,0 +1,4 @@
+# Kotlin 2 writes compiler sessions into every Gradle plugin it builds (node_modules/*/…/.kotlin):
+# not part of the native project, but without this the runtime version after a local build no
+# longer matches the one embedded in the APK, and its OTA updates would never reach it.
+**/.kotlin/**/*
