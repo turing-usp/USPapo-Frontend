@@ -12,21 +12,23 @@ import type { NomeIcone } from '../icons';
 import { MenuAncorado, ancoraDoToque, type Ancora, type ItemDoMenu } from '../MenuAncorado';
 import { BotaoDeIcone } from '../ui';
 import { haptics } from '../../lib/device';
+import { semWidgets } from '../../lib/widgets';
 import { useTheme } from '../../theme';
 
 /** The web shares only where the browser can; Android and iOS always can. */
 const PODE_COMPARTILHAR = Platform.OS !== 'web' || (typeof navigator !== 'undefined' && typeof navigator.share === 'function');
 const ICONE_COMPARTILHAR: NomeIcone = Platform.OS === 'ios' ? 'compartilharIos' : 'compartilhar';
 
+/** Widgets (a map) are drawn, not text: they are left out of what is copied or shared. */
 async function copiar(texto: string): Promise<boolean> {
-  const ok = await Clipboard.setStringAsync(texto).catch(() => false);
+  const ok = await Clipboard.setStringAsync(semWidgets(texto)).catch(() => false);
   void (ok ? haptics.selection() : haptics.error());
   if (ok && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility('Copiado');
   return ok;
 }
 
 function compartilhar(texto: string): void {
-  Share.share({ message: texto }).catch(() => undefined);
+  Share.share({ message: semWidgets(texto) }).catch(() => undefined);
 }
 
 function itensPara(texto: string): ItemDoMenu[] {

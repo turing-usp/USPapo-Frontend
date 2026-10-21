@@ -7,6 +7,8 @@
  * One cursor follows the text down (the thinking mark collapses into it).
  * A finished answer with formulas renders through KaTeX (components/chat/Matematica).
  * Tables size each column to its content and scroll sideways when they cannot fit.
+ * A ```uspapo-<tipo>``` fence is a widget (lib/widgets.ts), drawn instead of printed: today the
+ * map of a bus ride (components/chat/Mapa).
  */
 import {
   createMarkdownIt, MarkdownStream, sealIncompleteMarkdown, type ASTNode, type MarkdownStyleMap, type RenderRules,
@@ -14,8 +16,10 @@ import {
 import React, { createContext, memo, useContext, useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Animated, Easing, Linking, ScrollView, Text, View, useWindowDimensions, type ViewStyle } from 'react-native';
 
+import { Mapa } from './Mapa';
 import { Matematica } from './Matematica';
 import { blocos, distribuirColunas, medirColunas, quebras, selar, temMatematica, tintasDaTabela } from '../../lib/markdown';
+import { lerWidget, separarWidgets, type Widget } from '../../lib/widgets';
 import { useTheme, type Theme } from '../../theme';
 
 /**
@@ -106,6 +110,16 @@ function estilos({ colors, fonts, radius, spacing, typography }: Theme): Markdow
 /** Column widths of the table being rendered, read by its cells. */
 const Larguras = createContext<number[]>([]);
 
+/** Whether the block being rendered is complete (a streaming block may hold half a widget reference). */
+const BlocoCompleto = createContext(true);
+
+/** The widget a fence names; an unknown `tipo` (a newer app's widget) is left out, never printed raw. */
+function WidgetDaResposta({ widget }: { widget: Widget }) {
+  const completo = useContext(BlocoCompleto);
+  if (widget.tipo === 'mapa') return <Mapa campos={widget.campos} pronto={completo} />;
+  return null;
+}
+
 function textoDe(no: ASTNode): string {
   if (no.type === 'hardbreak' || no.type === 'softbreak') return '\n';
   if (no.type === 'text' || no.type === 'code_inline') return no.content;
@@ -149,10 +163,14 @@ function Celula({ no, estilo, children }: { no: ASTNode; estilo: MarkdownStyleMa
   );
 }
 
-// Plain code blocks (the default fence pulls in a highlighter and an icon font); no remote images.
+// Plain code blocks (the default fence pulls in a highlighter and an icon font), widgets; no remote images.
 const regras: RenderRules = {
   image: () => null,
-  fence: (node, _c, _p, styles) => <Text key={node.key} style={styles.fence}>{node.content.replace(/\n$/, '')}</Text>,
+  fence: (node, _c, _p, styles) => {
+    const widget = lerWidget(typeof node.sourceInfo === 'string' ? node.sourceInfo : '', node.content);
+    if (widget) return <WidgetDaResposta key={node.key} widget={widget} />;
+    return <Text key={node.key} style={styles.fence}>{node.content.replace(/\n$/, '')}</Text>;
+  },
   code_block: (node, _c, _p, styles) => <Text key={node.key} style={styles.code_block}>{node.content.replace(/\n$/, '')}</Text>,
   table: (node, children, _p, styles) => <Tabela key={node.key} no={node} estilo={styles}>{children}</Tabela>,
   tr: (node, children, pais, styles) => {
@@ -184,10 +202,12 @@ const Bloco = memo(function Bloco({ texto, streaming, animar, tema, estilo }: {
   const translateY = entrada.interpolate({ inputRange: [0, 1], outputRange: [6, 0] });
   return (
     <Animated.View style={{ opacity: entrada, transform: [{ translateY }] }}>
-      <MarkdownStream colorScheme={tema.escuro ? 'dark' : 'light'} markdownit={analisador} mergeStyle={false} onLinkPress={abrirLink}
-        rules={regras} style={estilo}>
-        {streaming ? sealIncompleteMarkdown(selar(texto)) : texto}
-      </MarkdownStream>
+      <BlocoCompleto.Provider value={!streaming}>
+        <MarkdownStream colorScheme={tema.escuro ? 'dark' : 'light'} markdownit={analisador} mergeStyle={false} onLinkPress={abrirLink}
+          rules={regras} style={estilo}>
+          {streaming ? sealIncompleteMarkdown(selar(texto)) : texto}
+        </MarkdownStream>
+      </BlocoCompleto.Provider>
     </Animated.View>
   );
 });
@@ -260,7 +280,17 @@ export default function Resposta({ texto, streaming, revelar = streaming, aoReve
     if (!escrevendo && !cursor) revelada();
   }, [escrevendo, cursor]);
 
-  if (!escrevendo && !cursor && temMatematica(texto)) return <Matematica texto={texto} />;
+  // KaTeX typesets the prose only: a formula answer with a widget keeps the widget native, below it.
+  if (!escrevendo && !cursor && temMatematica(texto)) {
+    const [prosa, widgets] = separarWidgets(texto);
+    if (!widgets) return <Matematica texto={texto} />;
+    return (
+      <View>
+        <Matematica texto={prosa} />
+        <Resposta texto={widgets} streaming={false} />
+      </View>
+    );
+  }
   const partes = blocos(visivel);
   return (
     <View>

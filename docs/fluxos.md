@@ -79,6 +79,14 @@ ative *Ajustes → Privacidade e Segurança → Modo de Desenvolvedor* e confie
 no certificado em *Ajustes → Geral → VPN e Gerenciamento de Dispositivos*.
 Sem aparelho, `npx expo run:ios` (sem `--device`) abre no Simulador.
 
+Instale sempre em **Release** (o comando acima): o JavaScript vai dentro do
+app, que abre sem o Mac e recebe os updates do canal. O botão Run do Xcode
+compila em **Debug**, que busca o JavaScript no Metro do Mac; sem ele, o app
+abre na tela vermelha *"No script URL provided… unsanitizedScriptURLString =
+(null)"*, e mesmo com ele tudo roda mais lento (animações incluídas). Para
+usar o Xcode, troque antes em *Product → Scheme → Edit Scheme… → Run → Build
+Configuration* para **Release**.
+
 ## Notificações push (Firebase)
 
 O push do Android passa pelo FCM. Sem esta configuração o app funciona, mas
@@ -210,6 +218,50 @@ Ao mudar o domínio ou criar um novo ambiente web:
 A CSP em `vercel.json` só libera o próprio site e o Supabase. Qualquer
 domínio novo que o navegador precise acessar (imagens, APIs) tem que entrar
 lá.
+
+## Login com Google e senha
+
+O código já existe (`lib/auth.ts`, telas de login, cadastro, `/reset` e
+Ajustes > Conta); o que falta é configuração no Supabase, que é compartilhado
+com outros serviços do Turing.
+
+- **Google:** o projeto já tem o provedor ligado com um client OAuth do
+  Turing (o fluxo chega à tela de contas do Google). O botão só aparece
+  quando `/auth/v1/settings` diz `google: true`, então ligar ou desligar o
+  provedor no Supabase muda o app sem atualização. Se o login terminar em
+  "acesso bloqueado" ou "app em teste", quem administra aquele projeto no
+  Google Cloud precisa publicar a tela de consentimento (Audience → Publish
+  app). Para um client próprio do USPapo: Google Auth Platform → Clients →
+  Web application, com o redirect
+  `https://zgvbnmovongrigjoviyu.supabase.co/auth/v1/callback`, e o ID e o
+  segredo em Supabase → Authentication → Sign In / Providers → Google. O
+  app não precisa de client Android/iOS nem de SHA-1: o login abre o
+  navegador e volta pelo deep link `uspapofe://auth/callback`.
+- **Redirect URLs** (Authentication → URL Configuration):
+  `https://uspapo.turingusp.com`, `https://uspapo.turingusp.com/**` e
+  `uspapofe://**`. Não mude a Site URL.
+- **Esqueci a senha** depende de e-mail. O SMTP padrão do Supabase só
+  entrega para membros da equipe do projeto e com limite baixo: se o
+  cadastro já confirma e-mails de qualquer aluno, está pronto; senão,
+  configure Authentication → Emails → SMTP Settings (Resend, Brevo ou um
+  Gmail com senha de app) e traduza o template *Reset Password* mantendo
+  `{{ .ConfirmationURL }}`.
+- **Alterar senha** (Ajustes > Conta) não usa e-mail: confere a senha
+  atual entrando de novo e troca em seguida. Uma conta que só entra com o
+  Google cria a primeira senha ali.
+
+## Mapa do campus
+
+A base do mapa inline (`assets/mapa/campus.json`) é gerada do
+OpenStreetMap. Para atualizar depois de obras ou de uma revisão no OSM:
+
+```bash
+node scripts/mapa-campus.mjs            # baixa do Overpass (tenta 4 vezes)
+node scripts/mapa-campus.mjs base.json  # ou reaproveita uma resposta salva
+```
+
+O arquivo vai junto do JavaScript: chega por OTA, sem APK novo. Os dados
+são © OpenStreetMap (ODbL), creditados na legenda do mapa.
 
 ## Tarefas de código
 

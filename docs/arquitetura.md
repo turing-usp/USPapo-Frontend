@@ -131,6 +131,27 @@ relida ao abrir o app e ao voltar para ele depois de 5 minutos.
   `Matematica` a renderiza com KaTeX: HTML direto na web e um WebView
   com altura automática no app. Os arquivos do KaTeX são copiados para
   `public/katex/` no `postinstall` (a CSP do site não permite CDN).
+- **Widgets na resposta** (`lib/widgets.ts`): um bloco de código com a
+  linguagem `uspapo-<tipo>` não é impresso, é desenhado. Ele vem no próprio
+  texto da resposta (o contrato do stream não mudou) e fica salvo com ela,
+  então a conversa reaberta desenha de novo. O corpo é só uma referência
+  curta (`chave=valor`); o widget busca o que precisa. Enquanto o bloco
+  ainda chega, o widget mostra a caixa vazia na altura final; um `tipo`
+  desconhecido (widget de uma versão mais nova) não aparece. Copiar e
+  Compartilhar tiram os blocos, e numa resposta com fórmula o KaTeX recebe
+  só a prosa e o widget fica nativo embaixo.
+- **Mapa** (`Mapa.tsx`, `lib/mapa.ts`, tipo `mapa`): o trajeto de ônibus
+  de uma resposta de transporte. O app pede `GET /api/mapa` com a
+  referência (linha e paradas) e recebe só geometria: o trecho percorrido
+  (polyline codificada), as duas paradas e os dois lugares; guarda o
+  resultado por referência enquanto o app está aberto. A base do campus
+  (contorno, prédios, ruas, avenidas, água, trilhos) vem com o app em
+  `assets/mapa/campus.json` (70 KB, gerada do OpenStreetMap por
+  `scripts/mapa-campus.mjs`): não há servidor de tiles nem chave. Tudo é um
+  SVG estático (`react-native-svg`): cores da paleta variando só a
+  opacidade, o trajeto em `accent` (azul no claro, laranja no escuro) com um
+  halo da cor do fundo, caminhadas pontilhadas em linha reta (são
+  estimativas), legenda e crédito "© OpenStreetMap" em Roboto Mono.
 - `Feedback.tsx`: útil / não útil, com motivo e comentário opcionais,
   gravados em `mensagem_feedbacks`.
 - `AcoesDaMensagem.tsx`: Copiar (`expo-clipboard`; o ícone vira um check por
@@ -239,13 +260,15 @@ final e volta (`MOLA`, ~0,35 s):
 | Arquivo | Papel |
 |---|---|
 | `supabase.ts` | cliente Supabase (PKCE; sessão no AsyncStorage) |
-| `auth.ts` | mensagens de erro de login, regras de senha, Google OAuth (web: redirect; app: navegador + deep link `uspapofe://`) |
+| `auth.ts` | mensagens de erro de login, regras de senha, Google OAuth (web: redirect; app: navegador + deep link `uspapofe://`; o botão só aparece se o projeto tem o Google ligado, lido de `/auth/v1/settings`), troca de senha em Ajustes (confere a senha atual entrando de novo; conta só Google cria a primeira) |
 | `conversations.ts` | `conversas`/`mensagens`: histórico, abrir, anexar turno (idempotente), renomear, favoritar (máx. 5, regra no banco), excluir |
 | `cache.ts` | cache **só de leitura** das conversas, por usuário; sem rede, o histórico abre mas não dá para perguntar |
 | `feedback.ts` | avaliações das respostas |
 | `exclusoes.ts` | exclusões com "desfazer": pendentes no módulo (não na tela), efetivadas ao fechar a gaveta ou mandar o app para segundo plano |
 | `device.ts` | háptica (desligável; no Android, os efeitos curtos do sistema, que seguem a intensidade de toque do aparelho, em vez dos pulsos de 40-60 ms do `expo-haptics`), altura do teclado (no Android o RN já desconta as barras do sistema), ditado |
 | `markdown.ts` | blocos e selagem do streaming, `<br>`, larguras das colunas das tabelas, HTML e CSS do KaTeX |
+| `widgets.ts` | leitura dos blocos ```` ```uspapo-<tipo> ```` e remoção deles do texto copiado |
+| `mapa.ts` | geometria do mapa (`GET /api/mapa`, uma vez por referência), polyline, projeção e enquadramento sobre a base embutida |
 | `notificacoes.ts` / `.web.ts` | push (app) ou notificação local (web) quando a resposta termina |
 | `comunicados.ts` | leitura dos comunicados em vigor, escolha do que mostrar, ids vistos no aparelho |
 | `admin.ts` | tipos e formatação do resumo do painel |

@@ -1,4 +1,4 @@
-/** Configurações: theme, haptics, notifications, memory, the offline cache and about. */
+/** Configurações: the account (password), theme, haptics, notifications, memory, the offline cache and about. */
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import React, { useEffect, useState } from 'react';
@@ -6,8 +6,10 @@ import { Linking, Platform, ScrollView, View, useWindowDimensions } from 'react-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ALTURA_CHROME } from '../../components/Chrome';
-import { Assinatura, Botao, BotaoDeIcone, Cartao, Interruptor, Texto } from '../../components/ui';
-import { sessaoAtual } from '../../lib/auth';
+import { OlhoDaSenha, RegrasDeSenha } from '../../components/auth';
+import { Icone } from '../../components/icons';
+import { Assinatura, Botao, BotaoDeIcone, Campo, Cartao, Erro, Interruptor, Texto } from '../../components/ui';
+import { contaDeLogin, senhaValida, sessaoAtual, trocarSenha, type ContaDeLogin } from '../../lib/auth';
 import { limparCache, tamanhoDoCache } from '../../lib/cache';
 import { carregarHaptics, definirHaptics, haptics } from '../../lib/device';
 import {
@@ -31,6 +33,95 @@ function Linha({ rotulo, valor }: { rotulo: string; valor: string }) {
       <Texto>{rotulo}</Texto>
       <Texto v="detalhe" style={{ flexShrink: 1, textAlign: 'right' }}>{valor}</Texto>
     </View>
+  );
+}
+
+/**
+ * E-mail and password. An account with a password changes it (the current one is asked first); an
+ * account that only signs in with Google can create one, to sign in with e-mail too.
+ */
+function CartaoDaConta() {
+  const { colors, spacing } = useTheme();
+  const [conta, setConta] = useState<ContaDeLogin | null>(null);
+  const [aberto, setAberto] = useState(false);
+  const [atual, setAtual] = useState('');
+  const [nova, setNova] = useState('');
+  const [confirma, setConfirma] = useState('');
+  const [ver, setVer] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [feito, setFeito] = useState(false);
+
+  useEffect(() => {
+    void contaDeLogin().then(setConta);
+  }, []);
+  if (!conta) return null;
+
+  function fechar() {
+    setAberto(false);
+    setAtual('');
+    setNova('');
+    setConfirma('');
+    setErro(null);
+  }
+
+  async function salvar() {
+    if (!conta) return;
+    if (conta.temSenha && !atual) return setErro('Informe a senha atual.');
+    if (!senhaValida(nova)) return setErro('A nova senha não atende aos requisitos.');
+    if (nova !== confirma) return setErro('As senhas não coincidem.');
+    setSalvando(true);
+    setErro(null);
+    const falha = await trocarSenha(conta.email, conta.temSenha ? atual : null, nova);
+    setSalvando(false);
+    if (falha) {
+      setErro(falha);
+      void haptics.error();
+      return;
+    }
+    void haptics.finished();
+    fechar();
+    setFeito(true);
+    setConta({ ...conta, temSenha: true });
+  }
+
+  const olho = <OlhoDaSenha visivel={ver} alternar={() => setVer((v) => !v)} />;
+  return (
+    <Cartao titulo="Conta">
+      <Linha rotulo="E-mail" valor={conta.email} />
+      {conta.google && !conta.temSenha && !feito ? (
+        <Texto v="legenda">Você entra com o Google. Criando uma senha, também pode entrar com e-mail e senha.</Texto>
+      ) : null}
+      {aberto ? (
+        <View style={{ gap: spacing.sm }}>
+          {conta.temSenha ? (
+            <Campo icone="cadeado" value={atual} onChangeText={setAtual} placeholder="Senha atual" secureTextEntry={!ver}
+              autoComplete="current-password" textContentType="password" final={olho} />
+          ) : null}
+          <Campo icone="cadeado" value={nova} onChangeText={setNova} placeholder="Nova senha" secureTextEntry={!ver}
+            autoComplete="new-password" textContentType="newPassword" final={conta.temSenha ? undefined : olho} />
+          <RegrasDeSenha senha={nova} />
+          <Campo icone="cadeado" value={confirma} onChangeText={setConfirma} placeholder="Confirme a nova senha" secureTextEntry={!ver}
+            autoComplete="new-password" textContentType="newPassword" onSubmitEditing={() => void salvar()} />
+          {erro ? <Erro>{erro}</Erro> : null}
+          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+            <Botao v="secundario" rotulo="Cancelar" desabilitado={salvando} onPress={fechar} style={{ flex: 1 }} />
+            <Botao rotulo="Salvar" carregando={salvando} onPress={() => void salvar()} style={{ flex: 1 }} />
+          </View>
+        </View>
+      ) : (
+        <>
+          {feito ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }} accessibilityLiveRegion="polite">
+              <Icone nome="check" cor={colors.accent} tamanho={16} traco={2.2} />
+              <Texto v="suave" cor={colors.foreground}>Senha salva.</Texto>
+            </View>
+          ) : null}
+          <Botao v="secundario" icone="cadeado" rotulo={conta.temSenha ? 'Alterar senha' : 'Criar senha'}
+            onPress={() => { setFeito(false); setAberto(true); }} />
+        </>
+      )}
+    </Cartao>
   );
 }
 
@@ -97,6 +188,8 @@ export default function Configuracoes() {
     <ScrollView contentContainerStyle={{ alignSelf: 'center', width: '100%', maxWidth: layout.containerMaxWidth, gap: spacing.lg,
       paddingHorizontal: spacing.lg, paddingTop: insets.top + ALTURA_CHROME + spacing.md, paddingBottom: insets.bottom + spacing.xl }}>
       <Texto v="titulo">Configurações</Texto>
+
+      <CartaoDaConta />
 
       <Cartao titulo="Tema">
         {/* Two by two on phones, one row when it fits. */}

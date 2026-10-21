@@ -1,6 +1,6 @@
 /**
  * Auth helpers: pt-BR error mapping (no raw codes, no enumeration hints), the
- * live password checklist and "Continuar com o Google".
+ * live password checklist, "Continuar com o Google" and changing the password.
  *
  * Google: web is a full-page redirect back to the origin (detectSessionInUrl
  * exchanges the PKCE code); native opens the system browser and waits for the
@@ -10,7 +10,7 @@
 import * as Linking from 'expo-linking';
 import { AppState, Platform } from 'react-native';
 
-import { supabase } from './supabase';
+import { SUPABASE_ANON_KEY, SUPABASE_URL, supabase } from './supabase';
 
 const ERROS: Record<string, string> = {
   email_not_confirmed: 'Confira seu e-mail para ativar a conta',
@@ -20,6 +20,7 @@ const ERROS: Record<string, string> = {
   over_request_rate_limit: 'Muitas tentativas. Espere alguns minutos e tente de novo',
   same_password: 'A nova senha precisa ser diferente da atual',
   session_expired: 'Sua sessão expirou',
+  reauthentication_needed: 'Por segurança, entre de novo na conta antes de trocar a senha',
 };
 const REDE = 'Verifique sua conexão e tente de novo';
 const SENHA_FRACA: Record<string, string> = {
@@ -113,4 +114,49 @@ export async function entrarComGoogle(): Promise<ResultadoOAuth> {
 export async function sessaoAtual(): Promise<{ userId: string; token: string }> {
   const { data } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
   return { userId: data.session?.user?.id ?? '', token: data.session?.access_token ?? '' };
+}
+
+let google: Promise<boolean> | null = null;
+
+/**
+ * Whether the Supabase project has Google sign-in on (its public /auth/v1/settings). The button
+ * only shows where it can work, and appears on its own once the project turns Google on. If the
+ * check cannot run, the button shows (and asks again next time).
+ */
+export function googleAtivo(): Promise<boolean> {
+  google ??= fetch(`${SUPABASE_URL}/auth/v1/settings`, { headers: { apikey: SUPABASE_ANON_KEY ?? '' } })
+    .then(async (res) => (res.ok ? Boolean(((await res.json()) as { external?: { google?: boolean } }).external?.google) : true))
+    .catch(() => {
+      google = null;
+      return true;
+    });
+  return google;
+}
+
+/** How the signed-in account signs in: with a password (e-mail account) and/or with Google. */
+export type ContaDeLogin = { email: string; temSenha: boolean; google: boolean };
+
+export async function contaDeLogin(): Promise<ContaDeLogin | null> {
+  const { data } = await supabase.auth.getUser().catch(() => ({ data: { user: null } }));
+  if (!data.user?.email) return null;
+  const provedores = new Set((data.user.identities ?? []).map((i) => i.provider));
+  return { email: data.user.email, temSenha: provedores.has('email'), google: provedores.has('google') };
+}
+
+/**
+ * Sets a new password; null on success, else the message to show. With `atual` (an account that
+ * has a password) it is checked first by signing in again, which also counts as the recent login
+ * Supabase asks for before a password change. A Google-only account creates its first password.
+ */
+export async function trocarSenha(email: string, atual: string | null, nova: string): Promise<string | null> {
+  try {
+    if (atual !== null) {
+      const { error } = await supabase.auth.signInWithPassword({ email, password: atual });
+      if (error) return error.code === 'invalid_credentials' ? 'A senha atual está incorreta' : mapAuthError(error);
+    }
+    const { error } = await supabase.auth.updateUser({ password: nova, ...(atual !== null ? { current_password: atual } : {}) });
+    return error ? mapAuthError(error) : null;
+  } catch (err) {
+    return mapAuthError(err);
+  }
 }

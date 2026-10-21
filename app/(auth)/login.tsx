@@ -1,11 +1,11 @@
-/** Login: e-mail + password, and "Continuar com o Google". */
+/** Login: e-mail + password, and "Continuar com o Google" when the project has Google on. */
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 
 import { Divisor, OlhoDaSenha } from '../../components/auth';
 import { GoogleG } from '../../components/icons';
 import { Botao, Campo, ColunaCentral, Erro, Texto } from '../../components/ui';
-import { entrarComGoogle, mapAuthError } from '../../lib/auth';
+import { entrarComGoogle, googleAtivo, mapAuthError } from '../../lib/auth';
 import { haptics } from '../../lib/device';
 import { supabase } from '../../lib/supabase';
 
@@ -16,6 +16,11 @@ export default function Login() {
   const [ver, setVer] = useState(false);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [comGoogle, setComGoogle] = useState(true);
+
+  useEffect(() => {
+    void googleAtivo().then(setComGoogle);
+  }, []);
 
   // A session appearing here closes the (web) OAuth round trip.
   useEffect(() => {
@@ -58,8 +63,12 @@ export default function Login() {
       {erro ? <Erro centro>{erro}</Erro> : null}
       <Botao rotulo="Entrar" carregando={carregando} onPress={() => void entrar()} />
       <Texto v="link" centro onPress={() => router.push('/reset')}>Esqueceu a senha?</Texto>
-      <Divisor />
-      <Botao v="secundario" rotulo="Continuar com o Google" icone={<GoogleG size={20} />} desabilitado={carregando} onPress={() => void google()} />
+      {comGoogle ? (
+        <>
+          <Divisor />
+          <Botao v="secundario" rotulo="Continuar com o Google" icone={<GoogleG size={20} />} desabilitado={carregando} onPress={() => void google()} />
+        </>
+      ) : null}
       <Texto v="suave" centro>
         Não tem uma conta? <Texto v="link" onPress={() => router.push('/register')}>Cadastre-se</Texto>
       </Texto>

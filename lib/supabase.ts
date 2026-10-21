@@ -11,6 +11,10 @@ if (!url || !anonKey) {
   throw new Error('Defina EXPO_PUBLIC_SUPABASE_URL e EXPO_PUBLIC_SUPABASE_ANON_KEY no .env antes do build.');
 }
 
+/** The project URL and public key, for the few calls outside the client (lib/auth.ts: googleAtivo). */
+export const SUPABASE_URL = url;
+export const SUPABASE_ANON_KEY = anonKey;
+
 export const supabase = createClient(url, anonKey, {
   auth: {
     storage: AsyncStorage,
