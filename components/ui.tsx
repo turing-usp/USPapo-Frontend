@@ -57,9 +57,9 @@ export function tintaDoToque({ pressed, hovered }: EstadoDoToque, cor: string): 
  * lets the tint spill past the icon without moving anything (a close button beside a title). A new
  * icon (Copiar's check) or a thumb just chosen pops in.
  */
-export function BotaoDeIcone({ icone, rotulo, onPress, cor, tamanho = 17, lado = 32, ativo, rente, desabilitado }: {
+export function BotaoDeIcone({ icone, rotulo, onPress, cor, tamanho = 17, lado = 32, ativo, rente, desabilitado, animar = true }: {
   icone: NomeIcone; rotulo: string; onPress: () => void; cor?: string; tamanho?: number; lado?: number;
-  ativo?: boolean; rente?: boolean; desabilitado?: boolean;
+  ativo?: boolean; rente?: boolean; desabilitado?: boolean; animar?: boolean;
 }) {
   const { colors, radius } = useTheme();
   const chave = `${icone}:${!!ativo}`;
@@ -73,7 +73,7 @@ export function BotaoDeIcone({ icone, rotulo, onPress, cor, tamanho = 17, lado =
         margin: rente ? -(lado - tamanho) / 2 : 0, opacity: desabilitado ? 0.5 : 1,
         backgroundColor: ativo ? alfa(colors.accent, 0.14) : tintaDoToque(estado, colors.foreground) })}>
       {/* Plain until it first changes: a conversation has dozens of these. */}
-      {mudou ? (
+      {mudou && animar ? (
         <Surgir key={chave} animar={!!ativo || icone !== inicial.icone} de={0.5}>
           <Icone nome={icone} cor={cor ?? (ativo ? colors.accent : colors.mutedForeground)} tamanho={tamanho} />
         </Surgir>

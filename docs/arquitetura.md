@@ -4,6 +4,17 @@ Regra geral: `app/` só monta telas, `components/` só desenha e `lib/` guarda
 dados e regras (é o que os testes cobrem). Nomes de interface e domínio
 estão em português (`Botao`, `Conversa`); termos técnicos, em inglês.
 
+O botão de chat temporário no canto superior direito do início cria uma rota
+`/chat/temporario-<uuid>`. Ela usa a mesma tela e os mesmos componentes na web,
+Android e iOS, mas mantém pergunta inicial e contexto somente em RAM. Ao sair
+da tela ou recarregar, o conteúdo é descartado; voltar à rota mostra que o chat
+foi encerrado. Não lê nem grava conversas, cache offline, feedback ou notificações,
+e não ocupa o histórico de 30 conversas. `POST /api/chat/temporario` exige o backend
+atualizado: mantém autenticação e limites por conta, sem memória pessoal, jobs,
+persistência de turnos ou telemetria do conteúdo. Não há migração do Supabase.
+Os provedores de IA e ferramentas continuam recebendo o conteúdo necessário para
+responder; temporário não significa anonimato ou garantia sobre retenção externa.
+
 ## Navegação (`app/`)
 
 - `_layout.tsx` carrega fontes, gestos (`GestureHandlerRootView`) e tema e faz a **porta de sessão**: sem
@@ -31,8 +42,17 @@ estão em português (`Botao`, `Conversa`); termos técnicos, em inglês.
   segurar uma pergunta ou resposta abre Copiar/Compartilhar. Todo gesto tem
   um botão equivalente (menu, X, ⋮, ícones sob as mensagens), e a web usa
   só os botões.
-  O menu flutuante, a gaveta e os comunicados (pílula de aviso e vidro
-  gigante) ficam em `components/Chrome.tsx`. Cada tela entra com um fade e
+  O botão de abrir, a gaveta e os comunicados (pílula de aviso e vidro
+  gigante) ficam em `components/Chrome.tsx`. O conteúdo da gaveta é o
+  `components/BarraLateral.tsx`: marca, lupa e botão de minimizar no topo;
+  Novo chat e, só para admin na web, Painel de métricas; histórico no meio;
+  perfil e Configurações fixos no rodapé. A lupa abre o campo de busca em
+  `Conversas`; Escape fecha e limpa a pesquisa. O menu do perfil abre para
+  cima e fecha por Escape, voltar do Android ou toque fora. Novo chat amplia
+  seu ícone a 1,1×; Configurações gira a engrenagem 90° em 500 ms, adaptando
+  os movimentos de `site/components/leftmenu.tsx` do frontend legado para
+  Reanimated (mouse, foco e toque, respeitando movimento reduzido).
+  Cada tela entra com um fade e
   uma subida curtos (`Tela`, em `components/Cena.tsx`); no app, a primeira
   entrada espera o primeiro layout da tela, senão a animação terminaria
   antes do primeiro quadro.
@@ -50,8 +70,9 @@ estão em português (`Botao`, `Conversa`); termos técnicos, em inglês.
    O pedido leva `conversa_id` e `ordem`: o backend responde num job que
    **não depende da conexão**. Fechar o app ou a aba não interrompe nada;
    o servidor grava a resposta e manda a notificação. Na web de produção a
-   URL é relativa (`/api`, reescrita pelo Vercel); no app e no dev server é
-   `EXPO_PUBLIC_BACKEND_URL`.
+   URL é relativa (`/api`, reescrita pelo Vercel). Na web de desenvolvimento,
+   `metro.config.js` encaminha `/api` para `EXPO_PUBLIC_BACKEND_URL`, sem
+   esbarrar no CORS do backend. No app, a chamada usa essa URL diretamente.
 4. Cada evento passa pelo redutor puro `reduzir`, que produz as `Linha`s
    da conversa: pergunta, ferramentas em uso, resposta, erro ou nota.
 5. No `end`, o app também completa o turno no Supabase (quem gravar
@@ -380,6 +401,11 @@ O app segue o manual de identidade visual do Turing USP (2021).
   paleta não tem laranja mais claro) e os links se sublinham. Uma conversa da gaveta fica
   acesa inteira enquanto o mouse está nela ou no seu ⋮. No app, onde não há
   mouse, os mesmos tons aparecem só ao pressionar.
+
+  No desktop com mouse, o botão ⋮ de cada conversa aparece e desaparece com
+  um fade de 180 ms ao passar pela linha. Ele também aparece com foco de
+  teclado e fica visível enquanto seu menu está aberto. Em telas de toque
+  e nos apps, permanece visível; com movimento reduzido, o fade é desativado.
 
 No site com mouse, as barras de rolagem usam trilho transparente e puxador
 fino, com a cor do texto do tema a 32% (50% ao passar o mouse ou focar o

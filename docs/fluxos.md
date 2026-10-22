@@ -11,6 +11,14 @@ Tudo que começa com `EXPO_PUBLIC_` vai para dentro do app e é público por
 definição (a chave anônima do Supabase depende de RLS, não de sigilo).
 Nunca coloque segredos aqui.
 
+No navegador, `/api/*` usa a origem do frontend em todos os ambientes. Em
+desenvolvimento, o Metro encaminha as chamadas para `EXPO_PUBLIC_BACKEND_URL`
+(`scripts/dev-proxy.cjs`); em produção, o Vercel faz esse encaminhamento.
+Assim é possível rodar só o frontend local com os serviços online existentes,
+sem adicionar localhost ao CORS de produção. O proxy preserva o token de cada
+sessão e o streaming do chat. Reinicie `npm run web` depois de alterar a URL
+do backend ou a configuração do Metro. No Android/iOS, a URL é usada diretamente.
+
 ## Testar no Android com o backend local
 
 ```bash

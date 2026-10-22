@@ -38,8 +38,9 @@ type Item = { tipo: 'grupo'; id: string } | { tipo: 'conversa'; id: string; c: C
 const assinatura = (lista: Conversa[]) =>
   lista.map((c) => `${c.id}|${c.titulo}|${c.atualizada_em}|${c.favorita}|${c.resposta === null}|${c.mensagens.length}`).join('\n');
 
-export default function Conversas({ aberta, assentada, aoAbrir }: {
+export default function Conversas({ aberta, assentada, aoAbrir, pesquisaAberta, aoFecharPesquisa }: {
   aberta: boolean; assentada: boolean; aoAbrir: (destino: string) => void;
+  pesquisaAberta: boolean; aoFecharPesquisa: () => void;
 }) {
   const { colors, fonts, radius, spacing, typography } = useTheme();
   const tinta = useTintaDeCampo();
@@ -151,7 +152,7 @@ export default function Conversas({ aberta, assentada, aoAbrir }: {
   }
 
   const itens = useMemo<Item[]>(() => {
-    const termo = busca.trim().toLowerCase();
+    const termo = pesquisaAberta ? busca.trim().toLowerCase() : '';
     const hoje = new Date().setHours(0, 0, 0, 0);
     const filtradas = (conversas ?? []).filter((c) => !termo || [rotuloDa(c), ...c.mensagens.flatMap((m) => [m.pergunta, m.resposta ?? ''])]
       .some((t) => t.toLowerCase().includes(termo)));
@@ -159,7 +160,7 @@ export default function Conversas({ aberta, assentada, aoAbrir }: {
       const doGrupo = filtradas.filter((c) => grupoDa(c, hoje) === g);
       return doGrupo.length ? [{ tipo: 'grupo' as const, id: g }, ...doGrupo.map((c) => ({ tipo: 'conversa' as const, id: c.id, c }))] : [];
     });
-  }, [conversas, busca]);
+  }, [conversas, busca, pesquisaAberta]);
 
   // minWidth 0: a web <input> is otherwise as wide as the font says 20 characters are, and pushes its row.
   const texto = { minWidth: 0, color: colors.foreground, fontFamily: fonts.body, fontSize: typography.sm.fontSize, padding: 0, position: 'relative', outlineStyle: 'none' } as object;
@@ -168,16 +169,17 @@ export default function Conversas({ aberta, assentada, aoAbrir }: {
   // when open (the menu is placed in window coordinates).
   return (
     <>
-    <View style={{ flex: 1, gap: spacing.sm }}>
+    <View style={{ flex: 1, minHeight: 0, gap: spacing.sm }}>
       {/* Focused, it lights its edge in the brand orange like every other field. */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, height: 40, paddingHorizontal: spacing.md,
+      {pesquisaAberta ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, height: 40, paddingHorizontal: spacing.md,
         borderRadius: radius.full, backgroundColor: alfa(colors.foreground, 0.06),
         borderWidth: ANEL_DE_FOCO, borderColor: buscando ? colors.brand : 'transparent' }}>
         <Icone nome="busca" cor={buscando ? colors.brand : colors.mutedForeground} tamanho={16} />
-        <TextInput value={busca} onChangeText={setBusca} placeholder="Buscar nas conversas" {...tinta}
+        <TextInput value={busca} onChangeText={setBusca} placeholder="Buscar nas conversas" {...tinta} autoFocus
+          onKeyPress={(e) => { if (e.nativeEvent.key === 'Escape') { setBusca(''); aoFecharPesquisa(); } }}
           onFocus={() => setBuscando(true)} onBlur={() => setBuscando(false)}
           autoCapitalize="none" autoCorrect={false} accessibilityLabel="Buscar nas conversas" style={[{ flex: 1 }, texto]} />
-      </View>
+      </View> : null}
       {offline ? <Texto v="legenda">Sem conexão — mostrando a última cópia salva neste aparelho.</Texto> : null}
       {aviso ? <Erro onPress={() => setAviso(null)}>{aviso}</Erro> : null}
       <FlatList
@@ -195,7 +197,8 @@ export default function Conversas({ aberta, assentada, aoAbrir }: {
         renderItem={({ item }) => item.tipo === 'grupo' ? (
           <Texto v="secao" style={{ marginTop: spacing.md, marginBottom: spacing.xs, paddingHorizontal: spacing.sm }}>{item.id}</Texto>
         ) : (
-          <View style={{ flexDirection: 'row', alignItems: 'center', borderRadius: radius.md,
+          <View {...(Platform.OS === 'web' ? { dataSet: { conversa: '' } } : {})}
+            style={{ flexDirection: 'row', alignItems: 'center', borderRadius: radius.md,
             borderWidth: ANEL_DE_FOCO, borderColor: editando?.id === item.id ? colors.brand : 'transparent',
             backgroundColor: caminho === `/chat/${item.id}` ? alfa(colors.brand, 0.14) : sobre === item.id ? alfa(colors.foreground, 0.06) : 'transparent' }}>
             <Pressable accessibilityRole="link" accessibilityLabel={rotuloDa(item.c)} disabled={editando?.id === item.id}
@@ -217,7 +220,8 @@ export default function Conversas({ aberta, assentada, aoAbrir }: {
               )}
               {item.c.resposta === null ? <Texto v="detalhe" cor={colors.accent}>pendente</Texto> : null}
             </Pressable>
-            <BotaoAcoes rotulo="Ações da conversa" aoAbrir={(ancora) => setAcoes({ c: item.c, ancora })}
+            <BotaoAcoes rotulo="Ações da conversa" aberto={acoes?.c.id === item.id}
+              aoAbrir={(ancora) => setAcoes({ c: item.c, ancora })}
               aoSobrevoar={(dentro) => sobrevoar(item.id, dentro)} />
           </View>
         )}

@@ -4,9 +4,8 @@
  * `pararChat` stops it), plus the admin summary.
  *
  * Wire: a `: ok` ping, then one `data: {json}` frame per event (see the backend's
- * app/engine/chat.py for the contract). The production web build calls the same-origin
- * `/api` (vercel.json rewrites it; the CSP only allows `connect-src 'self'`); native and
- * the dev server call EXPO_PUBLIC_BACKEND_URL.
+ * app/engine/chat.py for the contract). Web calls the same-origin `/api`: Vercel forwards it in
+ * production and Metro forwards it in development. Native calls EXPO_PUBLIC_BACKEND_URL directly.
  * `expo/fetch` is used because React Native's own fetch has no streaming body.
  */
 import { fetch } from 'expo/fetch';
@@ -26,7 +25,7 @@ export type ChatEvent =
   | { type: 'end' };
 
 export function backendUrl(): string {
-  if (Platform.OS === 'web' && !__DEV__) return '';
+  if (Platform.OS === 'web') return '';
   return (process.env.EXPO_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '');
 }
 
@@ -73,6 +72,7 @@ export function lerFrames(buffer: string): [ChatEvent[], string] {
 export type Turno = { conversaId: string; ordem: number };
 
 export type ChatRequest = {
+  temporario?: boolean;
   question: string;
   history?: { pergunta: string; resposta: string }[];
   sessionId?: string;
@@ -84,17 +84,21 @@ export type ChatRequest = {
 /** Streams the chat events. Throws ApiError on non-2xx and propagates network errors/aborts. */
 export async function* streamChat(req: ChatRequest): AsyncGenerator<ChatEvent> {
   if (!req.token) throw new ApiError(SESSAO_EXPIRADA, 401, null);
-  yield* lerEventos(await fetch(`${backendUrl()}/api/chat`, {
+  const res = await fetch(`${backendUrl()}/api/chat${req.temporario ? '/temporario' : ''}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${req.token}` },
     body: JSON.stringify({
       pergunta: req.question,
       ...(req.history?.length ? { historico: req.history } : {}),
-      ...(req.sessionId ? { session_id: req.sessionId } : {}),
-      ...(req.turno ? { conversa_id: req.turno.conversaId, ordem: req.turno.ordem } : {}),
+      ...(!req.temporario && req.sessionId ? { session_id: req.sessionId } : {}),
+      ...(!req.temporario && req.turno ? { conversa_id: req.turno.conversaId, ordem: req.turno.ordem } : {}),
     }),
     signal: req.signal,
-  }));
+  });
+  if (req.temporario && res.status === 404) {
+    throw new ApiError('O backend deste ambiente ainda não oferece chat temporário.', 404, null);
+  }
+  yield* lerEventos(res);
 }
 
 /** Replays a turn the server is still answering (or just answered). ApiError 404 when there is none. */

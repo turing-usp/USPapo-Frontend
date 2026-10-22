@@ -1,25 +1,23 @@
 /**
  * Floating chrome (the only navigation surface): a blurred glass menu button that
  * opens a sliding opaque-glass drawer (new chat, also from the USPapo brand at its top, the
- * conversations, settings), the account avatar with its menu (Sair), which pops out of it
- * and closes on a tap anywhere else, and the announcements (aviso pill and giant glass). On
+ * conversations, settings and profile), and the announcements (aviso pill and giant glass). On
  * Android and iOS the drawer also follows a drag; the buttons do everything the drag does.
  */
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react';
-import { Image, Keyboard, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Keyboard, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Gesture, GestureDetector, type PanGesture } from 'react-native-gesture-handler';
 import Reanimated, {
   Easing, cancelAnimation, runOnJS, useAnimatedStyle, useSharedValue, withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import BarraLateral, { type PerfilDaBarra } from './BarraLateral';
 import { PilulaAviso, VidroGigante, useComunicados } from './Comunicados';
 import Conversas from './Conversas';
 import Glass, { useCongelarTela } from './Glass';
-import { Icone, type NomeIcone } from './icons';
-import { Pressionavel, useSurgimento } from './Movimento';
-import { BotaoDeIcone, ItemDeMenu, Marca, Texto, tintaDoToque } from './ui';
+import { Icone } from './icons';
 import { haptics } from '../lib/device';
 import { esquecerAparelho } from '../lib/notificacoes';
 import { supabase } from '../lib/supabase';
@@ -28,7 +26,7 @@ import { alfa, useTheme } from '../theme';
 /** Height below the top inset the chrome occupies (12pt padding + 44pt targets). */
 export const ALTURA_CHROME = 56;
 
-type Conta = { nome: string; email: string; foto: string | null; admin: boolean };
+type Conta = PerfilDaBarra;
 
 function useConta(): Conta {
   const [conta, setConta] = useState<Conta>({ nome: '', email: '', foto: null, admin: false });
@@ -53,22 +51,6 @@ function useConta(): Conta {
     };
   }, []);
   return conta;
-}
-
-/** A drawer destination: navigation, so Changa, with its icon in the brand orange. */
-function LinhaNav({ icone, rotulo, aoTocar }: { icone: NomeIcone; rotulo: string; aoTocar: () => void }) {
-  const { colors, fonts, radius, spacing, typography } = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="link"
-      onPress={aoTocar}
-      style={(estado) => [styles.linha, { borderRadius: radius.md, gap: spacing.md, minHeight: 44, paddingHorizontal: spacing.md,
-        backgroundColor: tintaDoToque(estado, colors.foreground) }]}
-    >
-      <Icone nome={icone} cor={colors.brand} />
-      <Texto cor={colors.foreground} style={{ fontFamily: fonts.title, ...typography.base }}>{rotulo}</Texto>
-    </Pressable>
-  );
 }
 
 /**
@@ -184,11 +166,11 @@ export function ArrastarParaAbrir({ gaveta, children }: { gaveta: ControleDaGave
   return <Arrastavel gesto={useArrasto(gaveta, 1)}><View style={styles.flex}>{children}</View></Arrastavel>;
 }
 
-function Gaveta({ gaveta, admin }: { gaveta: ControleDaGaveta; admin: boolean }) {
+function Gaveta({ gaveta, conta }: { gaveta: ControleDaGaveta; conta: Conta }) {
   const { progresso, estado, fechar } = gaveta;
-  const { colors, spacing } = useTheme();
+  const { colors } = useTheme();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const [pesquisaAberta, setPesquisaAberta] = useState(false);
   const { width } = useWindowDimensions();
   const largura = larguraDaGaveta(width);
   const fecharArrastando = useArrasto(gaveta, -1);
@@ -198,35 +180,35 @@ function Gaveta({ gaveta, admin }: { gaveta: ControleDaGaveta; admin: boolean })
   const painel = useAnimatedStyle(() => ({ transform: [{ translateX: (-largura - 16) * (1 - progresso.value) }] }), [largura]);
 
   const ir = (destino: string) => {
+    Keyboard.dismiss();
+    setPesquisaAberta(false);
     fechar();
     router.push(destino as never);
   };
+  const minimizar = () => { Keyboard.dismiss(); fechar(); };
+  async function sair() {
+    minimizar();
+    await esquecerAparelho().catch(() => undefined);
+    await supabase.auth.signOut().catch(() => undefined);
+    router.replace('/login');
+  }
 
   // A drag to the left on the panel or the scrim closes it.
   return (
     <Arrastavel gesto={fecharArrastando}>
       <View pointerEvents={estado.aberta ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, { zIndex: 40 }]}>
         <Reanimated.View style={[StyleSheet.absoluteFill, veu]}>
-          <Pressable accessibilityLabel="Fechar menu lateral" onPress={fechar} style={[StyleSheet.absoluteFill, { backgroundColor: alfa(colors.scrim, 0.25) }]} />
+          <Pressable accessibilityLabel="Fechar menu lateral" onPress={minimizar} style={[StyleSheet.absoluteFill, { backgroundColor: alfa(colors.scrim, 0.25) }]} />
         </Reanimated.View>
         {/* While it slides, the drawer is one GPU texture that only moves (Android redraws every view each frame otherwise). */}
         <Reanimated.View renderToHardwareTextureAndroid={!estado.assentada && !estado.fechada}
           style={[styles.gaveta, { width: largura }, painel]}>
-          <Glass opaco semSombra style={{ flex: 1, gap: spacing.md, paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.md, paddingHorizontal: spacing.lg }}>
-            <View style={[styles.cabecalho, { borderBottomColor: alfa(colors.foreground, 0.1), paddingBottom: spacing.lg }]}>
-              {/* The brand is a way home too: a new chat. */}
-              <Pressionavel accessibilityRole="link" accessibilityLabel="Novo chat" onPress={() => ir('/')} aperto={0.94} hitSlop={8}>
-                <Marca logo={28} fonte={24} />
-              </Pressionavel>
-              <BotaoDeIcone icone="fechar" rotulo="Fechar menu lateral" onPress={fechar} tamanho={24} lado={36} rente />
-            </View>
-            <LinhaNav icone="novo" rotulo="Novo chat" aoTocar={() => ir('/')} />
-            <Conversas aberta={estado.aberta} assentada={estado.assentada} aoAbrir={ir} />
-            <View style={{ gap: spacing.xs, borderTopColor: alfa(colors.foreground, 0.1), borderTopWidth: 1, paddingTop: spacing.sm }}>
-              <LinhaNav icone="ajustes" rotulo="Configurações" aoTocar={() => ir('/settings')} />
-              {admin && Platform.OS === 'web' ? <LinhaNav icone="grafico" rotulo="Painel de métricas" aoTocar={() => ir('/analytics')} /> : null}
-            </View>
-          </Glass>
+          <BarraLateral conta={conta} aberta={estado.aberta} pesquisaAberta={pesquisaAberta}
+            aoAlternarPesquisa={() => { if (pesquisaAberta) Keyboard.dismiss(); setPesquisaAberta((v) => !v); }}
+            aoMinimizar={minimizar} aoNavegar={ir} aoSair={() => void sair()}>
+            <Conversas aberta={estado.aberta} assentada={estado.assentada} aoAbrir={ir}
+              pesquisaAberta={pesquisaAberta} aoFecharPesquisa={() => setPesquisaAberta(false)} />
+          </BarraLateral>
         </Reanimated.View>
       </View>
     </Arrastavel>
@@ -235,21 +217,10 @@ function Gaveta({ gaveta, admin }: { gaveta: ControleDaGaveta; admin: boolean })
 
 /** `gaveta` comes from the screen group, whose drag opens it (`ArrastarParaAbrir`). */
 export default function Chrome({ gaveta }: { gaveta: ControleDaGaveta }) {
-  const { colors, fonts, glass, radius, spacing, typography } = useTheme();
+  const { colors, radius, spacing } = useTheme();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
   const conta = useConta();
-  const [menu, setMenu] = useState(false);
-  // The account menu pops out of the avatar, its rows a beat after the glass.
-  const menuDaConta = useSurgimento(menu, { de: 0.8 });
   const comunicados = useComunicados();
-
-  async function sair() {
-    setMenu(false);
-    await esquecerAparelho().catch(() => undefined); // this device stops getting the account's pushes
-    await supabase.auth.signOut().catch(() => undefined);
-    router.replace('/login');
-  }
 
   return (
     <>
@@ -260,40 +231,18 @@ export default function Chrome({ gaveta }: { gaveta: ControleDaGaveta }) {
         <View pointerEvents="none" style={[styles.status, { height: insets.top + spacing.md,
           experimental_backgroundImage: `linear-gradient(to bottom, ${alfa(colors.canvas, 0.94)} 60%, ${alfa(colors.canvas, 0)})` }]} />
       ) : <Glass desfoque semBorda semSombra pointerEvents="none" style={[styles.status, { height: insets.top }]} />) : null}
-      {menu ? <Pressable accessibilityLabel="Fechar menu do usuário" onPress={() => setMenu(false)} style={[StyleSheet.absoluteFill, styles.fora]} /> : null}
       <View pointerEvents="box-none" style={[styles.barra, { paddingTop: insets.top + spacing.md, paddingHorizontal: spacing.lg }]}>
-        <Glass desfoque radius={radius.md} onPress={() => { gaveta.abrir(); void haptics.selection(); setMenu(false); }}
-          accessibilityLabel="Abrir menu lateral" aperto={0.9} style={styles.alvo}>
-          <Icone nome="menu" cor={colors.mutedForeground} tamanho={24} traco={2} />
+        <Glass desfoque radius={radius.md} onPress={() => { gaveta.abrir(); void haptics.selection(); }}
+          accessibilityLabel="Abrir barra lateral" aperto={0.9} style={styles.alvo}>
+          <Icone nome="painel" cor={colors.mutedForeground} tamanho={24} traco={2} />
         </Glass>
         <View pointerEvents="box-none" style={[styles.meio, { paddingHorizontal: spacing.sm }]}>
           {comunicados.aviso ? <PilulaAviso aviso={comunicados.aviso} aoAbrir={() => comunicados.abrir(comunicados.aviso)} /> : null}
         </View>
-        <View>
-          {/* The same lift as the glass beside it; the photo is clipped by an inner circle. */}
-          <Pressionavel accessibilityLabel="Menu do usuário" onPress={() => setMenu((v) => !v)} desbotar aperto={0.9}
-            style={[styles.avatar, glass.shadow, { backgroundColor: colors.brand, borderRadius: radius.full }]}>
-            <View style={[styles.foto, { borderRadius: radius.full }]}>
-              {conta.foto ? <Image source={{ uri: conta.foto }} style={StyleSheet.absoluteFill} />
-                : <Texto cor={colors.brandForeground} style={{ fontFamily: fonts.title, ...typography.lg }}>{(conta.nome || 'U')[0].toUpperCase()}</Texto>}
-            </View>
-          </Pressionavel>
-          {menuDaConta.montado ? (
-            <Glass desfoque radius={radius.lg} movimento={menuDaConta.movimento} origem="right top" pointerEvents={menu ? 'auto' : 'none'}
-              style={[styles.menu, { padding: spacing.xs }]}>
-              <Reanimated.View style={menuDaConta.conteudo}>
-                <View style={{ paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>
-                  {conta.nome ? <Texto v="suave" cor={colors.foreground} numberOfLines={1}>{conta.nome}</Texto> : null}
-                  <Texto v="legenda" numberOfLines={1}>{conta.email}</Texto>
-                </View>
-                <View style={{ borderTopColor: alfa(colors.foreground, 0.1), borderTopWidth: 1, marginVertical: spacing.xs }} />
-                <ItemDeMenu icone="sair" rotulo="Sair" onPress={() => void sair()} />
-              </Reanimated.View>
-            </Glass>
-          ) : null}
-        </View>
+        {/* Equal side slots keep the announcement centered in the window, including on home. */}
+        <View pointerEvents="none" style={styles.alvo} />
       </View>
-      <Gaveta gaveta={gaveta} admin={conta.admin} />
+      <Gaveta gaveta={gaveta} conta={conta} />
       <VidroGigante comunicado={comunicados.aberto} aoFechar={comunicados.fechar} aoOcultar={comunicados.ocultarAviso} />
     </>
   );
@@ -302,14 +251,8 @@ export default function Chrome({ gaveta }: { gaveta: ControleDaGaveta }) {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   status: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 30 },
-  fora: { zIndex: 29 },
   barra: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 30, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   alvo: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   meio: { flex: 1, alignItems: 'center', marginTop: 2 },
-  avatar: { width: 40, height: 40, marginTop: 2 },
-  foto: { flex: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  menu: { position: 'absolute', right: 0, top: 48, width: 224 },
   gaveta: { position: 'absolute', top: 0, bottom: 0, left: 0 },
-  cabecalho: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1 },
-  linha: { flexDirection: 'row', alignItems: 'center' },
 });

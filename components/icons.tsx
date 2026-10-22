@@ -6,7 +6,9 @@ import { paleta } from '../theme';
 
 const PATHS = {
   menu: 'M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5',
+  painel: ['M5 3.75h14A1.25 1.25 0 0 1 20.25 5v14A1.25 1.25 0 0 1 19 20.25H5A1.25 1.25 0 0 1 3.75 19V5A1.25 1.25 0 0 1 5 3.75Z', 'M9 3.75v16.5'],
   fechar: 'M6 18 18 6M6 6l12 12',
+  temporario: ['M8 3.8a8.5 8.5 0 0 1 4-.8m4 1a8.5 8.5 0 0 1 3 3m1.2 4a8.5 8.5 0 0 1-.8 4m-2.5 3.2a8.5 8.5 0 0 1-4 1.8M9 20l-5 1 1-5m-1.1-4a8.5 8.5 0 0 1 1-4', 'M9 12h6'],
   novo: 'M12 9v6m3-3H9m12 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
   busca: 'm21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.602 10.602Z',
   ajustes: [
@@ -71,7 +73,7 @@ export function Icone({ nome, cor, tamanho = 20, traco = 1.8 }: { nome: NomeIcon
   return (
     <Svg width={tamanho} height={tamanho} viewBox="0 0 24 24">
       {(Array.isArray(d) ? d : [d]).map((path) => (
-        <Path key={path} d={path} fill="none" stroke={cor} strokeWidth={traco} strokeLinecap="round" strokeLinejoin="round" />
+        <Path key={path} d={path} transform={nome === 'dislike' ? 'translate(24 0) scale(-1 1)' : undefined} fill="none" stroke={cor} strokeWidth={traco} strokeLinecap="round" strokeLinejoin="round" />
       ))}
     </Svg>
   );

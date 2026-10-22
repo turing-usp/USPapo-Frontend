@@ -19,10 +19,25 @@ void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 // Web: keyboard focus rings every control in the brand orange (fields light their own edge).
 // Desktop scrollbars share the theme's neutral ink; touch devices keep their native indicators.
-if (Platform.OS === 'web' && typeof document !== 'undefined' && !document.getElementById('uspapo-foco')) {
-  const estilo = Object.assign(document.createElement('style'), { id: 'uspapo-foco' });
+if (Platform.OS === 'web' && typeof document !== 'undefined') {
+  const estilo = document.getElementById('uspapo-foco') ?? Object.assign(document.createElement('style'), { id: 'uspapo-foco' });
   estilo.textContent = `:focus-visible{outline:2px solid ${paleta.laranja};outline-offset:2px}`
     + `input:focus-visible,textarea:focus-visible{outline:none}
+      @media (hover: hover) and (pointer: fine) {
+        [data-conversa] [data-acoes-conversa] {
+          opacity: 0;
+          transition: opacity 180ms ease-in-out;
+        }
+        [data-conversa]:hover [data-acoes-conversa],
+        [data-conversa] [data-acoes-conversa]:focus-visible,
+        [data-conversa] [data-acoes-conversa][data-aberto="true"] {
+          opacity: 1;
+        }
+        [data-conversa]:has(:focus-visible) [data-acoes-conversa] { opacity: 1; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        [data-conversa] [data-acoes-conversa] { transition: none; }
+      }
       @media (hover: hover) and (pointer: fine) and (forced-colors: none) {
         * {
           scrollbar-width: thin;

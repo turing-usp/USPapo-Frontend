@@ -23,8 +23,8 @@ import Composer from '../../../components/Composer';
 import Glass, { CamadaDeVidro } from '../../../components/Glass';
 import { Icone } from '../../../components/icons';
 import { useSurgimento } from '../../../components/Movimento';
-import { Coluna, Estado } from '../../../components/ui';
-import { useChat, type Linha } from '../../../lib/chat';
+import { Coluna, Estado, Texto } from '../../../components/ui';
+import { chatTemporario, useChat, type Linha } from '../../../lib/chat';
 import { useAlturaDoTeclado } from '../../../lib/device';
 import { feedbacksDaConversa, type Feedback as Salvo } from '../../../lib/feedback';
 import { focarConversa } from '../../../lib/notificacoes';
@@ -58,6 +58,10 @@ function IrAoFim({ visivel, base, aoTocar }: { visivel: boolean; base: number; a
 
 export default function Chat() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  return <Conversa key={String(id)} id={String(id)} />;
+}
+
+function Conversa({ id }: { id: string }) {
   const router = useRouter();
   const { layout, spacing } = useTheme();
   const insets = useSafeAreaInsets();
@@ -97,7 +101,7 @@ export default function Chat() {
   const [texto, setTexto] = useState('');
   const [alturaComposer, setAlturaComposer] = useState(120);
   const [feedbacks, setFeedbacks] = useState<Record<number, Salvo>>({});
-  const topo = insets.top + ALTURA_CHROME + spacing.xl;
+  const topo = insets.top + ALTURA_CHROME + spacing.xl + (chatTemporario(String(id)) ? 32 : 0);
   const fundo = alturaComposer + spacing.lg;
 
   // Now and again next frame: the new size reaches JS before the native content grows, so the first
@@ -127,14 +131,15 @@ export default function Chat() {
   }, [veioDoInicio]);
 
   useEffect(() => {
-    if (chat.userId && chat.status === 'idle') void feedbacksDaConversa(chat.userId, String(id)).then(setFeedbacks);
-  }, [chat.userId, chat.status, id]);
+    if (!chat.temporario && chat.userId && chat.status === 'idle') void feedbacksDaConversa(chat.userId, String(id)).then(setFeedbacks);
+  }, [chat.userId, chat.status, chat.temporario, id]);
 
   // While this conversation is on screen its own "answer ready" push stays silent.
+  const { descartar } = chat;
   useFocusEffect(useCallback(() => {
     focarConversa(String(id));
-    return () => focarConversa(null);
-  }, [id]));
+    return () => { focarConversa(null); descartar(); };
+  }, [id, descartar]));
 
   // Keyed lines, so the progress line keeps its instance (and its animation) when the turn starts
   // writing, fails or is retried; an error or note after a partial answer gets a line of its own.
@@ -147,7 +152,7 @@ export default function Chat() {
         if (item.ordem === vivo && aguardando) return null;
         return (
           <BolhaAssistente key={item.id} linha={item} escrevendo={respondendo && !item.completo} revelar={item.ordem === vivo}>
-            {!item.completo ? null : chat.userId ? (
+            {!item.completo ? null : chat.userId && !chat.temporario ? (
               <Feedback userId={chat.userId} conversaId={String(id)} ordem={item.ordem} inicial={feedbacks[item.ordem] ?? null}
                 acoes={<BotoesDaMensagem texto={item.texto} />} />
             ) : <BotoesDaMensagem texto={item.texto} style={{ marginTop: spacing.sm }} />}
@@ -210,7 +215,9 @@ export default function Chat() {
   if (chat.carregou && !chat.linhas.length && chat.status === 'idle') {
     return (
       <View style={{ flex: 1, justifyContent: 'center' }}>
-        <Estado titulo="Conversa" mensagem="Não encontrei esta conversa." acao="Novo chat" aoAgir={() => router.replace('/')} />
+        <Estado titulo={chat.temporario ? 'Chat temporário encerrado' : 'Conversa'}
+          mensagem={chat.temporario ? 'O conteúdo foi descartado. Inicie uma nova conversa para continuar.' : 'Não encontrei esta conversa.'}
+          acao="Novo chat" aoAgir={() => router.replace('/')} />
       </View>
     );
   }
@@ -220,6 +227,9 @@ export default function Chat() {
   // The messages' long-press menu covers the screen, so it wraps everything.
   return (
     <MenuDasMensagens>
+      {chat.temporario ? <View pointerEvents="none" style={{ position: 'absolute', top: insets.top + ALTURA_CHROME, left: 16, right: 16, zIndex: 1 }}>
+        <Texto v="legenda" centro>Chat temporário · fora do histórico e da memória pessoal</Texto>
+      </View> : null}
       <CamadaDeVidro
         fundo={
           // A ScrollView, not a FlatList: a conversation is short, and scrollToEnd must reach the real end
