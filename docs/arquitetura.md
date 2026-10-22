@@ -381,6 +381,13 @@ O app segue o manual de identidade visual do Turing USP (2021).
   acesa inteira enquanto o mouse está nela ou no seu ⋮. No app, onde não há
   mouse, os mesmos tons aparecem só ao pressionar.
 
+No site com mouse, as barras de rolagem usam trilho transparente e puxador
+fino, com a cor do texto do tema a 32% (50% ao passar o mouse ou focar o
+conteúdo). O CSS global em `app/_layout.tsx` atende também a lista de
+conversas, com fallback WebKit; `theme/index.tsx` atualiza as variáveis e o
+`color-scheme` ao trocar o tema. Dispositivos de toque e o modo de cores
+forçadas mantêm os indicadores do sistema.
+
 A escolha do tema (sistema, claro, escuro, OLED) fica salva no aparelho;
 `escuro` vale para o escuro e para o OLED.
 

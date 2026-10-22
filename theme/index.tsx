@@ -178,12 +178,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // Web: the page under the app (and the browser's bars) takes the scheme's canvas, so no strip of
   // another color shows past the app's edge (the HTML starts with the system's light or graphite).
   const canvas = theme.colors.canvas;
+  const foreground = theme.colors.foreground;
+  const escuro = theme.escuro;
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
-    document.documentElement.style.backgroundColor = canvas;
+    const raiz = document.documentElement.style;
+    raiz.backgroundColor = canvas;
+    raiz.colorScheme = escuro ? 'dark' : 'light';
+    raiz.setProperty('--uspapo-scroll-thumb', alfa(foreground, 0.32));
+    raiz.setProperty('--uspapo-scroll-thumb-hover', alfa(foreground, 0.5));
     document.body.style.backgroundColor = canvas;
     document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => meta.setAttribute('content', canvas));
-  }, [canvas]);
+  }, [canvas, foreground, escuro]);
 
   return <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>;
 }

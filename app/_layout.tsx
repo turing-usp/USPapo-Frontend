@@ -17,12 +17,38 @@ import { ThemeProvider, paleta, useTheme } from '../theme';
 
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
-// Web: keyboard focus rings every control in the brand orange instead of the browser's own color
-// (text fields light their own edge; see Campo).
+// Web: keyboard focus rings every control in the brand orange (fields light their own edge).
+// Desktop scrollbars share the theme's neutral ink; touch devices keep their native indicators.
 if (Platform.OS === 'web' && typeof document !== 'undefined' && !document.getElementById('uspapo-foco')) {
   const estilo = Object.assign(document.createElement('style'), { id: 'uspapo-foco' });
   estilo.textContent = `:focus-visible{outline:2px solid ${paleta.laranja};outline-offset:2px}`
-    + 'input:focus-visible,textarea:focus-visible{outline:none}';
+    + `input:focus-visible,textarea:focus-visible{outline:none}
+      @media (hover: hover) and (pointer: fine) and (forced-colors: none) {
+        * {
+          scrollbar-width: thin;
+          scrollbar-color: var(--uspapo-scroll-thumb, ${paleta.cinzaClaro}) transparent;
+        }
+        *:hover, *:focus-within {
+          scrollbar-color: var(--uspapo-scroll-thumb-hover, ${paleta.cinzaClaro}) transparent;
+        }
+        /* Older WebKit/Chromium: the standard properties take precedence when supported. */
+        @supports not (scrollbar-width: thin) {
+          ::-webkit-scrollbar { width: 8px; height: 8px; }
+          ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+          ::-webkit-scrollbar-thumb {
+            background-color: var(--uspapo-scroll-thumb, ${paleta.cinzaClaro});
+            background-clip: padding-box;
+            border: 2px solid transparent;
+            border-radius: 999px;
+            min-height: 32px;
+            min-width: 32px;
+          }
+          ::-webkit-scrollbar-thumb:hover, ::-webkit-scrollbar-thumb:active {
+            background-color: var(--uspapo-scroll-thumb-hover, ${paleta.cinzaClaro});
+          }
+          ::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+        }
+      }`;
   document.head.appendChild(estilo);
 }
 
