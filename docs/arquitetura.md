@@ -186,13 +186,21 @@ relida ao abrir o app e ao voltar para ele depois de 5 minutos.
   ≥ 4,5:1 na turma em todos os temas, conferido por script); choque leva
   contorno tracejado e uma linha com o alerta (sem vermelho). A legenda dá
   nome e professores; o dia de hoje fica no `accent`.
-- **Próximos ônibus** (`Onibus.tsx`, `lib/onibus.ts`, tipo `onibus`): as
+- **Próximos ônibus** (`Onibus.tsx`, `lib/onibus.ts`, `lib/useOnibus.ts`, tipo `onibus`): as
   próximas passagens numa parada, contando os minutos. O app pede
   `GET /api/onibus` com as linhas e as paradas do GTFS e recebe, por linha e
   sentido, o instante de cada passagem (ao vivo pelo Olho Vivo, ou pela
   programação, dito na tela: o ao vivo tem um ponto pulsando no `accent`, o
-  previsto não). Sem cache: conta os minutos a cada 15 s e pede de novo a
-  cada 30 s com o app na frente, por 15 min (Atualizar renova).
+  agendado não). Cartões com as mesmas linhas e paradas compartilham a
+  consulta, o relógio e as atualizações; clicar em Atualizar em um deles
+  atualiza todos os correspondentes. Consultas em andamento são deduplicadas,
+  sem reutilizar respostas concluídas como cache. Conta os minutos a cada 15 s
+  e pede de novo a cada 30 s com o app na frente, por 15 min (Atualizar renova).
+  Durante a consulta, o indicador diz que está atualizando; em caso de falha,
+  os valores antigos deixam de ser apresentados como atuais. Ao terminar a
+  janela automática, é preciso atualizar para retomar. Cada chegada identifica
+  sua fonte, e um cartão que mistura fontes diz "Ao vivo e agendados" no
+  rodapé. O texto original da resposta permanece um registro histórico.
 - **Grade curricular** (`Curriculo.tsx`, `lib/curriculo.ts`, tipo
   `curriculo`): as obrigatórias de um curso por semestre ideal, em cartões
   (sigla; com espaço, o nome). `GET /api/curriculo` traz a grade e

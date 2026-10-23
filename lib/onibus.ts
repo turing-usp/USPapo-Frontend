@@ -18,10 +18,10 @@ export type LinhaNaParada = {
 export type DadosDoOnibus = { parada: string; atualizado_em: string; ao_vivo: boolean; api_falhou: boolean; linhas: LinhaNaParada[] };
 
 /** The next buses, or null when the stop or its lines left the timetable (404). Throws on a failure. */
-export async function buscarOnibus(campos: Record<string, string>): Promise<DadosDoOnibus | null> {
+export async function buscarOnibus(campos: Record<string, string>, signal?: AbortSignal): Promise<DadosDoOnibus | null> {
   const { token } = await sessaoAtual();
   const consulta = `linhas=${encodeURIComponent(campos.linhas ?? '')}&paradas=${encodeURIComponent(campos.paradas ?? '')}`;
-  const res = await fetch(`${backendUrl()}/api/onibus?${consulta}`, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetch(`${backendUrl()}/api/onibus?${consulta}`, { headers: { Authorization: `Bearer ${token}` }, signal });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`/api/onibus ${res.status}`);
   return (await res.json()) as DadosDoOnibus;
@@ -45,6 +45,18 @@ export function horaDe(instante: string): string {
 /** The arrivals still ahead (a bus due a moment ago stays, as 'agora', for a minute), in order. */
 export function aindaPorVir(chegadas: Chegada[], agora: number): Chegada[] {
   return chegadas.filter((c) => Date.parse(c.instante) >= agora - 60_000);
+}
+
+/** Describe the arrivals still on screen, rather than a card-wide live flag. */
+export function fonteDosOnibus(dados: DadosDoOnibus, agora: number): string {
+  const chegadas = dados.linhas.flatMap((l) => aindaPorVir(l.chegadas, agora));
+  const vivo = chegadas.some((c) => c.ao_vivo);
+  const agendado = chegadas.some((c) => !c.ao_vivo);
+  const origem = vivo && agendado ? 'Ao vivo e agendados · SPTrans'
+    : vivo ? 'Ao vivo · SPTrans'
+    : agendado ? 'Horários agendados · SPTrans' : 'Sem próximas chegadas';
+  const falha = dados.api_falhou ? ' · consulta ao vivo indisponível' : '';
+  return `${origem}${falha} · atualizado ${horaDe(dados.atualizado_em)}`;
 }
 
 /** For screen readers: '8084-10 para Cid. Universitária: em 4 minutos, ao vivo; depois em 12 minutos'. */
