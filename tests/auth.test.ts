@@ -1,5 +1,6 @@
 import { concluirGoogle, contaDeLogin, googleAtivo, mapAuthError, pedirRedefinicao, senhaValida, trocarSenha } from '../lib/auth';
 import { supabase } from '../lib/supabase';
+import { Platform } from 'react-native';
 
 jest.mock('../lib/supabase', () => ({
   supabase: { auth: { signInWithPassword: jest.fn(), updateUser: jest.fn(), getUser: jest.fn(), exchangeCodeForSession: jest.fn() } },
@@ -54,7 +55,7 @@ test('the recovery link goes to the website, with no PKCE challenge (any device 
   const fetch = jest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }));
   expect(await pedirRedefinicao('a@usp.br')).toBeNull();
   const [url, init] = fetch.mock.calls[0] as [string, RequestInit];
-  expect(url).toBe('http://supabase.test/auth/v1/recover?redirect_to=https%3A%2F%2Fuspapo.turingusp.com');
+  expect(url).toBe('http://supabase.test/auth/v1/recover?redirect_to=https%3A%2F%2Fuspapo.turingusp.com%2F');
   expect(JSON.parse(String(init.body))).toEqual({ email: 'a@usp.br' });
   expect((init.headers as Record<string, string>).apikey).toBe('anon');
 
@@ -63,6 +64,35 @@ test('the recovery link goes to the website, with no PKCE challenge (any device 
   fetch.mockRejectedValue(new TypeError('fetch failed'));
   expect(await pedirRedefinicao('a@usp.br')).toBe('Verifique sua conexão e tente de novo');
   fetch.mockRestore();
+});
+
+test.each([
+  ['web', 'https://uspapo.turingusp.com', undefined],
+  ['web', 'http://localhost:8081', undefined],
+  ['android', 'https://uspapo.turingusp.com', undefined],
+  ['android', 'https://preview.example.com', 'https://preview.example.com///'],
+])('recovery on %s sends a root path accepted by origin/** allowlists', async (platform, origin, configured) => {
+  const descriptor = Object.getOwnPropertyDescriptor(Platform, 'OS')!;
+  const previousLocation = Object.getOwnPropertyDescriptor(globalThis, 'location');
+  const previousWebUrl = process.env.EXPO_PUBLIC_WEB_URL;
+  const fetch = jest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }));
+  try {
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: platform });
+    Object.defineProperty(globalThis, 'location', { configurable: true, value: { origin } });
+    if (configured) process.env.EXPO_PUBLIC_WEB_URL = configured;
+    else delete process.env.EXPO_PUBLIC_WEB_URL;
+    expect(await pedirRedefinicao('a@usp.br')).toBeNull();
+    const target = new URL(String(fetch.mock.calls[0][0])).searchParams.get('redirect_to');
+    expect(target).toBe(`${origin}/`);
+    expect(JSON.parse(String(fetch.mock.calls[0][1]?.body))).toEqual({ email: 'a@usp.br' });
+  } finally {
+    Object.defineProperty(Platform, 'OS', descriptor);
+    if (previousLocation) Object.defineProperty(globalThis, 'location', previousLocation);
+    else Reflect.deleteProperty(globalThis, 'location');
+    if (previousWebUrl === undefined) delete process.env.EXPO_PUBLIC_WEB_URL;
+    else process.env.EXPO_PUBLIC_WEB_URL = previousWebUrl;
+    fetch.mockRestore();
+  }
 });
 
 test("Google's deep link as a route exchanges its code once", async () => {

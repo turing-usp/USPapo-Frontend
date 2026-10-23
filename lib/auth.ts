@@ -12,8 +12,8 @@
  * Recovery always finishes on the web, from any device: the e-mail link opens
  * the site with the session in its fragment (no PKCE verifier to lose: the
  * request may come from the app, the link be opened on a computer), and the
- * site's /reset sets the new password. It returns to the site's bare origin,
- * the one redirect URL the shared Turing project accepted from the start.
+ * site's /reset sets the new password. The return URL includes the root slash:
+ * Supabase allowlists such as https://example.com/** reject the bare origin.
  */
 import * as Linking from 'expo-linking';
 import { AppState, Platform } from 'react-native';
@@ -67,10 +67,11 @@ export function urlDeRetorno(): string {
   return Platform.OS === 'web' ? globalThis.location?.origin ?? '' : Linking.createURL('/auth/callback');
 }
 
-/** The web app's origin: this page's on the web, EXPO_PUBLIC_WEB_URL (or the official site) in the app. */
+/** Website root with a trailing slash, accepted by origin/** redirect allowlists. */
 export function urlDoSite(): string {
-  if (Platform.OS === 'web') return globalThis.location?.origin ?? '';
-  return (process.env.EXPO_PUBLIC_WEB_URL || 'https://uspapo.turingusp.com').replace(/\/+$/, '');
+  const origem = Platform.OS === 'web' ? globalThis.location?.origin ?? ''
+    : process.env.EXPO_PUBLIC_WEB_URL || 'https://uspapo.turingusp.com';
+  return origem ? `${origem.replace(/\/+$/, '')}/` : '';
 }
 
 /**

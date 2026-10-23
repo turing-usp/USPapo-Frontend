@@ -252,7 +252,11 @@ com outros serviços do Turing.
   a Site URL.
 - **Esqueci a senha** termina sempre no site, de qualquer aparelho: o app e
   o site pedem o e-mail a `/auth/v1/recover` sem PKCE e com destino na
-  origem do site, então o link traz a sessão no fragmento da URL (que o
+  raiz do site **com a barra final** (`https://uspapo.turingusp.com/`). A
+  configuração `https://uspapo.turingusp.com/**` aceita essa raiz, mas não
+  a origem sem `/`; sem ela, o projeto compartilhado redireciona para o
+  Turing. O domínio local também precisa estar nas Redirect URLs para
+  testar a recuperação no localhost. O link traz a sessão no fragmento da URL (que o
   navegador não envia a ninguém). O site abre essa sessão antes de qualquer
   rota (`app/_layout.tsx`), leva a `/reset` e lá se cria a nova senha; um
   link vencido ou já usado cai em `/reset` pedindo outro. Se o link do
