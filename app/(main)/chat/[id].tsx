@@ -63,7 +63,7 @@ export default function Chat() {
 
 function Conversa({ id }: { id: string }) {
   const router = useRouter();
-  const { layout, spacing } = useTheme();
+  const { colors, layout, radius, spacing } = useTheme();
   const insets = useSafeAreaInsets();
   const teclado = useAlturaDoTeclado();
   const lista = useRef<ScrollView>(null);
@@ -227,8 +227,14 @@ function Conversa({ id }: { id: string }) {
   // The messages' long-press menu covers the screen, so it wraps everything.
   return (
     <MenuDasMensagens>
-      {chat.temporario ? <View pointerEvents="none" style={{ position: 'absolute', top: insets.top + ALTURA_CHROME, left: 16, right: 16, zIndex: 1 }}>
-        <Texto v="legenda" centro>Chat temporário · fora do histórico e da memória pessoal</Texto>
+      {/* A pill of opaque glass: legible over the messages scrolling under it, and no blur to pay for. */}
+      {chat.temporario ? <View pointerEvents="none" style={{ position: 'absolute', top: insets.top + ALTURA_CHROME, left: spacing.lg,
+        right: spacing.lg, zIndex: 1, alignItems: 'center' }}>
+        <Glass opaco semSombra radius={radius.full} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+          height: 28, maxWidth: '100%', paddingHorizontal: spacing.md }}>
+          <Icone nome="temporario" cor={colors.accent} tamanho={14} />
+          <Texto v="legenda" numberOfLines={1} style={{ flexShrink: 1 }}>Chat temporário · fora do histórico e da memória</Texto>
+        </Glass>
       </View> : null}
       <CamadaDeVidro
         fundo={

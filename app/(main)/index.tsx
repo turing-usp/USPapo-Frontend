@@ -6,7 +6,7 @@
  */
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { ScrollView, View, useWindowDimensions } from 'react-native';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ALTURA_CHROME } from '../../components/Chrome';
@@ -16,8 +16,8 @@ import { Icone } from '../../components/icons';
 import { useSurgimento } from '../../components/Movimento';
 import { Assinatura, Coluna, Marca, Texto } from '../../components/ui';
 import { guardarPendente, novoId } from '../../lib/chat';
-import { useAlturaDoTeclado } from '../../lib/device';
-import { useTheme } from '../../theme';
+import { haptics, useAlturaDoTeclado } from '../../lib/device';
+import { alfa, useTheme } from '../../theme';
 
 const PERGUNTAS: [string, string][] = [
   ['Cardápio de hoje?', 'Qual é o cardápio de hoje nos bandejões do Butantã, no almoço e no jantar?'],
@@ -82,11 +82,14 @@ export default function Inicio() {
   const lema = largo ? typography.xl : typography.base;
   return (
     <>
+    {/* The chrome's right slot, as its menu button on the left: same pane, icon and haptic; on, the
+        accent tint of every active icon button (BotaoDeIcone). */}
     <View style={{ position: 'absolute', top: insets.top + spacing.md, right: spacing.lg, zIndex: 31 }}>
-      <Glass desfoque radius={radius.full} onPress={() => setTemporario(v => !v)}
+      <Glass desfoque radius={radius.md} aperto={0.9} onPress={() => { void haptics.selection(); setTemporario((v) => !v); }}
         accessibilityLabel={temporario ? 'Desativar chat temporário' : 'Ativar chat temporário'}
         style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
-        <Icone nome="temporario" cor={temporario ? colors.accent : colors.mutedForeground} />
+        {temporario ? <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: radius.md, backgroundColor: alfa(colors.accent, 0.14) }]} /> : null}
+        <Icone nome="temporario" cor={temporario ? colors.accent : colors.mutedForeground} tamanho={24} traco={2} />
       </Glass>
     </View>
     {/* The page keeps its visible height when the keyboard opens. */}
